@@ -173,6 +173,9 @@ class TestKosyncEndpoints(unittest.TestCase):
         from src import web_server
         with web_server.database_service.get_session() as session:
              session.query(KosyncDocument).delete()
+        # Reset rate limiter between tests
+        from src.api import kosync_server
+        kosync_server._rate_limit_store.clear()
 
     def test_put_progress_creates_document(self):
         """Test that PUT creates a new document."""
@@ -511,6 +514,121 @@ class TestKosyncEndpoints(unittest.TestCase):
         # Clean up
         with web_server.database_service.get_session() as session:
             session.query(Book).filter(Book.abs_id == 'test-filename-book').delete()
+
+
+    # ---------------- Security Tests ----------------
+
+    def test_auth_rejects_raw_password(self):
+        """Raw password (not MD5 hash) should be rejected."""
+        bad_headers = {
+            'x-auth-user': 'testuser',
+            'x-auth-key': 'testpass',  # raw, not hashed
+            'Content-Type': 'application/json'
+        }
+        response = self.client.get('/users/auth', headers=bad_headers)
+        self.assertEqual(response.status_code, 401)
+
+    def test_auth_accepts_md5_hash(self):
+        """MD5-hashed password should be accepted."""
+        response = self.client.get('/users/auth', headers=self.auth_headers)
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertEqual(data['username'], 'testuser')
+
+    def test_auth_rejects_wrong_user(self):
+        """Wrong username should be rejected even with correct key."""
+        import hashlib
+        bad_headers = {
+            'x-auth-user': 'wronguser',
+            'x-auth-key': hashlib.md5(b'testpass').hexdigest(),
+            'Content-Type': 'application/json'
+        }
+        response = self.client.get('/users/auth', headers=bad_headers)
+        self.assertEqual(response.status_code, 401)
+
+    def test_auth_rejects_missing_headers(self):
+        """Missing auth headers should return 401."""
+        response = self.client.get('/users/auth')
+        self.assertEqual(response.status_code, 401)
+
+    def test_login_does_not_leak_token(self):
+        """Login response must not contain token, key, or password."""
+        response = self.client.post('/users/login')
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertNotIn('token', data)
+        self.assertNotIn('key', data)
+        self.assertNotIn('password', data)
+
+    def test_put_validates_percentage_range(self):
+        """Percentage > 1.0 should return 400."""
+        response = self.client.put(
+            '/syncs/progress',
+            headers=self.auth_headers,
+            json={
+                'document': 'v' * 32,
+                'percentage': 1.5,
+                'progress': '/body/test',
+                'device': 'Test',
+                'device_id': 'T1'
+            }
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_put_validates_percentage_type(self):
+        """Non-numeric percentage should return 400."""
+        response = self.client.put(
+            '/syncs/progress',
+            headers=self.auth_headers,
+            json={
+                'document': 'w' * 32,
+                'percentage': 'not-a-number',
+                'progress': '/body/test',
+                'device': 'Test',
+                'device_id': 'T1'
+            }
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_put_validates_missing_document(self):
+        """PUT with missing document hash should return 400."""
+        response = self.client.put(
+            '/syncs/progress',
+            headers=self.auth_headers,
+            json={
+                'percentage': 0.5,
+                'progress': '/body/test',
+                'device': 'Test',
+                'device_id': 'T1'
+            }
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_get_validates_doc_id_length(self):
+        """Oversized doc ID should return 400."""
+        long_id = 'x' * 100
+        response = self.client.get(
+            f'/syncs/progress/{long_id}',
+            headers=self.auth_headers
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_rate_limiting_triggers(self):
+        """Rapid auth requests should eventually return 429."""
+        from src.api import kosync_server
+        kosync_server._rate_limit_store.clear()
+
+        got_429 = False
+        for _ in range(20):
+            response = self.client.get('/users/auth', headers={
+                'x-auth-user': 'testuser',
+                'x-auth-key': 'wrongkey'
+            })
+            if response.status_code == 429:
+                got_429 = True
+                break
+
+        self.assertTrue(got_429, "Expected 429 after rapid auth attempts")
 
 
 if __name__ == '__main__':
