@@ -82,9 +82,16 @@ def index():
         else:
             book_type = 'linked'
 
+        # Look up Booklore metadata by ebook_filename or original_ebook_filename
+        bl_meta = None
+        for fn in (book.ebook_filename, getattr(book, 'original_ebook_filename', None)):
+            if fn:
+                bl_meta = booklore_by_filename.get(fn.lower())
+                if bl_meta:
+                    break
+
         # Skip ABS metadata enrichment for ebook-only books (synthetic ID won't resolve)
         if book_type == 'ebook-only':
-            bl_meta = booklore_by_filename.get(book.ebook_filename.lower() if book.ebook_filename else '')
             abs_subtitle = ''
             abs_author = (bl_meta.authors or '') if bl_meta else ''
         else:
@@ -94,17 +101,16 @@ def index():
 
         # Enrich title from Booklore if stored title looks like a filename
         enriched_title = book.abs_title
-        if book.ebook_filename:
-            bl_key = book.ebook_filename.lower()
-            if bl_key in booklore_by_filename:
-                bl_meta_title = booklore_by_filename[bl_key]
-                if bl_meta_title and bl_meta_title.title:
-                    stored_stem = Path(book.ebook_filename).stem
-                    if book.abs_title == stored_stem or book.abs_title == book.ebook_filename:
-                        enriched_title = bl_meta_title.title
-                        # Persist the improved title so it sticks
-                        book.abs_title = bl_meta_title.title
-                        database_service.save_book(book)
+        if bl_meta and bl_meta.title:
+            stems = set()
+            for fn in (book.ebook_filename, getattr(book, 'original_ebook_filename', None)):
+                if fn:
+                    stems.add(Path(fn).stem)
+            if book.abs_title in stems or book.abs_title in (book.ebook_filename, getattr(book, 'original_ebook_filename', None)):
+                enriched_title = bl_meta.title
+                # Persist the improved title so it sticks
+                book.abs_title = bl_meta.title
+                database_service.save_book(book)
 
         mapping = {
             'abs_id': book.abs_id,
