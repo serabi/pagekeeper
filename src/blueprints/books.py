@@ -78,7 +78,7 @@ def match():
             if not kosync_doc_id:
                 return "Could not compute KOSync ID for ebook", 404
             book_id = f"ebook-{kosync_doc_id[:16]}"
-            title = ebook_display_name or Path(ebook_filename).stem
+            title = ebook_display_name or (bl_book.get('title') if bl_book else None) or Path(ebook_filename).stem
             book = Book(
                 abs_id=book_id,
                 abs_title=title,

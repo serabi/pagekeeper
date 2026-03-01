@@ -3,6 +3,7 @@
 import logging
 import os
 import time
+from pathlib import Path
 
 from flask import Blueprint, redirect, render_template, url_for
 
@@ -54,6 +55,12 @@ def index():
     all_hardcover = database_service.get_all_hardcover_details()
     hardcover_by_book = {h.abs_id: h for h in all_hardcover}
 
+    # Fetch Booklore metadata for ebook-only title/author enrichment
+    all_booklore_books = database_service.get_all_booklore_books()
+    booklore_by_filename = {}
+    for bl_book in all_booklore_books:
+        booklore_by_filename[bl_book.filename] = bl_book
+
     integrations = {}
     sync_clients = container.sync_clients()
     for client_name, client in sync_clients.items():
@@ -77,16 +84,31 @@ def index():
 
         # Skip ABS metadata enrichment for ebook-only books (synthetic ID won't resolve)
         if book_type == 'ebook-only':
+            bl_meta = booklore_by_filename.get(book.ebook_filename.lower() if book.ebook_filename else '')
             abs_subtitle = ''
-            abs_author = ''
+            abs_author = (bl_meta.authors or '') if bl_meta else ''
         else:
             _abs_meta = abs_metadata_by_id.get(book.abs_id, {})
             abs_subtitle = _abs_meta.get('subtitle', '')
             abs_author = _abs_meta.get('author', '')
 
+        # Enrich title from Booklore if stored title looks like a filename
+        enriched_title = book.abs_title
+        if book.ebook_filename:
+            bl_key = book.ebook_filename.lower()
+            if bl_key in booklore_by_filename:
+                bl_meta_title = booklore_by_filename[bl_key]
+                if bl_meta_title and bl_meta_title.title:
+                    stored_stem = Path(book.ebook_filename).stem
+                    if book.abs_title == stored_stem or book.abs_title == book.ebook_filename:
+                        enriched_title = bl_meta_title.title
+                        # Persist the improved title so it sticks
+                        book.abs_title = bl_meta_title.title
+                        database_service.save_book(book)
+
         mapping = {
             'abs_id': book.abs_id,
-            'abs_title': book.abs_title,
+            'abs_title': enriched_title,
             'abs_subtitle': abs_subtitle,
             'abs_author': abs_author,
             'ebook_filename': book.ebook_filename,
