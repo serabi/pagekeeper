@@ -1,14 +1,15 @@
+import os
+import sys
 import unittest
 import xml.etree.ElementTree as ET
-from unittest.mock import MagicMock, patch
-import sys
-import os
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 # Add src to path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from src.utils.smil_extractor import SmilExtractor
+
 
 class TestSmilExtractorRobustness(unittest.TestCase):
     def setUp(self):
@@ -45,7 +46,7 @@ class TestSmilExtractorRobustness(unittest.TestCase):
         stripped = self.extractor._strip_namespaces(xml)
         self.assertNotIn('xmlns=', stripped)
         self.assertIn('<smil', stripped)
-        
+
         # Named namespace
         xml = '<smil xmlns:epub="http://www.idpf.org/2007/ops"><epub:text>content</epub:text></smil>'
         stripped = self.extractor._strip_namespaces(xml)
@@ -65,12 +66,12 @@ class TestSmilExtractorRobustness(unittest.TestCase):
         # That strips the TAG prefix. It does NOT strip attribute prefixes.
         # This is expected behavior for _strip_namespaces as implemented.
         # But we should verification that it handles the TAGS correctly.
-        
+
     def test_url_encoded_filenames(self):
         """Verify URL encoded filenames in SMIL are decoded before reading."""
         # Mock ZipFile
         mock_zf = MagicMock()
-        
+
         smil_content = """
         <smil xmlns="http://www.w3.org/ns/SMIL" version="3.0">
             <body>
@@ -81,7 +82,7 @@ class TestSmilExtractorRobustness(unittest.TestCase):
             </body>
         </smil>
         """
-        
+
         # Mock read behavior
         def side_effect(path):
             str_path = str(path).replace('\\', '/')
@@ -92,15 +93,15 @@ class TestSmilExtractorRobustness(unittest.TestCase):
             if 'Chapter%201.html' in str_path: # Encoded path (Should NOT happen if fix works)
                  return b'<html><body id="p1">FAIL_ENCODED</body></html>'
             raise KeyError(f"File not found: {str_path}")
-            
+
         mock_zf.read.side_effect = side_effect
         mock_zf.getinfo.side_effect = lambda x: True
-        
+
         # We need to ensure _get_text_content logic uses the decoded path.
         # Run _process_smil_absolute
         # Note: path passed to process is the SMIL path.
         segments = self.extractor._process_smil_absolute(mock_zf, "OEBPS/chapter1.smil")
-        
+
         self.assertEqual(len(segments), 1)
         self.assertEqual(segments[0]['text'], 'Hello World')
         self.assertNotEqual(segments[0]['text'], 'FAIL_ENCODED')
@@ -110,7 +111,7 @@ class TestSmilExtractorRobustness(unittest.TestCase):
         # This string would cause "unbound prefix" if xmlns:epub is stripped but epub:textref remains
         xml = '<seq epub:textref="foo.html" xmlns:epub="ops">Content</seq>'
         stripped = self.extractor._strip_namespaces(xml)
-        
+
         try:
             root = ET.fromstring(stripped)
             self.assertEqual(root.tag, 'seq')

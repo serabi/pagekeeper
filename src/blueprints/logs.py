@@ -4,9 +4,9 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-from flask import Blueprint, render_template, request, jsonify, redirect, url_for
+from flask import Blueprint, jsonify, redirect, render_template, request, url_for
 
-from src.utils.logging_utils import memory_log_handler, LOG_PATH
+from src.utils.logging_utils import LOG_PATH, memory_log_handler
 
 logger = logging.getLogger(__name__)
 
@@ -33,14 +33,14 @@ def api_logs():
         all_lines = []
 
         if LOG_PATH and LOG_PATH.exists():
-            with open(LOG_PATH, 'r', encoding='utf-8') as f:
+            with open(LOG_PATH, encoding='utf-8') as f:
                 all_lines.extend(f.readlines())
 
         if LOG_PATH and lines_count > len(all_lines):
             for i in range(1, 6):
                 backup_path = Path(str(LOG_PATH) + f'.{i}')
                 if backup_path.exists():
-                    with open(backup_path, 'r', encoding='utf-8') as f:
+                    with open(backup_path, encoding='utf-8') as f:
                         backup_lines = f.readlines()
                         all_lines = backup_lines + all_lines
                         if len(all_lines) >= lines_count:

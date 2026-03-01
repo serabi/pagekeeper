@@ -7,15 +7,15 @@ Create Date: 2026-01-21 11:30:00.000000
 """
 from typing import Sequence, Union
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = 'add_sync_mode_column'
-down_revision: Union[str, Sequence[str], None] = '43be53e3830a'  # Latest migration: add_kosync_documents_table
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = '43be53e3830a'  # Latest migration: add_kosync_documents_table
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:

@@ -5,7 +5,7 @@ Tests for ABSSocketListener debounce logic and KoSync PUT instant sync trigger.
 import threading
 import time
 import unittest
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, PropertyMock, patch
 
 from src.services.abs_socket_listener import ABSSocketListener
 
@@ -246,6 +246,7 @@ class TestKosyncPutInstantSync(unittest.TestCase):
     def test_instant_sync_disabled_skips_debounce(self):
         """PUT should NOT record a debounce event when INSTANT_SYNC_ENABLED=false."""
         import os
+
         import src.api.kosync_server as ks
         from src.db.models import KosyncDocument
 

@@ -10,22 +10,23 @@ UPDATED VERSION with:
 - Dependency Injection for SmilExtractor
 """
 
+import gc
 import json
-import requests
 import logging
+import math
 import os
+import re
 import shutil
 import subprocess
-import gc
-from pathlib import Path
-from typing import Optional
-import math
-import re
 from collections import OrderedDict
+from pathlib import Path
+
+import requests
 
 from src.utils.logging_utils import sanitize_log_data, time_execution
-from src.utils.transcription_providers import get_transcription_provider
 from src.utils.polisher import Polisher
+from src.utils.transcription_providers import get_transcription_provider
+
 # We keep the import for type hinting, but we don't instantiate it directly anymore
 
 logger = logging.getLogger(__name__)
@@ -37,7 +38,7 @@ class AudioTranscriber:
         self.cache_root.mkdir(parents=True, exist_ok=True)
 
         self.model_size = os.environ.get("WHISPER_MODEL", "base")
-        
+
         # GPU/Device configuration
         self.whisper_device = os.environ.get("WHISPER_DEVICE", "auto").lower()
         self.whisper_compute_type = os.environ.get("WHISPER_COMPUTE_TYPE", "auto").lower()
@@ -54,19 +55,19 @@ class AudioTranscriber:
     def _get_whisper_config(self) -> tuple[str, str]:
         """
         Determine the Whisper device and compute type based on configuration.
-        
+
         Returns:
             (device, compute_type) tuple
-        
+
         Configuration options:
             WHISPER_DEVICE: 'auto', 'cpu', 'cuda'
             WHISPER_COMPUTE_TYPE: 'auto', 'int8', 'float16', 'float32'
-        
+
         When 'auto', attempts CUDA detection with graceful fallback to CPU.
         """
         device = self.whisper_device
         compute_type = self.whisper_compute_type
-        
+
         if device == 'auto':
             try:
                 import torch
@@ -79,22 +80,22 @@ class AudioTranscriber:
             except ImportError:
                 device = 'cpu'
                 logger.info("PyTorch not installed, using CPU")
-        
+
         if compute_type == 'auto':
             # float16 for GPU, int8 for CPU (optimal defaults)
             compute_type = 'float16' if device == 'cuda' else 'int8'
-        
+
         logger.info(f"Whisper config: device={device}, compute_type={compute_type}, model={self.model_size}")
         return device, compute_type
 
     def validate_smil(self, smil_segments: list, ebook_text: str) -> tuple[bool, float]:
         """
         Robustly validate SMIL alignment using text similarity.
-        
+
         1. Overlap Check: Basic sanity check.
         2. Content Match: Normalize both texts and calculate similarity ratio.
            This allows SMIL to be slightly off but still accepted if it largely matches.
-        
+
         Returns:
             (is_valid, score) - score is overlap_ratio (if failed overlap) or match_percentage (if passed overlap)
         """
@@ -106,39 +107,39 @@ class AudioTranscriber:
         for i in range(1, len(smil_segments)):
             if smil_segments[i]['start'] < smil_segments[i-1]['end']:
                 overlap_count += 1
-        
+
         overlap_ratio = overlap_count / len(smil_segments)
         if overlap_ratio > 0.15: # 15% threshold
             logger.warning(f"SMIL contains explicit overlaps ({overlap_ratio:.1%}) — Might be invalid")
             # Don't fail just on overlap if text match is perfect (e.g. concurrent audio layers in SMIL)
             # But usually high overlap means bad SMIL.
-        
+
         # 2. Content Validation (The "Swift Rejects" Fix)
         # We need to see if the SMIL text actually plausibly exists in the ebook text.
         # This prevents accepting "Page 1", "Page 2" type SMILs that don't match audio content.
-        
+
         # Construct full SMIL text
         smil_text_raw = " ".join([s['text'] for s in smil_segments])
         smil_norm = self.polisher.normalize(smil_text_raw)
-        
+
         # Normalize a chunk of ebook text (first 50k chars to save time, or fully if small)
         # Ideally, we used the full extracted text passed in.
         ebook_norm = self.polisher.normalize(ebook_text[:max(len(ebook_text), len(smil_text_raw)*2)])
-        
+
         if not smil_norm:
             return False, 0.0
-            
+
         # Using simple token overlap ratio for speed
         # Levenshtein on huge strings is slow.
         smil_tokens = set(smil_norm.split())
         ebook_tokens = set(ebook_norm.split())
-        
+
         common = smil_tokens.intersection(ebook_tokens)
         if not smil_tokens: return False, 0.0
-        
+
         match_ratio = len(common) / len(smil_tokens)
-        
-        # Acceptance Criteria: 
+
+        # Acceptance Criteria:
         # Must have significant text overlap (proving it aligns to THIS book)
         # Threshold is configurable via SMIL_VALIDATION_THRESHOLD (default 60%)
         smil_threshold = float(os.getenv("SMIL_VALIDATION_THRESHOLD", "60")) / 100.0
@@ -148,7 +149,7 @@ class AudioTranscriber:
 
         return True, match_ratio
 
-    def transcribe_from_smil(self, abs_id: str, epub_path: Path, abs_chapters: list, full_book_text: str = None, progress_callback=None) -> Optional[list]:
+    def transcribe_from_smil(self, abs_id: str, epub_path: Path, abs_chapters: list, full_book_text: str = None, progress_callback=None) -> list | None:
         """
         Attempts to extract a transcript directly from the EPUB's SMIL overlay data.
         Returns RAW SEGMENTS (list of dicts) if successful, None otherwise.
@@ -172,7 +173,7 @@ class AudioTranscriber:
                 if expected_duration > 0:
                     transcript_duration = transcript[-1]['end']
                     coverage = transcript_duration / expected_duration
-                    
+
                     # Reject if coverage is less than 85%
                     if coverage < 0.85:
                         logger.warning(f"SMIL REJECTED: Coverage too low ({coverage:.1%}). Expected {expected_duration:.0f}s, got {transcript_duration:.0f}s — Falling back to transcriber")
@@ -182,7 +183,7 @@ class AudioTranscriber:
             # We require full_book_text for this validation.
             if full_book_text:
                 is_valid, score = self.validate_smil(transcript, full_book_text)
-                
+
                 if not is_valid:
                     logger.warning(f"SMIL validation failed: Match score {score:.1%} too low")
                     logger.info(f"Falling back to Whisper transcription for {abs_id}")
@@ -206,7 +207,7 @@ class AudioTranscriber:
             return self._transcript_cache[path_str]
 
         try:
-            with open(path, 'r', encoding='utf-8') as f:
+            with open(path, encoding='utf-8') as f:
                 data = json.load(f)
             self._transcript_cache[path_str] = data
             self._transcript_cache.move_to_end(path_str)
@@ -230,13 +231,13 @@ class AudioTranscriber:
             '-of', 'default=noprint_wrappers=1:nokey=1', str(file_path)
         ]
         try:
-            result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            result = subprocess.run(cmd, check=True, capture_output=True, text=True, timeout=30)
             return float(result.stdout.strip())
-        except (ValueError, subprocess.CalledProcessError) as e:
+        except (ValueError, subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError) as e:
             logger.error(f"Could not determine duration for '{file_path}': {e}")
             return 0.0
 
-    def normalize_audio_to_wav(self, input_path: Path) -> Optional[Path]:
+    def normalize_audio_to_wav(self, input_path: Path) -> Path | None:
         """
         Convert any audio file to a standardized WAV format that faster-whisper can reliably decode.
 
@@ -328,7 +329,7 @@ class AudioTranscriber:
         return new_files if new_files else [file_path]
 
     @time_execution
-    def process_audio(self, abs_id, audio_urls, full_book_text=None, progress_callback=None) -> Optional[list]:
+    def process_audio(self, abs_id, audio_urls, full_book_text=None, progress_callback=None) -> list | None:
         """
         Main transcription pipeline.
         Returns: List of segment dicts [{'start': 0.0, 'end': 1.0, 'text': 'foo'}, ...]
@@ -336,7 +337,7 @@ class AudioTranscriber:
         # Note: We no longer check for 'output_file.exists()' here as the primary cache check.
         # The Orchestrator (SyncManager) should check the DB (AlignmentService) before calling this.
         # However, we CAN check our local cache to resume/skip work if we crashed mid-transcription.
-        
+
         # Check LRU Cache (in-memory) (Optional, mostly for dev speed)
         # if abs_id in self._transcript_cache: ...
 
@@ -345,11 +346,11 @@ class AudioTranscriber:
         book_cache_dir.mkdir(parents=True, exist_ok=True)
 
         progress_file = book_cache_dir / "_progress.json"
-        
+
         # If we have a fully completed progress file, we can just return the result!
         if progress_file.exists():
              try:
-                with open(progress_file, 'r') as f:
+                with open(progress_file) as f:
                     progress = json.load(f)
                 # If it looks like a complete run?
                 if progress.get('chunks_completed', 0) > 0 and progress.get('done', False):
@@ -370,7 +371,7 @@ class AudioTranscriber:
             # Check for partial resumption
             if progress_file.exists():
                 try:
-                    with open(progress_file, 'r') as f:
+                    with open(progress_file) as f:
                         progress = json.load(f)
                     chunks_completed = progress.get('chunks_completed', 0)
                     cumulative_duration = progress.get('cumulative_duration', 0.0)
@@ -393,7 +394,7 @@ class AudioTranscriber:
             if not resuming:
                 # FIX: Check if files exist for ALL parts before skipping
                 existing_files = sorted(book_cache_dir.glob("part_*_split_*.wav"))
-                
+
                 # Check coverage: Do we have at least one file for every index in audio_urls?
                 missing_parts = False
                 for idx in range(len(audio_urls)):
@@ -402,7 +403,7 @@ class AudioTranscriber:
                     if not part_exists:
                         missing_parts = True
                         break
-                
+
                 if existing_files and not missing_parts:
                     logger.info(f"Found valid cache ({len(existing_files)} files covering all {len(audio_urls)} parts). Skipping download.")
                     downloaded_files = list(existing_files)
@@ -410,7 +411,7 @@ class AudioTranscriber:
                     if existing_files:
                         logger.warning(f"Found {len(existing_files)} cached files but some parts are missing. Wiping cache to start fresh")
                         shutil.rmtree(book_cache_dir)
-                    
+
                     # Original logic: Wipe and Start Fresh
                     book_cache_dir.mkdir(parents=True, exist_ok=True)
                     downloaded_files = []
@@ -467,7 +468,7 @@ class AudioTranscriber:
                 try:
                     # Use the transcription provider
                     segments = provider.transcribe(local_path)
-                    
+
                     for segment in segments:
                         full_transcript.append({
                             "start": segment["start"] + cumulative_duration,
@@ -511,43 +512,43 @@ class AudioTranscriber:
     def _is_low_quality_text(self, text: str, min_word_count: int = 3) -> bool:
         """
         Check if transcript segment text is low-quality for sync purposes.
-        
+
         Low quality includes:
         - Very short segments (< min_word_count words)
         - Audio markers like [Music], [Applause], etc.
         - Empty or whitespace-only text
         - Single-word utterances (often "um", "uh", chapter numbers)
-        
+
         Returns:
             True if the text is considered low quality
         """
         if not text:
             return True
-        
+
         cleaned = text.strip()
         if not cleaned:
             return True
-        
+
         # Check for common audio markers (case-insensitive)
-        markers = ['[music]', '[applause]', '[laughter]', '[silence]', '[sound]', 
+        markers = ['[music]', '[applause]', '[laughter]', '[silence]', '[sound]',
                    '[inaudible]', '[noise]', '[background]', '♪', '🎵']
         lower_text = cleaned.lower()
         for marker in markers:
             if marker in lower_text:
                 return True
-        
+
         # Check word count
         words = cleaned.split()
         if len(words) < min_word_count:
             return True
-        
+
         return False
 
     def get_text_at_time(self, transcript_path, timestamp):
         """
         Get text context around a specific timestamp.
         Returns ~800 characters of context for better matching.
-        
+
         Uses look-ahead/look-behind when the exact timestamp falls on
         low-quality content (pauses, music, short utterances).
         """
@@ -635,7 +636,7 @@ class AudioTranscriber:
                 if seg['start'] <= timestamp <= seg['end']:
                     target_idx = i
                     break
-            
+
             # If explicit match not found, find closest
             if target_idx == -1:
                 closest_dist = float('inf')
@@ -648,7 +649,7 @@ class AudioTranscriber:
             if target_idx > 0:
                 prev_text = data[target_idx - 1]['text']
                 return self._clean_text(prev_text)
-            
+
             return None
 
         except Exception as e:
@@ -671,11 +672,11 @@ class AudioTranscriber:
         for seg in transcript_segments:
             words = seg['text'].split()
             if not words: continue
-            
+
             # Simple duration-based word splitting within segment
             seg_duration = seg['end'] - seg['start']
             word_duration = seg_duration / len(words)
-            
+
             for i, w in enumerate(words):
                 transcript_words.append({
                     "word": self._clean_text(w).lower(),
@@ -699,7 +700,7 @@ class AudioTranscriber:
 
         # 3. Identify Anchors (Unique N-grams, N=12)
         N = 12
-        
+
         def get_n_grams(word_list, is_transcript=False):
             grams = {}
             for i in range(len(word_list) - N + 1):
@@ -707,10 +708,10 @@ class AudioTranscriber:
                 for j in range(N):
                     gram_parts.append(word_list[i+j]['word'])
                 gram_text = " ".join(gram_parts)
-                
+
                 if gram_text not in grams:
                     grams[gram_text] = []
-                
+
                 if is_transcript:
                     grams[gram_text].append({
                         "index": i,
@@ -737,7 +738,7 @@ class AudioTranscriber:
 
         # Sort anchors by offset
         anchors.sort(key=lambda x: x['char_offset'])
-        
+
         # Deduplicate/Filter non-monotonic anchors (rare but possible with hallucinations)
         valid_anchors = []
         if anchors:
@@ -745,7 +746,7 @@ class AudioTranscriber:
             for i in range(1, len(anchors)):
                 if anchors[i]['time'] > valid_anchors[-1]['time']:
                     valid_anchors.append(anchors[i])
-        
+
         logger.info(f"Found {len(valid_anchors)} unique anchors for alignment.")
 
         if not valid_anchors:
@@ -754,15 +755,15 @@ class AudioTranscriber:
         # 4. Fill gaps with linear interpolation
         # Result is a list of points (char_offset, timestamp)
         alignment_points = []
-        
+
         # Start of book to first anchor
         if valid_anchors[0]['char_offset'] > 0:
             alignment_points.append({"char": 0, "ts": 0.0})
-        
+
         # Between anchors
         for i in range(len(valid_anchors)):
             alignment_points.append({"char": valid_anchors[i]['char_offset'], "ts": valid_anchors[i]['time']})
-            
+
             if i < len(valid_anchors) - 1:
                 # Add a few points between anchors to smooth things out
                 # or just let the caller interpolate. Let's provide a dense enough map.
@@ -776,7 +777,7 @@ class AudioTranscriber:
         return alignment_points
 
     @time_execution
-    def find_time_for_text(self, transcript_path, search_text, hint_percentage=None, char_offset=None, book_title=None) -> Optional[float]:
+    def find_time_for_text(self, transcript_path, search_text, hint_percentage=None, char_offset=None, book_title=None) -> float | None:
         """
         Find timestamp for given text using windowed fuzzy matching or pre-computed alignment map.
         """
@@ -788,7 +789,7 @@ class AudioTranscriber:
             # The synchronization layer (ABSSyncClient) should use alignment_service.find_time_for_position()
             # for precise char_offset to timestamp conversion.
             # This method now only handles fallback fuzzy text matching for legacy paths.
-            
+
             # Fuzzy text matching (fallback when alignment map not available)
             data = self._get_cached_transcript(transcript_path)
             if not data:

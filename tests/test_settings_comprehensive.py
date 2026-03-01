@@ -1,10 +1,10 @@
 
-import unittest
-import tempfile
 import os
+import sys
+import tempfile
+import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
-import sys
 
 # Add project root to Python path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -16,7 +16,7 @@ class MockContainer:
         self.mock_database_service.get_all_settings.return_value = {}
         self.mock_sync_manager = Mock()
         self.mock_sync_manager.get_abs_title.return_value = 'Test'
-        
+
     def database_service(self): return self.mock_database_service
     def sync_manager(self): return self.mock_sync_manager
     def abs_client(self): return Mock()
@@ -34,13 +34,13 @@ class TestSettingsComprehensive(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp()
         os.environ['DATA_DIR'] = self.temp_dir
-        
+
         self.mock_container = MockContainer()
-        
+
         # Mock database initialization
         def mock_init_db(data_dir):
             return self.mock_container.mock_database_service
-            
+
         import src.db.migration_utils
         self.original_init_db = src.db.migration_utils.initialize_database
         src.db.migration_utils.initialize_database = mock_init_db
@@ -81,15 +81,15 @@ class TestSettingsComprehensive(unittest.TestCase):
     @patch('src.blueprints.settings_bp.restart_server')
     def test_all_bool_toggles(self, mock_restart):
         """Verify EVERY boolean setting can be toggled ON and OFF."""
-        
+
         # 1. Turn EVERYTHING ON
         # Construct form data with all keys present (simulating checked checkboxes)
         data_on = {key: 'on' for key in self.bool_keys}
         # Add a required non-bool field so validation passes if any
         data_on['SYNC_PERIOD_MINS'] = '5'
-        
+
         self.client.post('/settings', data=data_on)
-        
+
         # Verify calls to set_setting with 'true'
         for key in self.bool_keys:
             self.mock_container.mock_database_service.set_setting.assert_any_call(key, 'true')
@@ -103,9 +103,9 @@ class TestSettingsComprehensive(unittest.TestCase):
         data_off = {
             'SYNC_PERIOD_MINS': '5'
         }
-        
+
         self.client.post('/settings', data=data_off)
-        
+
         # Verify calls to set_setting with 'false'
         for key in self.bool_keys:
             self.mock_container.mock_database_service.set_setting.assert_any_call(key, 'false')
@@ -119,9 +119,9 @@ class TestSettingsComprehensive(unittest.TestCase):
             'SYNC_PERIOD_MINS': '15',
             'ABS_SERVER': 'http://test.com'
         }
-        
+
         self.client.post('/settings', data=test_data)
-        
+
         for key, val in test_data.items():
             self.mock_container.mock_database_service.set_setting.assert_any_call(key, val)
 

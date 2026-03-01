@@ -11,11 +11,12 @@ Key features:
 
 """
 
-import os
-import requests
 import logging
-from typing import Optional, Dict
+import os
 from datetime import date
+
+import requests
+
 from src.utils.string_utils import calculate_similarity, clean_book_title
 
 logger = logging.getLogger(__name__)
@@ -60,7 +61,7 @@ class HardcoverClient:
         logger.info(f"Hardcover client connection verified, user id: {user_id}")
         return True
 
-    def query(self, query: str, variables: Dict = None) -> Optional[Dict]:
+    def query(self, query: str, variables: dict = None) -> dict | None:
         if not self.token:
             return None
 
@@ -85,7 +86,7 @@ class HardcoverClient:
 
         return None
 
-    def get_user_id(self) -> Optional[int]:
+    def get_user_id(self) -> int | None:
         if self.user_id:
             return self.user_id
 
@@ -140,7 +141,7 @@ class HardcoverClient:
         for item in cached_contributors:
             if not isinstance(item, dict):
                 continue
-            
+
             # Case 1: {'author': {'name': 'Author Name'}}
             if "author" in item and isinstance(item["author"], dict):
                 name = item["author"].get("name")
@@ -149,10 +150,10 @@ class HardcoverClient:
             # Case 2: {'name': 'Author Name'}
             elif "name" in item:
                 authors.append(item["name"])
-        
+
         return authors
 
-    def search_by_isbn(self, isbn: str) -> Optional[Dict]:
+    def search_by_isbn(self, isbn: str) -> dict | None:
         """Search by ISBN-13 or ISBN-10."""
         isbn_key = "isbn_13" if len(str(isbn)) == 13 else "isbn_10"
 
@@ -182,7 +183,7 @@ class HardcoverClient:
             }
         return None
 
-    def search_by_title_author(self, title: str, author: str = None) -> Optional[Dict]:
+    def search_by_title_author(self, title: str, author: str = None) -> dict | None:
         """Search by title and author, returning the best fuzzy match."""
         # Clean the input title for better matching comparison
         clean_input_title = clean_book_title(title)
@@ -194,9 +195,9 @@ class HardcoverClient:
         query = """
         query ($query: String!) {
             search(
-                query: $query, 
-                per_page: 10, 
-                page: 1, 
+                query: $query,
+                per_page: 10,
+                page: 1,
                 query_type: "Book"
             ) {
                 ids
@@ -299,7 +300,7 @@ class HardcoverClient:
 
         return None
 
-    def get_default_edition(self, book_id: int) -> Optional[Dict]:
+    def get_default_edition(self, book_id: int) -> dict | None:
         """Get default edition for a book. Tries ebook, physical, then audiobook."""
         query = """
         query ($bookId: Int!) {
@@ -332,7 +333,7 @@ class HardcoverClient:
 
         return None
 
-    def get_book_author(self, book_id: int) -> Optional[str]:
+    def get_book_author(self, book_id: int) -> str | None:
         """Fetch the primary author name for a book."""
         query = """
         query ($bookId: Int!) {
@@ -404,7 +405,7 @@ class HardcoverClient:
             return editions
         return []
 
-    def resolve_book_from_input(self, input_str: str) -> Optional[Dict]:
+    def resolve_book_from_input(self, input_str: str) -> dict | None:
         """
         Resolve a Hardcover book from a URL, numeric ID, or slug.
         Returns dict: { 'book_id', 'edition_id', 'pages', 'title' } or None.
@@ -510,7 +511,7 @@ class HardcoverClient:
             "title": book.get("title"),
         }
 
-    def find_user_book(self, book_id: int) -> Optional[Dict]:
+    def find_user_book(self, book_id: int) -> dict | None:
         """Find existing user_book with read info."""
         query = """
         query ($bookId: Int!, $userId: Int!) {
@@ -536,7 +537,7 @@ class HardcoverClient:
 
     def update_status(
         self, book_id: int, status_id: int, edition_id: int = None
-    ) -> Optional[Dict]:
+    ) -> dict | None:
         """
         Create/update user_book status.
 

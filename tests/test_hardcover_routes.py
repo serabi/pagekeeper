@@ -4,10 +4,10 @@ Tests for Hardcover Routes Blueprint.
 Tests the /api/hardcover/resolve endpoint and link-hardcover flow.
 """
 
-import unittest
-import tempfile
 import os
 import sys
+import tempfile
+import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 

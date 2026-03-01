@@ -14,7 +14,8 @@ import time
 import requests
 import socketio
 
-from src.services.write_tracker import record_write, is_own_write as _tracker_is_own_write
+from src.services.write_tracker import is_own_write as _tracker_is_own_write
+from src.services.write_tracker import record_write
 
 logger = logging.getLogger(__name__)
 

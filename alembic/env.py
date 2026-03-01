@@ -1,21 +1,20 @@
-from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-
-from alembic import context
+import os
 
 # Import our models
 import sys
-import os
 from pathlib import Path
+
+from sqlalchemy import engine_from_config, pool
+
+from alembic import context
 
 # [FIX] Enhanced Path Handling for Docker vs Local
 # In Docker with PYTHONPATH="/app", the root is already in path.
 # Locally, we might need to add it.
 # We check if 'src' is importable. If not, we add the parent directory.
 try:
-    import src.db.models
+    import src.db.models  # noqa: F401
 except ImportError:
     # Fallback for local execution where cwd might not be project root
     sys.path.insert(0, str(Path(__file__).parent.parent))

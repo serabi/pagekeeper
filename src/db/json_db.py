@@ -8,10 +8,10 @@ Uses fcntl.flock() for advisory locking on Unix systems.
 """
 
 import json
-import os
 import logging
-from pathlib import Path
+import os
 from contextlib import contextmanager
+from pathlib import Path
 
 # Cross-platform file locking: prefer fcntl (Unix); on Windows try msvcrt; otherwise no-op
 try:
@@ -52,24 +52,24 @@ logger = logging.getLogger(__name__)
 class JsonDB:
     """
     File-locked JSON database handler.
-    
+
     Usage:
         db = JsonDB("/data/mapping_db.json")
         data = db.load(default={"mappings": []})
         data["mappings"].append(new_item)
         db.save(data)
     """
-    
+
     def __init__(self, filepath):
         self.filepath = Path(filepath)
         # Ensure parent directory exists
         self.filepath.parent.mkdir(parents=True, exist_ok=True)
-    
+
     @contextmanager
     def _locked_file(self, mode='r'):
         """
         Context manager that acquires an exclusive lock on the file.
-        
+
         For reads: acquires shared lock (LOCK_SH) - multiple readers OK
         For writes: acquires exclusive lock (LOCK_EX) - single writer only
         """
@@ -91,7 +91,7 @@ class JsonDB:
                 except Exception:
                     pass
                 f.close()
-    
+
     def load(self, default=None):
         """
         Load JSON data with shared (read) lock.
@@ -99,10 +99,10 @@ class JsonDB:
         """
         if default is None:
             default = {}
-        
+
         if not self.filepath.exists():
             return default
-        
+
         try:
             with self._locked_file('r') as f:
                 content = f.read().strip()
@@ -115,7 +115,7 @@ class JsonDB:
         except Exception as e:
             logger.error(f"Failed to load '{self.filepath}': {e}")
             return default
-    
+
     def save(self, data):
         """
         Save JSON data with exclusive (write) lock.
@@ -130,25 +130,25 @@ class JsonDB:
         except Exception as e:
             logger.error(f"Failed to save '{self.filepath}': {e}")
             return False
-    
+
     def update(self, update_func, default=None):
         """
         Atomic read-modify-write operation.
-        
+
         Usage:
             def add_mapping(data):
                 data["mappings"].append(new_item)
                 return data
-            
+
             db.update(add_mapping, default={"mappings": []})
         """
         if default is None:
             default = {}
-        
+
         # We need exclusive lock for the entire operation
         if not self.filepath.exists():
             self.filepath.touch()
-        
+
         try:
             with open(self.filepath, 'r+') as f:
                 _flock(f.fileno(), _LOCK_EX)

@@ -3,17 +3,19 @@
 Unit test for the ABS leading scenario using unittest.TestCase.
 """
 
-import unittest
 import sys
+import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
+
 # Add the project root to the path to resolve module imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from tests.base_sync_test import BaseSyncCycleTestCase
 from src.sync_clients.kosync_sync_client import KoSyncSyncClient
 from src.sync_clients.sync_client_interface import LocatorResult
+from tests.base_sync_test import BaseSyncCycleTestCase
+
 
 class TestABSLeadsSync(BaseSyncCycleTestCase):
     """Test case for ABS leading sync_cycle scenario."""

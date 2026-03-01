@@ -4,19 +4,20 @@ Abstract base class for sync_cycle unit tests.
 Contains common setup and mock configuration to eliminate code duplication.
 """
 
-import unittest
+import json
 import os
 import tempfile
-from pathlib import Path
-import json
-from unittest.mock import Mock
+import unittest
 from abc import ABC, abstractmethod
+from pathlib import Path
+from unittest.mock import Mock
 
-from src.sync_clients.abs_ebook_sync_client import ABSEbookSyncClient
-# Import the LocatorResult class for mocking
-from src.sync_clients.sync_client_interface import LocatorResult
 # Import database models for proper mocking
 from src.db.models import Book, State
+from src.sync_clients.abs_ebook_sync_client import ABSEbookSyncClient
+
+# Import the LocatorResult class for mocking
+from src.sync_clients.sync_client_interface import LocatorResult
 
 
 class BaseSyncCycleTestCase(unittest.TestCase, ABC):
@@ -139,12 +140,12 @@ class BaseSyncCycleTestCase(unittest.TestCase, ABC):
         abs_client.get_progress.return_value = progress_returns['abs_progress']
         abs_client.get_in_progress.return_value = progress_returns['abs_in_progress']
         kosync_client.get_progress.return_value = progress_returns['kosync_progress']
-        
+
         # [UPDATED] Use get_position_details for strict sync
         storyteller_client.get_position_details.return_value = progress_returns['storyteller_progress']
         # Also keep legacy just in case, though strictly not needed
         storyteller_client.get_progress_with_fragment.return_value = progress_returns['storyteller_progress']
-        
+
         booklore_client.get_progress.return_value = progress_returns['booklore_progress']
 
         # Configure update responses
@@ -154,7 +155,7 @@ class BaseSyncCycleTestCase(unittest.TestCase, ABC):
         storyteller_client.update_progress.return_value = True # Compatibility
         booklore_client.update_progress.return_value = True
         abs_client.create_session.return_value = f"test-session-{self.expected_leader.lower()}"
-        
+
         # Configure bulk data mocks (return empty to force individual fetch fallback)
         abs_client.get_all_progress_raw.return_value = {}
         storyteller_client.get_all_positions_bulk.return_value = {}
@@ -199,24 +200,23 @@ class BaseSyncCycleTestCase(unittest.TestCase, ABC):
         # This ensures cross-format normalization picks the correct leader
         transcriber = Mock()
         transcriber.get_text_at_time.return_value = f"Sample text from {self.expected_leader} leader at {self.expected_final_pct * 100:.0f}%"
-        
+
         def find_time_for_text_side_effect(transcript_path, search_text, hint_percentage=None, book_title=None, **kwargs):
             """Return timestamp proportional to hint_percentage for cross-format normalization."""
             if hint_percentage is not None:
                 # Return timestamp proportional to percentage (1000s total duration)
                 return hint_percentage * 1000
             return self.expected_final_pct * 1000
-        
+
         transcriber.find_time_for_text.side_effect = find_time_for_text_side_effect
 
         # Import SyncManager and create with dependency injection
-        from src.sync_manager import SyncManager
-
         # Create sync clients with mocked dependencies
         from src.sync_clients.abs_sync_client import ABSSyncClient
+        from src.sync_clients.booklore_sync_client import BookloreSyncClient
         from src.sync_clients.kosync_sync_client import KoSyncSyncClient
         from src.sync_clients.storyteller_sync_client import StorytellerSyncClient
-        from src.sync_clients.booklore_sync_client import BookloreSyncClient
+        from src.sync_manager import SyncManager
 
         abs_sync_client = ABSSyncClient(
             mocks['abs_client'],
@@ -323,7 +323,6 @@ class BaseSyncCycleTestCase(unittest.TestCase, ABC):
 
     def verify_final_state(self, manager):
         """Verify the final state matches expected percentages."""
-        abs_id = self.test_mapping['abs_id']
 
         # Get final state from database service instead of manager.state
         # Since we're mocking the database service, we can verify that save_state was called

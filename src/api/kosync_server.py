@@ -7,7 +7,6 @@ import time
 from datetime import datetime
 from functools import wraps
 from pathlib import Path
-from typing import Optional
 
 from flask import Blueprint, jsonify, request
 
@@ -244,8 +243,7 @@ def kosync_put_progress():
     Receive progress update from KOReader.
     Stores ALL documents, whether mapped to ABS or not.
     """
-    from flask import current_app
-    from src.db.models import KosyncDocument, Book
+    from src.db.models import Book, KosyncDocument
 
     data = request.json
     if not data:
@@ -271,12 +269,12 @@ def kosync_put_progress():
     # Optional "furthest wins" protection
     furthest_wins = os.environ.get('KOSYNC_FURTHEST_WINS', 'true').lower() == 'true'
     force_update = data.get('force', False)
-    
+
     # Allow rewinds if:
     # 1. Force flag is set (e.g. from SyncManager)
     # 2. Update comes from the SAME device (user moved slider back)
     same_device = (kosync_doc and kosync_doc.device_id == device_id)
-    
+
     if furthest_wins and kosync_doc and kosync_doc.percentage and not force_update and not same_device:
         existing_pct = float(kosync_doc.percentage)
         new_pct = float(percentage)
@@ -327,42 +325,42 @@ def kosync_put_progress():
 
                 def run_auto_discovery(doc_hash_val):
                     try:
-                        from src.db.models import PendingSuggestion
                         import json
-                        
+
+                        from src.db.models import PendingSuggestion
+
                         logger.info(f"KOSync: Scheduled auto-discovery for unmapped document {doc_hash_val[:8]}...")
                         epub_filename = _try_find_epub_by_hash(doc_hash_val)
 
                         if not epub_filename:
                             logger.debug(f"Could not auto-match EPUB for KOSync document '{doc_hash_val[:8]}'")
                             return
-                        
+
                         title = Path(epub_filename).stem
-                        
+
                         # Step 1: Check if there's a matching audiobook in ABS
                         audiobook_matches = []
                         if _container.abs_client().is_configured():
                             try:
                                 audiobooks = _container.abs_client().get_all_audiobooks()
                                 search_term = title
-                                
+
                                 logger.debug(f"Auto-discovery: Searching for audiobook matching '{search_term}' in {len(audiobooks)} audiobooks")
-                                
+
                                 for ab in audiobooks:
                                     media = ab.get('media', {})
                                     metadata = media.get('metadata', {})
                                     ab_title = (metadata.get('title') or ab.get('name', ''))
                                     ab_author = metadata.get('authorName', '')
-                                    
+
                                     # Use same simple matching as UI search (normalized substring)
                                     def normalize(s):
                                         import re
                                         return re.sub(r'[^\w\s]', '', s.lower())
-                                    
+
                                     search_norm = normalize(search_term)
                                     title_norm = normalize(ab_title)
-                                    author_norm = normalize(ab_author)
-                                    
+
                                     if (search_norm and title_norm) and (search_norm in title_norm or title_norm in search_norm):
                                         # Skip books with high progress (>75%) - they're already mostly done
                                         duration = media.get('duration', 0)
@@ -375,11 +373,11 @@ def kosync_put_progress():
                                                     progress_pct = ab_progress.get('progress', 0) * 100
                                             except Exception as e:
                                                 logger.debug(f"Failed to get ABS progress during auto-discovery: {e}")
-                                        
+
                                         if progress_pct > 75:
                                             logger.debug(f"Auto-discovery: Skipping '{ab_title}' - already {progress_pct:.0f}% complete")
                                             continue
-                                        
+
                                         logger.debug(f"Auto-discovery: Matched '{ab_title}' by {ab_author} for search term '{search_term}'")
                                         audiobook_matches.append({
                                             "source": "abs",
@@ -389,10 +387,10 @@ def kosync_put_progress():
                                             "duration": duration,
                                             "confidence": "high"
                                         })
-                                        
+
                             except Exception as e:
                                 logger.warning(f"Error searching ABS for audiobooks: {e}")
-                        
+
                         # Step 2: If audiobook matches found, create a suggestion for user review
                         if audiobook_matches:
                             # Check if suggestion already exists (pending OR dismissed - don't re-suggest)
@@ -411,7 +409,7 @@ def kosync_put_progress():
                                 _database_service.save_pending_suggestion(suggestion)
                                 logger.info(f"Created suggestion for '{title}' - found {len(audiobook_matches)} audiobook match(es)")
                             return
-                        
+
                         # Step 3: No audiobook found - fall back to ebook-only mapping
                         logger.info(f"No audiobook match for '{title}' - creating ebook-only mapping")
                         book_id = f"ebook-{doc_hash_val[:16]}"
@@ -432,7 +430,7 @@ def kosync_put_progress():
 
                         if _manager:
                             _manager.sync_cycle(target_abs_id=book_id)
-                            
+
                     except Exception as e:
                         logger.error(f"Error in auto-discovery background task: {e}")
                     finally:
@@ -493,7 +491,7 @@ def _upsert_kosync_metadata(document_hash, filename, source, mtime=None, booklor
         _database_service.save_kosync_document(doc)
 
 
-def _try_find_epub_by_hash(doc_hash: str) -> Optional[str]:
+def _try_find_epub_by_hash(doc_hash: str) -> str | None:
     """Try to find matching EPUB file for a KOSync document hash."""
     try:
         # Check database for linked document first
@@ -505,7 +503,7 @@ def _try_find_epub_by_hash(doc_hash: str) -> Optional[str]:
                 return doc.filename
             except FileNotFoundError:
                 logger.debug(f"DB suggested '{doc.filename}' but file is missing — Re-scanning")
-        
+
         # Check if valid linked book exists with original filename
         if doc and doc.linked_abs_id:
              book = _database_service.get_book(doc.linked_abs_id)
@@ -536,10 +534,10 @@ def _try_find_epub_by_hash(doc_hash: str) -> Optional[str]:
                             logger.info(f"Matched EPUB via DB filename lookup: {epub_path.name}")
                             return epub_path.name
                         continue
-                
+
                 try:
                     computed_hash = _container.ebook_parser().get_kosync_id(epub_path)
-                    
+
                     # Store/Update in DB
                     if cached_doc:
                         cached_doc.document_hash = computed_hash
@@ -566,9 +564,7 @@ def _try_find_epub_by_hash(doc_hash: str) -> Optional[str]:
                 books = _database_service.get_all_booklore_books()
                 if not books:
                     # If DB cache empty, fetch from API
-                    raw_books = _container.booklore_client().get_all_books()
-                    # (Note: LibraryService syncs this, but we'll do a quick check here if needed)
-                    # For now, let's just assume they might be in the BookloreBook table already if synced.
+                    _container.booklore_client().get_all_books()
                     logger.info("Booklore cache in DB is empty. Consider running a library sync.")
                     # Fallback to direct API call for scan
                     from src.services.library_service import LibraryService
@@ -846,7 +842,7 @@ def _cleanup_cache_for_hash(doc_hash):
         # Identify filename from DB
         doc = _database_service.get_kosync_document(doc_hash)
         filename = doc.filename if doc else None
-        
+
         # Fallback: check linked book
         if not filename and doc and doc.linked_abs_id:
             book = _database_service.get_book(doc.linked_abs_id)
@@ -864,9 +860,9 @@ def _cleanup_cache_for_hash(doc_hash):
                         logger.info(f"Deleted cached EPUB: {filename}")
                     except Exception as e:
                         logger.warning(f"Failed to delete cached file '{filename}': {e}")
-        
-        # Note: We don't delete the KosyncDocument record here, 
-        # as it may contain important progress data. 
+
+        # Note: We don't delete the KosyncDocument record here,
+        # as it may contain important progress data.
         # The filename/mtime/source fields just become stale or are cleared if unlinked.
 
     except Exception as e:

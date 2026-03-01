@@ -2,12 +2,12 @@
 Tests for KOSync server functionality.
 Verifies compatibility with kosync-dotnet behavior.
 """
-import unittest
-import time
-from datetime import datetime, timedelta
-from unittest.mock import MagicMock, patch
 import os
 import shutil
+import time
+import unittest
+from datetime import datetime, timedelta
+from unittest.mock import MagicMock, patch
 
 # Set test environment
 TEST_DIR = '/tmp/test_kosync'
@@ -21,9 +21,9 @@ if os.path.exists(TEST_DIR):
     shutil.rmtree(TEST_DIR)
 os.makedirs(TEST_DIR, exist_ok=True)
 
-from src.db.models import KosyncDocument, Book, State
 # Initialize DB service with test path
 from src.db.database_service import DatabaseService
+from src.db.models import Book, KosyncDocument, State
 
 
 class TestKosyncDocument(unittest.TestCase):

@@ -1,7 +1,7 @@
 # Hardcover Routes - Flask Blueprint for Hardcover API endpoints
 import logging
 
-from flask import Blueprint, jsonify, request, redirect, url_for, flash
+from flask import Blueprint, flash, jsonify, redirect, request, url_for
 
 logger = logging.getLogger(__name__)
 

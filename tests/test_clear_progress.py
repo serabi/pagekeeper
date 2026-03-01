@@ -2,13 +2,13 @@
 Unit test for the clear_progress method in SyncManager.
 """
 
-import unittest
 import logging
 import os
-import tempfile
 import sys
+import tempfile
+import unittest
 from pathlib import Path
-from unittest.mock import Mock, MagicMock
+from unittest.mock import MagicMock, Mock
 
 # Add project root to Python path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -32,9 +32,9 @@ class TestClearProgressMethod(unittest.TestCase):
 
         # Import here to avoid circular imports
         from src.db.database_service import DatabaseService
-        from src.db.models import Book, State, KosyncDocument
+        from src.db.models import Book, KosyncDocument, State
+        from src.sync_clients.sync_client_interface import LocatorResult, SyncResult, UpdateProgressRequest
         from src.sync_manager import SyncManager
-        from src.sync_clients.sync_client_interface import SyncResult, UpdateProgressRequest, LocatorResult
 
         # Create database service
         self.db_service = DatabaseService(self.test_db_path)
@@ -121,7 +121,7 @@ class TestClearProgressMethod(unittest.TestCase):
         # Verify initial state - should have 3 state records
         initial_states = self.db_service.get_states_for_book('test-book-123')
         self.assertEqual(len(initial_states), 3, "Should start with 3 state records")
-        
+
         # Verify KoSync document exists
         self.assertIsNotNone(self.db_service.get_kosync_document('test-hash-123'))
 
@@ -169,7 +169,7 @@ class TestClearProgressMethod(unittest.TestCase):
         self.assertEqual(updated_book.status, 'pending', "Book status should be 'pending' for re-sync")
 
         # Verify sync clients were called correctly
-        from src.sync_clients.sync_client_interface import UpdateProgressRequest, LocatorResult
+        from src.sync_clients.sync_client_interface import LocatorResult, UpdateProgressRequest
 
         for mock_client in [self.mock_kosync_client, self.mock_storyteller_client, self.mock_abs_client]:
             mock_client.update_progress.assert_called_once()

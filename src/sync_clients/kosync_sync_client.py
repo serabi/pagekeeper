@@ -1,12 +1,11 @@
-import os
-from typing import Optional
 import logging
+import os
 import re
 
 from src.api.api_clients import KoSyncClient
 from src.db.models import Book, State
+from src.sync_clients.sync_client_interface import ServiceState, SyncClient, SyncResult, UpdateProgressRequest
 from src.utils.ebook_utils import EbookParser
-from src.sync_clients.sync_client_interface import SyncClient, SyncResult, UpdateProgressRequest, ServiceState
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +31,7 @@ class KoSyncSyncClient(SyncClient):
         """KoSync participates in both audiobook and ebook sync modes."""
         return {'audiobook', 'ebook'}
 
-    def get_service_state(self, book: Book, prev_state: Optional[State], title_snip: str = "", bulk_context: dict = None) -> Optional[ServiceState]:
+    def get_service_state(self, book: Book, prev_state: State | None, title_snip: str = "", bulk_context: dict = None) -> ServiceState | None:
         ko_id = book.kosync_doc_id
         if ko_id is None:
             logger.debug(f"'{title_snip}' KoSync skipped — no kosync_doc_id (audio-only book)")
@@ -60,7 +59,7 @@ class KoSyncSyncClient(SyncClient):
             value_formatter=lambda v: f"{v*100:.4f}%"
         )
 
-    def get_text_from_current_state(self, book: Book, state: ServiceState) -> Optional[str]:
+    def get_text_from_current_state(self, book: Book, state: ServiceState) -> str | None:
         ko_xpath = state.current.get('xpath')
         ko_pct = state.current.get('pct')
         epub = book.ebook_filename
@@ -72,7 +71,7 @@ class KoSyncSyncClient(SyncClient):
             return self.ebook_parser.get_text_at_percentage(epub, ko_pct)
         return None
 
-    def _sanitize_kosync_xpath(self, xpath: Optional[str], pct: float) -> Optional[str]:
+    def _sanitize_kosync_xpath(self, xpath: str | None, pct: float) -> str | None:
         # Clear-progress flows intentionally send no XPath.
         if xpath is None or (isinstance(xpath, str) and not xpath.strip()):
             return "" if pct is not None and pct <= 0 else None

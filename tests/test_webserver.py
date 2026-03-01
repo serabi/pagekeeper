@@ -3,12 +3,12 @@ Proper Flask Integration Test with Dependency Injection.
 No patches needed - clean dependency injection pattern.
 """
 
-import unittest
-import tempfile
 import os
+import sys
+import tempfile
+import unittest
 from pathlib import Path
 from unittest.mock import Mock
-import sys
 
 # Add project root to Python path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -124,7 +124,7 @@ class CleanFlaskIntegrationTest(unittest.TestCase):
 
     def test_dependency_injection_works(self):
         """Verify that dependency injection is working properly."""
-        from src.web_server import manager, database_service, container
+        from src.web_server import container, database_service, manager
 
         # Verify our mocked dependencies are injected
         self.assertIs(container, self.mock_container)
@@ -320,7 +320,7 @@ class CleanFlaskIntegrationTest(unittest.TestCase):
         self.assertIn('mappings', data)
         self.assertEqual(len(data['mappings']), 1)
         self.assertEqual(data['mappings'][0]['abs_id'], 'api-test-book-123')
-        
+
         # Verify percentage scaling (should be 0 because states mock returned empty list)
         # But let's verify structure
         self.assertIn('states', data['mappings'][0])
@@ -365,7 +365,7 @@ class CleanFlaskIntegrationTest(unittest.TestCase):
 
         # Verify mappings
         mapping = data['mappings'][0]
-        
+
         # Check nested states
         self.assertEqual(mapping['states']['kosync']['percentage'], 45.5)
         self.assertEqual(mapping['states']['storyteller']['percentage'], 10.0)
@@ -405,7 +405,7 @@ class CleanFlaskIntegrationTest(unittest.TestCase):
             # Configure get_book_by_kosync_id to return None (no existing book to merge)
             self.mock_database_service.get_book_by_kosync_id.return_value = None
             self.mock_database_service.get_book.return_value = None
-            
+
             # Make HTTP POST request
             response = self.client.post('/match', data={
                 'audiobook_id': 'test-audiobook-123',
@@ -490,13 +490,13 @@ class CleanFlaskIntegrationTest(unittest.TestCase):
             self.assertEqual(response.data, b"Settings Page HTML")
 
             # Verify database was called to load settings
-            # Note: settings() function calls database_service.get_all_settings() implicitly 
+            # Note: settings() function calls database_service.get_all_settings() implicitly
             # via ConfigLoader or os.environ?
-            # Actually, looking at the code, settings() calls database_service.get_all_settings() 
+            # Actually, looking at the code, settings() calls database_service.get_all_settings()
             # only on POST. On GET it just renders template.
             # But the template rendering uses `get_val` helper which reads from os.environ.
             # So we just verify it renders successfully.
-            
+
             mock_render.assert_called_once()
             args, _ = mock_render.call_args
             self.assertEqual(args[0], 'settings.html')

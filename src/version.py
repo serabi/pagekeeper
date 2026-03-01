@@ -1,7 +1,8 @@
-import os
-import requests
 import logging
+import os
 import time
+
+import requests
 
 APP_VERSION = os.environ.get("APP_VERSION", "dev")
 _update_cache = None

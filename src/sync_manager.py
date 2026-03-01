@@ -1,25 +1,30 @@
 import glob
+import json
 import logging
 import os
+import re
 import threading
 import time
 import traceback
-from pathlib import Path
-import schedule
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import re
+from pathlib import Path
 
-import json
+import schedule
+
 from src.api.storyteller_api import StorytellerAPIClient
-from src.db.models import Job
-from src.db.models import State, Book, PendingSuggestion
-from src.sync_clients.sync_client_interface import UpdateProgressRequest, LocatorResult, ServiceState, SyncResult, SyncClient
-# Logging utilities (placed at top to ensure availability during sync)
-from src.utils.logging_utils import sanitize_log_data
-
+from src.db.models import Book, Job, PendingSuggestion, State
 from src.services.alignment_service import AlignmentService
 from src.services.library_service import LibraryService
 from src.services.migration_service import MigrationService
+from src.sync_clients.sync_client_interface import (
+    LocatorResult,
+    SyncClient,
+    SyncResult,
+    UpdateProgressRequest,
+)
+
+# Logging utilities (placed at top to ensure availability during sync)
+from src.utils.logging_utils import sanitize_log_data
 
 # Silence noisy third-party loggers
 for noisy in ('urllib3', 'requests', 'schedule', 'chardet', 'multipart', 'faster_whisper'):
@@ -39,6 +44,7 @@ class SyncManager:
     def __init__(self,
                  abs_client=None,
                  booklore_client=None,
+                 booklore_client_2=None,
                  hardcover_client=None,
                  transcriber=None,
                  ebook_parser=None,
@@ -56,16 +62,18 @@ class SyncManager:
         # Use dependency injection
         self.abs_client = abs_client
         self.booklore_client = booklore_client
+        self.booklore_client_2 = booklore_client_2
+        self._booklore_clients = [c for c in [booklore_client, booklore_client_2] if c]
         self.hardcover_client = hardcover_client
         self.transcriber = transcriber
         self.ebook_parser = ebook_parser
         self.database_service = database_service
         self.storyteller_client = storyteller_client
-        
+
         self.alignment_service = alignment_service
         self.library_service = library_service
         self.migration_service = migration_service
-        
+
         self.data_dir = data_dir
         self.books_dir = books_dir
 
@@ -106,7 +114,7 @@ class SyncManager:
                 logger.info(f"'{client_name}' connection verified")
             except Exception as e:
                 logger.warning(f"'{client_name}' connection failed: {e}")
-        
+
         # Check CWA Integration Status
         if self.library_service and self.library_service.cwa_client:
             cwa = self.library_service.cwa_client
@@ -121,7 +129,7 @@ class SyncManager:
                 logger.debug("CWA not configured (disabled or missing server URL)")
         else:
             logger.debug("CWA not available (library_service or cwa_client missing)")
-        
+
         # Check ABS ebook search capability
         if self.abs_client:
             try:
@@ -157,13 +165,13 @@ class SyncManager:
             # This covers cases where a job finished but status failed to update, or previous restart marked it failed
             candidates = self.database_service.get_books_by_status('processing') + \
                          self.database_service.get_books_by_status('failed_retry_later')
-            
+
             for book in candidates:
                 # Check if alignment actually exists (job finished but status update failed)
                 has_alignment = False
                 if self.alignment_service:
                     has_alignment = bool(self.alignment_service._get_alignment(book.abs_id))
-                
+
                 if has_alignment:
                     # Only log if we are CHANGING status (active is goal)
                     if book.status != 'active':
@@ -194,17 +202,17 @@ class SyncManager:
             return
 
         logger.info("Starting ebook cache cleanup...")
-        
+
         try:
             # 1. Collect all valid filenames from DB
             valid_filenames = set()
-            
+
             # From Active Books
             books = self.database_service.get_all_books()
             for book in books:
                 if book.ebook_filename:
                     valid_filenames.add(book.ebook_filename)
-            
+
             # From Pending Suggestions (covers auto-discovery matches)
             suggestions = self.database_service.get_all_pending_suggestions()
             for suggestion in suggestions:
@@ -216,7 +224,7 @@ class SyncManager:
             # 2. Iterate cache and delete orphans
             deleted_count = 0
             reclaimed_bytes = 0
-            
+
             for file_path in self.epub_cache_dir.iterdir():
                 # Only check files, and ensure we don't delete if it's in our valid list
                 if file_path.is_file() and file_path.name not in valid_filenames:
@@ -228,13 +236,13 @@ class SyncManager:
                         logger.debug(f"   Deleted orphaned cache file: {file_path.name}")
                     except Exception as e:
                         logger.warning(f"   Failed to delete {file_path.name}: {e}")
-            
+
             if deleted_count > 0:
                 mb = reclaimed_bytes / (1024 * 1024)
                 logger.info(f"Cache cleanup complete: Removed {deleted_count} files ({mb:.2f} MB)")
             else:
                 logger.info("Cache is clean (no orphaned files found)")
-                
+
         except Exception as e:
             logger.error(f"Error during cache cleanup: {e}")
 
@@ -251,16 +259,16 @@ class SyncManager:
     def _normalize_for_cross_format_comparison(self, book, config):
         """
         Normalize positions for cross-format comparison (audiobook vs ebook).
-        
+
         When syncing between audiobook (ABS) and ebook clients (KoSync, etc.),
         raw percentages are not comparable because:
         - Audiobook % = time position / total duration
         - Ebook % = text position / total text
-        
+
         These don't correlate linearly. This method converts ebook positions
         to equivalent audiobook timestamps using text-matching, enabling
         accurate comparison of "who is further in the story".
-        
+
         Returns:
             dict: {client_name: normalized_timestamp} for comparison,
                   or None if normalization not possible/needed
@@ -268,54 +276,54 @@ class SyncManager:
         # Check if we have both ABS and ebook clients in the mix
         has_abs = 'ABS' in config
         ebook_clients = [k for k in config.keys() if k != 'ABS']
-        
+
         if not has_abs or not ebook_clients:
             # Same-format sync, raw percentages are fine
             return None
-            
+
         if not book.transcript_file:
             logger.debug(f"'{book.abs_id}' No transcript available for cross-format normalization")
             return None
-            
+
         normalized = {}
-        
+
         # ABS already has timestamp
         abs_state = config['ABS']
         abs_ts = abs_state.current.get('ts', 0)
         normalized['ABS'] = abs_ts
-        
+
         # For each ebook client, get their text and find equivalent timestamp
         for client_name in ebook_clients:
             client = self.sync_clients.get(client_name)
             if not client:
                 continue
-                
+
             client_state = config[client_name]
             client_pct = client_state.current.get('pct', 0)
-            
+
             try:
                 # Get character offset from the ebook position for precise alignment
                 book_path = self.ebook_parser.resolve_book_path(book.ebook_filename)
                 full_text, _ = self.ebook_parser.extract_text_and_map(book_path)
                 total_text_len = len(full_text)
-                
+
                 char_offset = int(client_pct * total_text_len)
                 txt = full_text[max(0, char_offset - 400):min(total_text_len, char_offset + 400)]
-                
+
                 if not txt:
                     logger.debug(f"'{book.abs_id}' Could not get text from '{client_name}' for normalization")
                     continue
-                    
+
                 # Find equivalent timestamp in audiobook using the precise aligner if available
                 if self.alignment_service:
                     ts_for_text = self.alignment_service.get_time_for_text(
-                        book.abs_id, txt, 
+                        book.abs_id, txt,
                         char_offset_hint=char_offset
                     )
                 else:
-                    # Fallback or strict error? 
+                    # Fallback or strict error?
                     ts_for_text = None
-                
+
                 if ts_for_text is not None:
                     normalized[client_name] = ts_for_text
                     logger.debug(f"'{book.abs_id}' Normalized '{client_name}' {client_pct:.2%} -> {ts_for_text:.1f}s")
@@ -323,7 +331,7 @@ class SyncManager:
                     logger.debug(f"'{book.abs_id}' Could not find timestamp for '{client_name}' text")
             except Exception as e:
                 logger.warning(f"'{book.abs_id}' Cross-format normalization failed for '{client_name}': {e}")
-                
+
         # Only return if we successfully normalized at least one ebook client
         if len(normalized) > 1:
             return normalized
@@ -375,7 +383,7 @@ class SyncManager:
         if filesystem_matches:
             logger.info(f"Found EPUB on filesystem: {filesystem_matches[0]}")
             return filesystem_matches[0]
-        
+
         # Check persistent EPUB cache
         self.epub_cache_dir.mkdir(parents=True, exist_ok=True)
         cached_path = self.epub_cache_dir / ebook_filename
@@ -383,25 +391,25 @@ class SyncManager:
             logger.info(f"Found EPUB in cache: '{cached_path}'")
             return cached_path
 
-        # Try to download from Booklore API
-        # Note: We use hasattr to prevent crashes if BookloreClient wasn't updated with these methods yet
-        if hasattr(self.booklore_client, 'is_configured') and self.booklore_client.is_configured():
-            book = self.booklore_client.find_book_by_filename(ebook_filename)
+        # Try to download from Booklore API (check all instances)
+        for bl_client in self._booklore_clients:
+            if not (hasattr(bl_client, 'is_configured') and bl_client.is_configured()):
+                continue
+            book = bl_client.find_book_by_filename(ebook_filename)
             if book:
                 logger.info(f"Downloading EPUB from Booklore: {sanitize_log_data(ebook_filename)}")
-                if hasattr(self.booklore_client, 'download_book'):
-                    content = self.booklore_client.download_book(book['id'])
+                if hasattr(bl_client, 'download_book'):
+                    content = bl_client.download_book(book['id'])
                     if content:
                         with open(cached_path, 'wb') as f:
                             f.write(content)
                         logger.info(f"Downloaded EPUB to cache: '{cached_path}'")
                         return cached_path
                     else:
-                        logger.error(f"Failed to download EPUB content from Booklore")
-            else:
-                logger.error(f"EPUB not found in Booklore: {sanitize_log_data(ebook_filename)}")
-            if not filesystem_matches:
-                logger.error(f"EPUB not found on filesystem and Booklore not configured")
+                        logger.error("Failed to download EPUB content from Booklore")
+
+        if not filesystem_matches and not any(c.is_configured() for c in self._booklore_clients if hasattr(c, 'is_configured')):
+            logger.error("EPUB not found on filesystem and Booklore not configured")
 
         return None
 
@@ -410,7 +418,7 @@ class SyncManager:
         """Check for unmapped books with progress and create suggestions."""
         suggestions_enabled_val = os.environ.get("SUGGESTIONS_ENABLED", "true")
         logger.debug(f"SUGGESTIONS_ENABLED env var is: '{suggestions_enabled_val}'")
-        
+
         if suggestions_enabled_val.lower() != "true":
             return
 
@@ -418,7 +426,7 @@ class SyncManager:
             # optimization: get all mapped IDs to avoid suggesting existing books (even if inactive)
             all_books = self.database_service.get_all_books()
             mapped_ids = {b.abs_id for b in all_books}
-            
+
             logger.debug(f"Checking for suggestions: {len(abs_progress_map)} books with progress, {len(mapped_ids)} already mapped")
 
             for abs_id, item_data in abs_progress_map.items():
@@ -428,7 +436,7 @@ class SyncManager:
 
                 duration = item_data.get('duration', 0)
                 current_time = item_data.get('currentTime', 0)
-                
+
                 if duration > 0:
                     pct = current_time / duration
                     if pct > 0.01:
@@ -436,14 +444,14 @@ class SyncManager:
                         if self.database_service.suggestion_exists(abs_id):
                             logger.debug(f"Skipping {abs_id}: suggestion already exists/dismissed")
                             continue
-                            
+
                         # Check if book is already mostly finished (>70%)
                         # If a user has listened to >70% elsewhere, they probably don't need a suggestion
                         if pct > 0.70:
                              logger.debug(f"Skipping {abs_id}: progress {pct:.1%} > 70% threshold")
                              continue
-                        
-                        logger.debug(f"Creating suggestion for {abs_id} (progress: {pct:.1%})")    
+
+                        logger.debug(f"Creating suggestion for {abs_id} (progress: {pct:.1%})")
                         self._create_suggestion(abs_id, item_data)
                     else:
                         logger.debug(f"Skipping {abs_id}: progress {pct:.1%} below 1% threshold")
@@ -455,7 +463,7 @@ class SyncManager:
     def _create_suggestion(self, abs_id, progress_data):
         """Create a new suggestion for an unmapped book."""
         logger.info(f"Found potential new book for suggestion: '{abs_id}'")
-        
+
         try:
             # 1. Get Details from ABS
             item = self.abs_client.get_item_details(abs_id)
@@ -469,7 +477,7 @@ class SyncManager:
             author = metadata.get('authorName')
             # Use local proxy for cover image to ensure accessibility
             cover = f"/api/cover-proxy/{abs_id}"
-            
+
             # Clean title for better matching (remove text in parens/brackets)
             search_title = title
             if title:
@@ -479,16 +487,18 @@ class SyncManager:
                      logger.debug(f"cleaned title for search: '{title}' -> '{search_title}'")
 
             logger.debug(f"Checking suggestions for '{title}' (Search: '{search_title}', Author: {author})")
-            
+
             matches = []
-            
+
             found_filenames = set()
-            
-            # 2a. Search Booklore
-            if self.booklore_client and self.booklore_client.is_configured():
+
+            # 2a. Search Booklore (all instances)
+            for bl_client in self._booklore_clients:
+                if not (bl_client and bl_client.is_configured()):
+                    continue
                 try:
-                    bl_results = self.booklore_client.search_books(search_title)
-                    logger.debug(f"Booklore returned {len(bl_results)} results for '{search_title}'")
+                    bl_results = bl_client.search_books(search_title)
+                    logger.debug(f"Booklore ({bl_client.source_tag}) returned {len(bl_results)} results for '{search_title}'")
                     for b in bl_results:
                          # Filter for EPUBs
                          fname = b.get('fileName', '')
@@ -498,7 +508,7 @@ class SyncManager:
                                  "source": "booklore",
                                  "title": b.get('title'),
                                  "author": b.get('authors'),
-                                 "filename": fname, # Important for auto-linking
+                                 "filename": fname,
                                  "id": str(b.get('id')),
                                  "confidence": "high" if search_title.lower() in b.get('title', '').lower() else "medium"
                              })
@@ -524,7 +534,7 @@ class SyncManager:
                     logger.debug(f"Filesystem found {fs_matches} matches")
                 except Exception as e:
                     logger.warning(f"Filesystem search failed during suggestion: {e}")
-            
+
             # 2c. ABS Direct Match (check if audiobook item has ebook files)
             if self.abs_client:
                 try:
@@ -543,7 +553,7 @@ class SyncManager:
                             })
                 except Exception as e:
                     logger.warning(f"ABS Direct search failed during suggestion: {e}")
-            
+
             # 2d. CWA Search (Calibre-Web Automated via OPDS)
             if self.library_service and self.library_service.cwa_client and self.library_service.cwa_client.is_configured():
                 try:
@@ -588,7 +598,7 @@ class SyncManager:
                                 })
                 except Exception as e:
                     logger.warning(f"ABS Search failed during suggestion: {e}")
-            
+
             # 3. Save to DB
             if not matches:
                 logger.debug(f"No matches found for '{title}', skipping suggestion creation")
@@ -719,7 +729,7 @@ class SyncManager:
 
             # Fetch item details for acquisition context
             item_details = self.abs_client.get_item_details(abs_id)
-            
+
             epub_path = None
             if self.library_service and item_details:
                 # Try Priority Chain (ABS Direct -> Booklore -> CWA -> ABS Search)
@@ -728,19 +738,19 @@ class SyncManager:
             # Fallback to legacy logic (Local Filesystem / Cache / Booklore Classic)
             if not epub_path:
                 epub_path = self._get_local_epub(ebook_filename)
-                
+
             # [FIX] Ensure epub_path is a Path object (LibraryService returns str)
             if epub_path:
                 epub_path = Path(epub_path)
-                
+
             update_progress(1.0, 1) # Done with step 1
             if not epub_path:
                 raise FileNotFoundError(f"Could not locate or download: {ebook_filename}")
-            
+
             # [FIX] Ensure epub_path is a Path object (acquire_ebook returns str)
             if epub_path:
                 epub_path = Path(epub_path)
-                
+
                 # Eagerly calculate and lock KOSync Hash from the ORIGINAL file
                 # This ensures we match what the user has on their device (KoReader)
                 # regardless of what Storyteller does later.
@@ -763,7 +773,7 @@ class SyncManager:
             transcript_source = None
 
             chapters = item_details.get('media', {}).get('chapters', []) if item_details else []
-            
+
             # Pre-fetch book text for validation/alignment
             # We need this for Validating SMIL OR for Aligning Whisper
             book_text, _ = self.ebook_parser.extract_text_and_map(epub_path)
@@ -781,7 +791,7 @@ class SyncManager:
             # Step 3: Fallback to Whisper (Slow Path) - Only runs if SMIL failed
             if not raw_transcript:
                 logger.info("SMIL extraction skipped/failed, falling back to Whisper transcription")
-                
+
                 audio_files = self.abs_client.get_audio_files(abs_id)
                 raw_transcript = self.transcriber.process_audio(
                     abs_id, audio_files,
@@ -799,21 +809,21 @@ class SyncManager:
 
             # Step 4: Parse EPUB - ebook_parser caches result, so repeating is cheap.
 
-            
+
             # Step 5: Align and Store using AlignmentService
             # This is where we commit the result to the DB
             logger.info(f"Aligning transcript ({transcript_source}) using Anchored Alignment...")
-            
+
             # Update progress to show we are working on alignment (Start of Phase 3 = 90%)
             update_progress(0.1, 3) # 91%
-            
+
             success = self.alignment_service.align_and_store(
                 abs_id, raw_transcript, book_text, chapters
             )
-            
+
             # Alignment done
             update_progress(0.5, 3) # 95%
-            
+
             if not success:
                 raise Exception("Alignment failed to generate valid map.")
 
@@ -830,10 +840,10 @@ class SyncManager:
             # [FIX] Save the filename so cache cleanup knows this file belongs to a book
             if epub_path:
                 new_filename = epub_path.name
-                
+
                 # Update the active filename to the one we just used/downloaded
                 book.ebook_filename = new_filename
-            
+
             book.status = 'active'
             self.database_service.save_book(book)
 
@@ -872,7 +882,7 @@ class SyncManager:
             if new_retry_count >= max_retries:
                 book.status = 'failed_permanent'
                 logger.warning(f"{sanitize_log_data(abs_title)}: Max retries exceeded")
-                
+
                 # Clean up audio cache on permanent failure to free disk space
                 if self.data_dir:
                     import shutil
@@ -891,30 +901,37 @@ class SyncManager:
     def _has_significant_delta(self, client_name, config, book):
         """
         Check if a client has a significant delta using hybrid time/percentage logic.
-        
+
         Returns True if:
         - Percentage delta > 0.05% (catches large jumps)
         - OR absolute time delta > 30 seconds (catches small but real progress)
-        
+
         This prevents:
         - API noise on short books (0.3s changes don't count)
         - API noise on long books (BookLore's 20s rounding errors filtered)
         - Missing real progress on all books (30s+ changes do count)
+        - A newly-added client reporting 0% from being elected leader
         """
-        delta_pct = config[client_name].delta
-        
+        state = config[client_name]
+        delta_pct = state.delta
+        current_pct = state.current.get('pct', 0) or 0
+
+        # Reject backward jumps to 0% — this is a new/reset client, not real reading
+        if current_pct < 0.001 and state.previous_pct > 0.01:
+            return False
+
         # Quick check: percentage threshold
         MIN_PCT_THRESHOLD = 0.0005  # 0.05%
         if delta_pct > MIN_PCT_THRESHOLD:
             return True
-        
+
         # Time-based check (if we have duration info)
         if hasattr(book, 'duration') and book.duration:
             delta_seconds = delta_pct * book.duration
             MIN_TIME_THRESHOLD = 30  # seconds
             if delta_seconds > MIN_TIME_THRESHOLD:
                 return True
-                
+
         return False
 
     def _determine_leader(self, config, book, abs_id, title_snip):
@@ -923,7 +940,7 @@ class SyncManager:
         1. Most recent change (delta > threshold)
         2. Furthest progress (fallback)
         3. Cross-format normalization (if needed)
-        
+
         Returns:
             tuple: (leader_client_name, leader_percentage) or (None, None)
         """
@@ -958,10 +975,10 @@ class SyncManager:
             # Multiple clients changed or this is a discrepancy resolution
             # Use "furthest wins" logic among changed clients (or all if none changed)
             candidates = clients_with_delta if clients_with_delta else vals
-            
+
             # For cross-format sync (audiobook vs ebook), use normalized timestamps
             normalized_positions = self._normalize_for_cross_format_comparison(book, config)
-            
+
             if normalized_positions and len(normalized_positions) > 1:
                 # Filter normalized positions to only include candidates
                 normalized_candidates = {k: v for k, v in normalized_positions.items() if k in candidates}
@@ -980,7 +997,7 @@ class SyncManager:
                 leader = max(candidates, key=candidates.get)
                 leader_pct = vals[leader]
                 logger.info(f"'{abs_id}' '{title_snip}' {leader} leads at {config[leader].value_formatter(leader_pct)}")
-                
+
         return leader, leader_pct
 
     def sync_cycle(self, target_abs_id=None):
@@ -1021,12 +1038,12 @@ class SyncManager:
         if storyteller_client and hasattr(storyteller_client, 'storyteller_client'):
             if hasattr(storyteller_client.storyteller_client, 'clear_cache'):
                 storyteller_client.storyteller_client.clear_cache()
-                
+
         # Refresh Library Metadata (Booklore) — throttle to once per 15 minutes
         if self.library_service and (time.time() - self._last_library_sync > 900):
             self.library_service.sync_library_books()
             self._last_library_sync = time.time()
-    
+
         # Get active books directly from database service
         active_books = []
         if target_abs_id:
@@ -1051,11 +1068,11 @@ class SyncManager:
                 if bulk_data:
                     bulk_states_per_client[client_name] = bulk_data
                     logger.debug(f"Pre-fetched bulk state for {client_name}")
-            
+
             # Check for suggestions
             if 'ABS' in bulk_states_per_client:
                 self.check_for_suggestions(bulk_states_per_client['ABS'], active_books)
-                
+
         # Main sync loop - process each active book
         for book in active_books:
             abs_id = book.abs_id
@@ -1176,10 +1193,10 @@ class SyncManager:
                 # We typically skip if nothing changed, BUT if there is a significant discrepancy
                 # between clients (e.g. from a fresh push to DB), we must proceed to sync them.
                 deltas_zero = all(round(cfg.delta, 4) == 0 for cfg in config.values())
-                
+
                 # Check if any client has a significant delta (using time-based threshold)
                 any_significant_delta = any(
-                    self._has_significant_delta(k, config, book) 
+                    self._has_significant_delta(k, config, book)
                     for k in config.keys()
                 )
 
@@ -1187,7 +1204,7 @@ class SyncManager:
                 if deltas_zero and not significant_diff:
                     logger.debug(f"'{abs_id}' '{title_snip}' No changes and clients in sync, skipping")
                     continue
-                
+
                 # If there's a discrepancy but no client actually changed, skip
                 # (discrepancy will resolve next time someone reads)
                 # Exception: if character delta triggered, we have a real change
@@ -1237,7 +1254,7 @@ class SyncManager:
 
                 # Status block - show only changed lines
                 status_lines = []
-                for key, cfg in config.items():
+                for _key, cfg in config.items():
                     if cfg.delta > 0:
                         prev = cfg.previous_pct
                         curr = cfg.current.get('pct')
@@ -1251,8 +1268,6 @@ class SyncManager:
                 leader, leader_pct = self._determine_leader(config, book, abs_id, title_snip)
                 if not leader:
                     continue
-
-                leader_formatter = config[leader].value_formatter
 
                 leader_client = self.sync_clients[leader]
                 leader_state = config[leader]
@@ -1415,7 +1430,7 @@ class SyncManager:
 
                 # [CHANGED LOGIC] Handle book status update based on alignment presence and user setting
                 smart_reset = os.getenv('REPROCESS_ON_CLEAR_IF_NO_ALIGNMENT', 'true').lower() == 'true'
-                
+
                 if smart_reset:
                     # Check if we already have a valid alignment map in the DB
                     has_alignment = False

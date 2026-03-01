@@ -1,18 +1,18 @@
-import os
-from typing import Optional
 import logging
+import os
 
 from src.api.booklore_client import BookloreClient
 from src.db.models import Book, State
+from src.sync_clients.sync_client_interface import ServiceState, SyncClient, SyncResult, UpdateProgressRequest
 from src.utils.ebook_utils import EbookParser
-from src.sync_clients.sync_client_interface import SyncClient, SyncResult, UpdateProgressRequest, ServiceState
 
 logger = logging.getLogger(__name__)
 
 class BookloreSyncClient(SyncClient):
-    def __init__(self, booklore_client: BookloreClient, ebook_parser: EbookParser):
+    def __init__(self, booklore_client: BookloreClient, ebook_parser: EbookParser, client_name: str = 'BookLore'):
         super().__init__(ebook_parser)
         self.booklore_client = booklore_client
+        self.client_name = client_name
         self.delta_kosync_thresh = float(os.getenv("SYNC_DELTA_KOSYNC_PERCENT", 1)) / 100.0
 
     def is_configured(self) -> bool:
@@ -25,7 +25,7 @@ class BookloreSyncClient(SyncClient):
         """Booklore participates in both audiobook and ebook sync modes."""
         return {'audiobook', 'ebook'}
 
-    def get_service_state(self, book: Book, prev_state: Optional[State], title_snip: str = "", bulk_context: dict = None) -> Optional[ServiceState]:
+    def get_service_state(self, book: Book, prev_state: State | None, title_snip: str = "", bulk_context: dict = None) -> ServiceState | None:
         # FIX: Use original filename if available (Tri-Link), otherwise standard filename
         epub = book.original_ebook_filename or book.ebook_filename
         bl_pct, _ = self.booklore_client.get_progress(epub)
@@ -45,11 +45,11 @@ class BookloreSyncClient(SyncClient):
             delta=delta,
             threshold=self.delta_kosync_thresh,
             is_configured=self.booklore_client.is_configured(),
-            display=("BookLore", "{prev:.4%} -> {curr:.4%}"),
+            display=(self.client_name, "{prev:.4%} -> {curr:.4%}"),
             value_formatter=lambda v: f"{v*100:.4f}%"
         )
 
-    def get_text_from_current_state(self, book: Book, state: ServiceState) -> Optional[str]:
+    def get_text_from_current_state(self, book: Book, state: ServiceState) -> str | None:
         bl_pct = state.current.get('pct')
         epub = book.ebook_filename
         if bl_pct is not None and epub and self.ebook_parser:
@@ -64,7 +64,7 @@ class BookloreSyncClient(SyncClient):
         if success:
             try:
                 from src.services.write_tracker import record_write
-                record_write('BookLore', book.abs_id)
+                record_write(self.client_name, book.abs_id)
             except ImportError:
                 pass
         updated_state = {

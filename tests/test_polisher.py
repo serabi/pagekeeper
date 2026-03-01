@@ -1,5 +1,7 @@
 import pytest
+
 from src.utils.polisher import Polisher
+
 
 @pytest.fixture
 def polisher():
@@ -14,7 +16,7 @@ def test_normalize_roman(polisher):
     # Depending on implementation, checking if roman numerals are handled or ignored
     # Polisher.normalize currently does NOT enforce roman conversion unless enabled
     # But let's check basic text
-    assert polisher.normalize("Chapter IV") == "chapter iv" 
+    assert polisher.normalize("Chapter IV") == "chapter iv"
     # If using text_to_digits fallback
     assert polisher.normalize("Chapter One") == "chapter 1"
 
@@ -35,9 +37,9 @@ def test_rebuild_fragmented_sentences(polisher):
         {'start': 1.0, 'end': 2.0, 'text': "part."},
         {'start': 2.0, 'end': 3.0, 'text': "Second part."}
     ]
-    
+
     rebuilt = polisher.rebuild_fragmented_sentences(segments, ebook_text)
-    
+
     assert len(rebuilt) == 2
     assert rebuilt[0]['text'] == "First part."
     assert rebuilt[1]['text'] == "Second part."

@@ -1,15 +1,13 @@
 import json
 import logging
 import os
-from typing import Optional
+from pathlib import Path
 
 from src.api.api_clients import ABSClient
 from src.db.models import Book, State
-from src.sync_clients.sync_client_interface import SyncClient, SyncResult, UpdateProgressRequest, ServiceState
-from src.utils.ebook_utils import EbookParser
+from src.sync_clients.sync_client_interface import ServiceState, SyncClient, SyncResult, UpdateProgressRequest
 from src.utils.ebook_utils import EbookParser
 from src.utils.transcriber import AudioTranscriber
-from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +35,7 @@ class ABSSyncClient(SyncClient):
         """ABS audiobook client only syncs audiobooks."""
         return {'audiobook'}
 
-    def get_service_state(self, book: Book, prev_state: Optional[State], title_snip: str = "", bulk_context: dict = None) -> Optional[ServiceState]:
+    def get_service_state(self, book: Book, prev_state: State | None, title_snip: str = "", bulk_context: dict = None) -> ServiceState | None:
         abs_id = book.abs_id
 
         # Use bulk context if available, otherwise fetch individually
@@ -58,11 +56,11 @@ class ABSSyncClient(SyncClient):
         if abs_ts > 0 and abs_pct is None:
             # We lower this to debug to avoid spam if book is offline/unprocessed
             pass
-        
+
         # Get previous ABS state values
         prev_abs_ts = prev_state.timestamp if prev_state else 0
         prev_abs_pct = prev_state.percentage if prev_state else 0
-        
+
         delta = abs(abs_ts - prev_abs_ts) if abs_ts and prev_abs_ts else abs(abs_ts - prev_abs_ts) if abs_ts else 0
 
         return ServiceState(
@@ -81,12 +79,12 @@ class ABSSyncClient(SyncClient):
         # 1. Try Book model duration (Golden Source)
         if book.duration and book.duration > 0:
             return min(max(abs_seconds / book.duration, 0.0), 1.0)
-            
+
         # 2. Try Transcript file (Legacy fallback)
         transcript_path = book.transcript_file
         if not transcript_path:
             return None
-            
+
         if transcript_path == "DB_MANAGED":
              if self.alignment_service:
                  dur = self.alignment_service.get_book_duration(book.abs_id)
@@ -99,8 +97,8 @@ class ABSSyncClient(SyncClient):
             if not os.path.exists(transcript_path):
                 # If missing, we can't get duration from it.
                 return None
-                
-            with open(transcript_path, 'r') as f:
+
+            with open(transcript_path) as f:
                 data = json.load(f)
                 dur = data[-1]['end'] if isinstance(data, list) else data.get('duration', 0)
                 return min(max(abs_seconds / dur, 0.0), 1.0) if dur > 0 else None
@@ -108,11 +106,11 @@ class ABSSyncClient(SyncClient):
             logger.debug(f"Failed to parse transcript for duration calculation: {e}")
             return None
 
-    def get_text_from_current_state(self, book: Book, state: ServiceState) -> Optional[str]:
+    def get_text_from_current_state(self, book: Book, state: ServiceState) -> str | None:
         abs_ts = state.current.get('ts')
         if not book or abs_ts is None:
             return None
-            
+
         # DB Managed (Unified Architecture)
         if book.transcript_file == "DB_MANAGED" and self.alignment_service:
             # Inverse lookup: Time -> Char -> Text
@@ -149,12 +147,12 @@ class ABSSyncClient(SyncClient):
 
         return self.transcriber.get_text_at_time(book.transcript_file, abs_ts)
 
-    def get_fallback_text(self, book: Book, state: ServiceState) -> Optional[str]:
+    def get_fallback_text(self, book: Book, state: ServiceState) -> str | None:
         # Similar logic for fallback
         abs_ts = state.current.get('ts')
         if not book or abs_ts is None:
             return None
-            
+
         if book.transcript_file == "DB_MANAGED" and self.alignment_service:
              # Just look a bit earlier?
              earlier_ts = max(0, abs_ts - 10)
@@ -175,20 +173,20 @@ class ABSSyncClient(SyncClient):
 
         # [FIX] Route DB_MANAGED books to AlignmentService, Legacy books to Transcriber
         ts_for_text = None
-        
+
         if book.transcript_file == "DB_MANAGED" and self.alignment_service:
             # New Path: Use Database Alignment
             # We use the match_index (character offset) found by the EbookParser
             char_index = request.locator_result.match_index
             if char_index is not None:
                 ts_for_text = self.alignment_service.get_time_for_text(
-                    book.abs_id, 
-                    request.txt, 
+                    book.abs_id,
+                    request.txt,
                     char_offset_hint=char_index
                 )
             else:
                 logger.debug(f"'{book_title}' Alignment lookup skipped: No character index provided in request")
-                
+
         elif book.transcript_file and book.transcript_file != "DB_MANAGED":
             # Legacy Path: Use JSON File
             ts_for_text = self.transcriber.find_time_for_text(

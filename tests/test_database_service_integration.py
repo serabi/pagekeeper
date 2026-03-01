@@ -2,13 +2,13 @@
 Unit tests for the database service, including migration testing.
 """
 
-import unittest
+import json
 import logging
 import os
-import json
+import sys
 import tempfile
 import time
-import sys
+import unittest
 from pathlib import Path
 
 # Add project root to Python path
@@ -32,8 +32,8 @@ class TestDatabaseServiceIntegration(unittest.TestCase):
         self.test_db_path = str(Path(self.temp_dir) / 'test_database.db')
 
         # Import here to avoid circular imports
-        from src.db.database_service import DatabaseService, DatabaseMigrator
-        from src.db.models import Book, State, Job, HardcoverDetails
+        from src.db.database_service import DatabaseMigrator, DatabaseService
+        from src.db.models import Book, HardcoverDetails, Job, State
 
         self.DatabaseService = DatabaseService
         self.DatabaseMigrator = DatabaseMigrator
@@ -50,7 +50,7 @@ class TestDatabaseServiceIntegration(unittest.TestCase):
         # Close database connection to release file lock on Windows
         if hasattr(self, 'db_service') and hasattr(self.db_service, 'db_manager'):
             self.db_service.db_manager.close()
-            
+
         import shutil
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
@@ -552,12 +552,12 @@ class TestDatabaseServiceIntegration(unittest.TestCase):
     def test_clear_stale_suggestions(self):
         """Test clearing suggestions that are not for active books."""
         from src.db.models import PendingSuggestion
-        
+
         # 1. Setup Active Books
         active_id = 'active-book-id'
         book = self.Book(abs_id=active_id, abs_title='Active Book', status='active')
         self.db_service.save_book(book)
-        
+
         # 2. Setup Suggestions
         # Suggestion for the active book (should be preserved)
         s1 = PendingSuggestion(
@@ -567,7 +567,7 @@ class TestDatabaseServiceIntegration(unittest.TestCase):
             matches_json='[]'
         )
         self.db_service.save_pending_suggestion(s1)
-        
+
         # Suggestion for a non-existent book (should be cleared)
         stale_id = 'stale-book-id'
         s2 = PendingSuggestion(
@@ -577,15 +577,15 @@ class TestDatabaseServiceIntegration(unittest.TestCase):
             matches_json='[]'
         )
         self.db_service.save_pending_suggestion(s2)
-        
+
         # Verify initial state
         all_suggestions = self.db_service.get_all_pending_suggestions()
         self.assertEqual(len(all_suggestions), 2)
-        
+
         # 3. Clear Stale Suggestions
         cleared_count = self.db_service.clear_stale_suggestions()
         self.assertEqual(cleared_count, 1)
-        
+
         # 4. Verify Final State
         remaining = self.db_service.get_all_pending_suggestions()
         self.assertEqual(len(remaining), 1)
@@ -756,6 +756,7 @@ class TestLegacyDatabaseMigration(unittest.TestCase):
         Previously this would crash with: OperationalError: table books already exists
         """
         import sqlite3
+
         from src.db.database_service import DatabaseService
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -786,6 +787,7 @@ class TestLegacyDatabaseMigration(unittest.TestCase):
         The initial revision must NOT be re-run as a migration.
         """
         import sqlite3
+
         from src.db.database_service import DatabaseService
 
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -815,6 +817,7 @@ class TestLegacyDatabaseMigration(unittest.TestCase):
         The stamp+upgrade process must never destroy existing rows.
         """
         import sqlite3
+
         from src.db.database_service import DatabaseService
 
         with tempfile.TemporaryDirectory() as temp_dir:

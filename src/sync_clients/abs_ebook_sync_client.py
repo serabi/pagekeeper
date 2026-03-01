@@ -1,10 +1,9 @@
 import logging
 import os
-from typing import Optional
 
 from src.api.api_clients import ABSClient
 from src.db.models import Book, State
-from src.sync_clients.sync_client_interface import SyncClient, SyncResult, UpdateProgressRequest, ServiceState
+from src.sync_clients.sync_client_interface import ServiceState, SyncClient, SyncResult, UpdateProgressRequest
 from src.utils.ebook_utils import EbookParser
 
 logger = logging.getLogger(__name__)
@@ -29,7 +28,7 @@ class ABSEbookSyncClient(SyncClient):
         """ABS ebook client only syncs ebooks."""
         return {'ebook'}
 
-    def get_service_state(self, book: Book, prev_state: Optional[State], title_snip: str = "", bulk_context: dict = None) -> Optional[ServiceState]:
+    def get_service_state(self, book: Book, prev_state: State | None, title_snip: str = "", bulk_context: dict = None) -> ServiceState | None:
         # [FIX] Prefer specific ebook item ID if it exists (Tri-Link), otherwise fallback to primary ID (Standard)
         target_id = book.abs_ebook_item_id if book.abs_ebook_item_id else book.abs_id
         response = self.abs_client.get_progress(target_id)
@@ -56,7 +55,7 @@ class ABSEbookSyncClient(SyncClient):
             value_formatter=lambda v: f"{v*100:.4f}%"
         )
 
-    def get_text_from_current_state(self, book: Book, state: ServiceState) -> Optional[str]:
+    def get_text_from_current_state(self, book: Book, state: ServiceState) -> str | None:
         cfi = state.current.get('cfi')
         pct = state.current.get('pct')
         epub = book.ebook_filename

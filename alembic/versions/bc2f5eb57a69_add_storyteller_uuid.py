@@ -1,14 +1,13 @@
 """add_storyteller_uuid
 
 Revision ID: bc2f5eb57a69
-Revises: 
+Revises:
 Create Date: 2026-02-07 08:58:34.123456
 
 """
-from alembic import op
 import sqlalchemy as sa
 
-
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = 'bc2f5eb57a69'

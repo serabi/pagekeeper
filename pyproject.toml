@@ -1,0 +1,29 @@
+[project]
+name = "abs-kosync-stitch"
+requires-python = ">=3.11"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["F", "E", "W", "I", "UP", "B"]
+ignore = [
+    "E501",   # Line too long — many log/debug strings naturally exceed 120
+    "E711",   # Comparison to None — SQLAlchemy uses `column == None` for filters
+    "E712",   # Comparison to True/False — SQLAlchemy filter patterns
+    "E741",   # Ambiguous variable name
+    "B008",   # Function call in default argument — dependency-injector patterns
+    "B905",   # zip() without strict=
+    "UP035",  # Deprecated typing imports — not worth churn
+    "E701",   # Multiple statements on one line — codebase uses `if x: return` style
+]
+fixable = ["ALL"]
+
+[tool.ruff.lint.per-file-ignores]
+"alembic/versions/*.py" = ["F401", "E501"]
+"tests/*.py" = ["F401", "F811", "E402"]
+"src/db/json_db.py" = ["F401"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]

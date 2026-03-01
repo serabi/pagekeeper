@@ -10,12 +10,12 @@ Tests cover:
 5. StorytellerAPIClient: Search and Download methods
 """
 
-import unittest
-import sys
 import os
+import sys
 import tempfile
+import unittest
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import MagicMock, Mock, patch
 
 # Add the project root to the path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -27,25 +27,25 @@ class TestBookModelStorytellerUUID(unittest.TestCase):
     def test_book_model_has_storyteller_uuid(self):
         """Verify the Book model has the storyteller_uuid attribute."""
         from src.db.models import Book
-        
+
         book = Book(
             abs_id='test-abs-123',
             abs_title='Test Book',
             ebook_filename='test.epub',
             storyteller_uuid='abc-123-def-456'
         )
-        
+
         self.assertEqual(book.storyteller_uuid, 'abc-123-def-456')
-    
+
     def test_book_model_storyteller_uuid_nullable(self):
         """Verify storyteller_uuid can be None."""
         from src.db.models import Book
-        
+
         book = Book(
             abs_id='test-abs-124',
             abs_title='Test Book Without UUID'
         )
-        
+
         self.assertIsNone(book.storyteller_uuid)
 
 
@@ -56,61 +56,61 @@ class TestStorytellerSyncClientUUID(unittest.TestCase):
         """Set up test fixtures."""
         self.mock_storyteller_client = Mock()
         self.mock_ebook_parser = Mock()
-        
+
     def test_update_progress_uses_uuid_when_available(self):
         """When book has storyteller_uuid, use update_position instead of update_progress."""
-        from src.sync_clients.storyteller_sync_client import StorytellerSyncClient
-        from src.sync_clients.sync_client_interface import UpdateProgressRequest, LocatorResult
         from src.db.models import Book
-        
+        from src.sync_clients.storyteller_sync_client import StorytellerSyncClient
+        from src.sync_clients.sync_client_interface import LocatorResult, UpdateProgressRequest
+
         # Setup
         self.mock_storyteller_client.update_position = Mock(return_value=True)
         self.mock_storyteller_client.update_progress = Mock(return_value=True)
-        
+
         client = StorytellerSyncClient(self.mock_storyteller_client, self.mock_ebook_parser)
-        
+
         book = Book(
             abs_id='test-abs-uuid',
             ebook_filename='test.epub',
             storyteller_uuid='st-uuid-12345'
         )
-        
+
         locator = LocatorResult(percentage=0.5, href='chapter1.html')
         request = UpdateProgressRequest(locator_result=locator, txt='Test text')
-        
+
         # Execute
-        result = client.update_progress(book, request)
-        
+        client.update_progress(book, request)
+
         # Verify: Should call update_position with UUID, not update_progress
         self.mock_storyteller_client.update_position.assert_called_once()
         call_args = self.mock_storyteller_client.update_position.call_args
         self.assertEqual(call_args[0][0], 'st-uuid-12345')  # UUID
         self.mock_storyteller_client.update_progress.assert_not_called()
-    
+
     def test_update_progress_skips_when_no_uuid(self):
         """When book has no storyteller_uuid, do not update (Strict Mode)."""
-        from src.sync_clients.storyteller_sync_client import StorytellerSyncClient
-        from src.sync_clients.sync_client_interface import UpdateProgressRequest, LocatorResult
         from src.db.models import Book
-        
+        from src.sync_clients.storyteller_sync_client import StorytellerSyncClient
+        from src.sync_clients.sync_client_interface import LocatorResult, UpdateProgressRequest
+
         # Setup
         self.mock_storyteller_client.update_position = Mock(return_value=True)
         self.mock_storyteller_client.update_progress = Mock(return_value=True)
-        
+
         client = StorytellerSyncClient(self.mock_storyteller_client, self.mock_ebook_parser)
-        
+
         book = Book(
             abs_id='test-abs-no-uuid',
             ebook_filename='test.epub',
             storyteller_uuid=None  # No UUID
         )
-        
+
         locator = LocatorResult(percentage=0.5, href='chapter1.html')
         request = UpdateProgressRequest(locator_result=locator, txt='Test text')
-        
+
         # Execute
         result = client.update_progress(book, request)
-        
+
         # Verify: Should NOT call update_progress or update_position (Strict Mode)
         self.mock_storyteller_client.update_progress.assert_not_called()
         self.mock_storyteller_client.update_position.assert_not_called()
@@ -128,9 +128,9 @@ class TestStorytellerAPIClientSearch(unittest.TestCase):
     def test_search_books_filters_by_title(self):
         """Search should filter books by title."""
         from src.api.storyteller_api import StorytellerAPIClient
-        
+
         client = StorytellerAPIClient()
-        
+
         # Mock the API response
         mock_response = Mock()
         mock_response.status_code = 200
@@ -139,10 +139,10 @@ class TestStorytellerAPIClientSearch(unittest.TestCase):
             {'uuid': 'uuid-2', 'title': 'Another Story', 'authors': [{'name': 'Author Two'}]},
             {'uuid': 'uuid-3', 'title': 'Great Adventures', 'authors': [{'name': 'Author Three'}]}
         ]
-        
+
         with patch.object(client, '_make_request', return_value=mock_response):
             results = client.search_books('great')
-        
+
         # Should find 2 books with 'great' in title
         self.assertEqual(len(results), 2)
         self.assertEqual(results[0]['uuid'], 'uuid-1')
@@ -170,30 +170,30 @@ class TestLegacyLinkDetection(unittest.TestCase):
         """A book with Storyteller state but no UUID should be flagged as legacy."""
         # This tests the logic that should exist in the index route
         from src.db.models import Book, State
-        
+
         book = Book(
             abs_id='legacy-book',
             storyteller_uuid=None  # No UUID
         )
-        
+
         # Simulate having a Storyteller state
         has_storyteller_state = True  # Would be checked via state_by_client
         is_legacy_link = has_storyteller_state and not book.storyteller_uuid
-        
+
         self.assertTrue(is_legacy_link)
-    
+
     def test_not_legacy_when_uuid_present(self):
         """A book with storyteller_uuid should NOT be flagged as legacy."""
         from src.db.models import Book
-        
+
         book = Book(
             abs_id='modern-book',
             storyteller_uuid='valid-uuid-123'
         )
-        
+
         has_storyteller_state = True
         is_legacy_link = has_storyteller_state and not book.storyteller_uuid
-        
+
         self.assertFalse(is_legacy_link)
 
 

@@ -1,8 +1,10 @@
 import unittest
 from unittest.mock import MagicMock
-from src.sync_clients.abs_ebook_sync_client import ABSEbookSyncClient
+
 from src.db.models import Book
-from src.sync_clients.sync_client_interface import UpdateProgressRequest, LocatorResult
+from src.sync_clients.abs_ebook_sync_client import ABSEbookSyncClient
+from src.sync_clients.sync_client_interface import LocatorResult, UpdateProgressRequest
+
 
 class TestABSEbookSyncClient(unittest.TestCase):
 

@@ -12,10 +12,10 @@ from unittest.mock import Mock
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.sync_clients.hardcover_sync_client import HardcoverSyncClient
-from src.sync_clients.sync_client_interface import UpdateProgressRequest, LocatorResult
-from src.db.models import Book, HardcoverDetails
 from src.db.database_service import DatabaseService
+from src.db.models import Book, HardcoverDetails
+from src.sync_clients.hardcover_sync_client import HardcoverSyncClient
+from src.sync_clients.sync_client_interface import LocatorResult, UpdateProgressRequest
 
 
 class TestHardcoverSyncClient(unittest.TestCase):

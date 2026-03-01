@@ -1,11 +1,11 @@
 
-import unittest
-import tempfile
-import os
 import json
+import os
+import sys
+import tempfile
+import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
-import sys
 
 # Add project root to Python path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -24,7 +24,7 @@ class MockContainer:
         self.mock_database_service.get_books_by_status.return_value = []
         self.mock_database_service.get_all_books.return_value = []
         self.mock_database_service.get_all_pending_suggestions.return_value = []
-        
+
         self.mock_ebook_parser = Mock()
         self.mock_sync_clients = Mock()
         self.mock_hardcover_client = Mock()
@@ -50,13 +50,13 @@ class TestSuggestionsFeature(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.mkdtemp()
         os.environ['DATA_DIR'] = self.temp_dir
-        
+
         self.mock_container = MockContainer()
-        
+
         # Mock database initialization
         def mock_init_db(data_dir):
             return self.mock_container.mock_database_service
-            
+
         import src.db.migration_utils
         self.original_init_db = src.db.migration_utils.initialize_database
         src.db.migration_utils.initialize_database = mock_init_db
@@ -79,7 +79,7 @@ class TestSuggestionsFeature(unittest.TestCase):
     def test_settings_save_toggle(self, mock_restart):
         """Test that saving settings updates the env var and DB."""
         # Initial state: default is true (implied) or unset
-        
+
         # 1. Turn OFF
         self.mock_container.mock_database_service.get_all_settings.return_value = {}
         response = self.client.post('/settings', data={
@@ -87,7 +87,7 @@ class TestSuggestionsFeature(unittest.TestCase):
              'SYNC_PERIOD_MINS': '5'
         })
         self.assertEqual(response.status_code, 302)
-        
+
         # Verify DB set (should be 'false' because it's missing from form)
         self.mock_container.mock_database_service.set_setting.assert_any_call('SUGGESTIONS_ENABLED', 'false')
         self.assertEqual(os.environ.get('SUGGESTIONS_ENABLED'), 'false')
@@ -103,14 +103,14 @@ class TestSuggestionsFeature(unittest.TestCase):
     def test_sync_manager_respects_setting(self):
         """Test that check_for_suggestions returns early if disabled."""
         from src.sync_manager import SyncManager
-        
+
         # Initialize SyncManager with mocks
         manager = SyncManager(
             database_service=self.mock_container.mock_database_service,
-            sync_clients={}, 
+            sync_clients={},
             data_dir=Path(self.temp_dir)
         )
-        
+
         # Case 1: Disabled
         os.environ['SUGGESTIONS_ENABLED'] = 'false'
         manager.check_for_suggestions({}, [])

@@ -8,11 +8,10 @@ import json
 import logging
 import re
 from datetime import datetime
-from typing import List, Dict, Optional, Tuple
 
 from src.db.models import BookAlignment
-from src.utils.polisher import Polisher
 from src.utils.logging_utils import time_execution
+from src.utils.polisher import Polisher
 
 logger = logging.getLogger(__name__)
 
@@ -22,10 +21,10 @@ class AlignmentService:
         self.polisher = polisher
 
     @time_execution
-    def align_and_store(self, abs_id: str, raw_segments: List[Dict], ebook_text: str, spine_chapters: List[Dict] = None):
+    def align_and_store(self, abs_id: str, raw_segments: list[dict], ebook_text: str, spine_chapters: list[dict] = None):
         """
         Main entry point for "Unified Alignment".
-        
+
         Steps:
         1. Validate Structure: Ensure we aren't trying to align mismatched content.
            (e.g., if spine_chapters provided, check roughly if segment count matches or text length matches).
@@ -44,7 +43,7 @@ class AlignmentService:
         # Estimate audio text length
         audio_text_rough = " ".join([s['text'] for s in raw_segments])
         audio_len = len(audio_text_rough)
-        
+
         ratio = audio_len / ebook_len if ebook_len > 0 else 0
         if ratio < 0.5 or ratio > 1.5:
              logger.warning(f"Alignment Size Mismatch: Audio text is {ratio:.2%} of Ebook text size.")
@@ -57,7 +56,7 @@ class AlignmentService:
 
         # 3. Anchored Alignment
         alignment_map = self._generate_alignment_map(rebuilt_segments, ebook_text)
-        
+
         if not alignment_map:
             logger.error("   Failed to generate alignment map.")
             return False
@@ -66,7 +65,7 @@ class AlignmentService:
         self._save_alignment(abs_id, alignment_map)
         return True
 
-    def get_time_for_text(self, abs_id: str, query_text: str, char_offset_hint: int = None) -> Optional[float]:
+    def get_time_for_text(self, abs_id: str, query_text: str, char_offset_hint: int = None) -> float | None:
         """
         Precise time lookup.
         If char_offset_hint is provided (from ebook reader), use it directly with the map.
@@ -76,12 +75,12 @@ class AlignmentService:
         alignment = self._get_alignment(abs_id)
         if not alignment:
             return None
-        
+
         map_points = alignment
-        
+
         # 2. Resolve offset
         target_offset = char_offset_hint
-        
+
         if target_offset is None:
             # Note: For now, KOSync always provides an offset or we calculate it.
             return None
@@ -90,10 +89,10 @@ class AlignmentService:
         # Binary search
         left = 0
         right = len(map_points) - 1
-        
+
         # Points are [{'char': x, 'ts': y}, ...]
         # Find interval [p1, p2] where p1.char <= target <= p2.char
-        
+
         if target_offset < map_points[0]['char']:
             return map_points[0]['ts']
         if target_offset > map_points[-1]['char']:
@@ -108,9 +107,9 @@ class AlignmentService:
                 left = mid + 1
             else:
                 right = mid - 1
-        
+
         p1 = map_points[floor_idx]
-        
+
         # Ceiling is next point
         if floor_idx + 1 < len(map_points):
             p2 = map_points[floor_idx + 1]
@@ -120,15 +119,15 @@ class AlignmentService:
         # Linear Interpolation
         char_span = p2['char'] - p1['char']
         time_span = p2['ts'] - p1['ts']
-        
+
         if char_span == 0: return p1['ts']
-        
+
         ratio = (target_offset - p1['char']) / char_span
         estimated_time = p1['ts'] + (time_span * ratio)
-        
+
         return float(estimated_time)
 
-    def get_char_for_time(self, abs_id: str, timestamp: float) -> Optional[int]:
+    def get_char_for_time(self, abs_id: str, timestamp: float) -> int | None:
         """
         Reverse lookup: Find character offset for a given timestamp.
         """
@@ -136,19 +135,19 @@ class AlignmentService:
         alignment = self._get_alignment(abs_id)
         if not alignment:
             return None
-        
+
         map_points = alignment
         target_ts = timestamp
-        
+
         # 2. Binary search for interval
         left = 0
         right = len(map_points) - 1
-        
+
         if target_ts <= map_points[0]['ts']:
             return int(map_points[0]['char'])
         if target_ts >= map_points[-1]['ts']:
             return int(map_points[-1]['char'])
-            
+
         floor_idx = 0
         while left <= right:
             mid = (left + right) // 2
@@ -157,25 +156,25 @@ class AlignmentService:
                 left = mid + 1
             else:
                 right = mid - 1
-        
+
         p1 = map_points[floor_idx]
         if floor_idx + 1 < len(map_points):
             p2 = map_points[floor_idx + 1]
         else:
             return int(p1['char'])
-            
+
         # 3. Interpolate
         time_span = p2['ts'] - p1['ts']
         char_span = p2['char'] - p1['char']
-        
+
         if time_span == 0: return int(p1['char'])
-        
+
         ratio = (target_ts - p1['ts']) / time_span
         estimated_char = p1['char'] + (char_span * ratio)
-        
+
         return int(estimated_char)
 
-    def _generate_alignment_map(self, segments: List[Dict], full_text: str) -> List[Dict]:
+    def _generate_alignment_map(self, segments: list[dict], full_text: str) -> list[dict]:
         """
         Core Anchored Alignment Algorithm (Two-Pass).
         Pass 1: High confidence (N=12) global search.
@@ -186,10 +185,10 @@ class AlignmentService:
         for seg in segments:
             raw_words = seg['text'].split()
             if not raw_words: continue
-            
+
             duration = seg['end'] - seg['start']
             per_word = duration / len(raw_words)
-            
+
             for i, w in enumerate(raw_words):
                 norm = self.polisher.normalize(w)
                 if not norm: continue
@@ -247,10 +246,10 @@ class AlignmentService:
 
         # 3. PASS 1: Global Search (N=12)
         anchors = _find_anchors(transcript_words, book_words, n_size=12)
-        
+
         # Sort by character position
         anchors.sort(key=lambda x: x['char'])
-        
+
         # Filter Monotonic (Global)
         valid_anchors = []
         if anchors:
@@ -275,7 +274,7 @@ class AlignmentService:
                 # Run with reduced N-Gram (N=6)
                 # Lower N is risky globally, but safe in this small constrained window
                 early_anchors = _find_anchors(t_slice, b_slice, n_size=6)
-                
+
                 # Filter Early Anchors (Must be monotonic with themselves)
                 early_anchors.sort(key=lambda x: x['char'])
                 valid_early = []
@@ -284,7 +283,7 @@ class AlignmentService:
                     for a in early_anchors[1:]:
                         if a['ts'] > valid_early[-1]['ts']:
                             valid_early.append(a)
-                
+
                 if valid_early:
                     logger.info(f"   Backfill success: Recovered {len(valid_early)} early anchors.")
                     # Prepend to main list
@@ -300,9 +299,9 @@ class AlignmentService:
         # Force 0,0 if still missing (Linear Interpolation fallback)
         if valid_anchors[0]['char'] > 0:
             final_map.append({"char": 0, "ts": 0.0})
-            
+
         final_map.extend(valid_anchors)
-        
+
         # Force End
         last = valid_anchors[-1]
         if last['char'] < len(full_text):
@@ -313,11 +312,11 @@ class AlignmentService:
         logger.info(f"   Anchored Alignment: Found {len(valid_anchors)} anchors (Total).")
         return final_map
 
-    def _save_alignment(self, abs_id: str, alignment_map: List[Dict]):
+    def _save_alignment(self, abs_id: str, alignment_map: list[dict]):
         """Upsert alignment to SQLite."""
         with self.database_service.get_session() as session:
             json_blob = json.dumps(alignment_map)
-            
+
             # Check exist
             existing = session.query(BookAlignment).filter_by(abs_id=abs_id).first()
             if existing:
@@ -326,17 +325,17 @@ class AlignmentService:
             else:
                 new_align = BookAlignment(abs_id=abs_id, alignment_map_json=json_blob)
                 session.add(new_align)
-            
+
             # Context manager handles commit
             logger.info(f"   Saved alignment for {abs_id} to DB.")
- 
-    def _get_alignment(self, abs_id: str) -> Optional[List[Dict]]:
+
+    def _get_alignment(self, abs_id: str) -> list[dict] | None:
         with self.database_service.get_session() as session:
             entry = session.query(BookAlignment).filter_by(abs_id=abs_id).first()
             if entry:
                 return json.loads(entry.alignment_map_json)
             return None
-    def get_book_duration(self, abs_id: str) -> Optional[float]:
+    def get_book_duration(self, abs_id: str) -> float | None:
         """Get the total duration of the book from its alignment map."""
         alignment = self._get_alignment(abs_id)
         if alignment and len(alignment) > 0:

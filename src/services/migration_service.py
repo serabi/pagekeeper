@@ -3,12 +3,12 @@ Migration Service.
 Handles legacy data migration from file-based storage to SQLite.
 """
 
-import logging
 import json
+import logging
 from pathlib import Path
 
-from src.services.alignment_service import AlignmentService
 from src.db.models import BookAlignment, BookloreBook
+from src.services.alignment_service import AlignmentService
 
 logger = logging.getLogger(__name__)
 
@@ -22,13 +22,13 @@ class MigrationService:
     def migrate_legacy_data(self):
         """
         Migrate legacy JSON transcript files to the database.
-        
+
         Strategy:
         1. Look for *.json in transcripts/
         2. Check if we already have an entry in 'book_alignments' table.
         3. If not, we can't easily "align" without the book text!
            Legacy files only contain the transcript segments.
-           
+
            Option A: Load the transcript into a temporary structure? No, we want unified structure.
         Migrate all legacy JSON data to database:
         1. Transcripts/Alignments
@@ -51,23 +51,22 @@ class MigrationService:
                 return
 
             logger.info(f"Found {len(files)} legacy alignment files to migrate...")
-            
+
             count = 0
             with self.database_service.get_session() as session:
                 for map_file in files:
                     # Extract ABS ID from filename (format: {abs_id}_alignment.json)
                     abs_id = map_file.name.replace("_alignment.json", "")
-                    
+
                     # Check if already exists in DB
-                    from sqlalchemy import text
                     existing = session.query(BookAlignment).filter(BookAlignment.abs_id == abs_id).first()
                     if existing:
                         continue
 
                     try:
-                        with open(map_file, 'r', encoding='utf-8') as f:
+                        with open(map_file, encoding='utf-8') as f:
                             data = json.load(f)
-                            
+
                         # Create new DB entry
                         # Convert list of dicts to JSON string
                         new_entry = BookAlignment(abs_id=abs_id, alignment_map_json=json.dumps(data))
@@ -77,10 +76,10 @@ class MigrationService:
                         logger.error(f"Failed to migrate '{map_file.name}': {e}")
 
                 # session.commit() is handled by context manager
-            
+
             if count > 0:
                 logger.info(f"Migrated {count} alignment maps to database")
-            
+
         except Exception as e:
             logger.error(f"Migration error: {e}")
 
@@ -91,7 +90,7 @@ class MigrationService:
             return
 
         # Check if we've already migrated (simple check: is table empty?)
-        # A more robust check might be needed if we support partial migrations, 
+        # A more robust check might be needed if we support partial migrations,
         # but for now we assume if DB has data, we are good.
         existing_count = len(self.database_service.get_all_booklore_books())
         if existing_count > 0:
@@ -99,12 +98,12 @@ class MigrationService:
 
         logger.info("Migrating Booklore cache to database...")
         try:
-            with open(cache_file, 'r', encoding='utf-8') as f:
+            with open(cache_file, encoding='utf-8') as f:
                 data = json.load(f)
-            
+
             books = data.get('books', {})
             count = 0
-            
+
             for filename, info in books.items():
                 try:
                     # Convert to model
@@ -118,7 +117,7 @@ class MigrationService:
                     count += 1
                 except Exception as e:
                     logger.warning(f"Failed to migrate book '{filename}': {e}")
-            
+
             if count > 0:
                 logger.info(f"Migrated {count} Booklore books to database")
                 # Rename to .bak to prevent re-reading and confusion
@@ -139,7 +138,7 @@ class MigrationService:
             "last_state.json",
             "settings.json"
         ]
-        
+
         for fname in legacy_files:
             fpath = self.data_dir / fname
             if fpath.exists():

@@ -67,9 +67,9 @@ def test_dependency_injection():
         print("\n[TEST] Testing sync clients...")
 
         from src.sync_clients.abs_sync_client import ABSSyncClient
+        from src.sync_clients.booklore_sync_client import BookloreSyncClient
         from src.sync_clients.kosync_sync_client import KoSyncSyncClient
         from src.sync_clients.storyteller_sync_client import StorytellerSyncClient
-        from src.sync_clients.booklore_sync_client import BookloreSyncClient
 
         abs_sync_client = container.abs_sync_client()
         print(f"[OK] ABSSyncClient: {type(abs_sync_client).__name__}")

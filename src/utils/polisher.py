@@ -3,9 +3,8 @@ Polisher Utility for Text Normalization and Rebuilding.
 Handles cleanup of ebook text and reconstruction of fragmented audio sentences.
 """
 
-import re
 import logging
-from typing import List, Dict, Tuple
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +51,7 @@ class Polisher:
         roman_values = {'I': 1, 'V': 5, 'X': 10, 'L': 50, 'C': 100, 'D': 500, 'M': 1000}
         total = 0
         prev_value = 0
-        
+
         for char in reversed(token):
             value = roman_values.get(char, 0)
             if value >= prev_value:
@@ -60,7 +59,7 @@ class Polisher:
             else:
                 total -= value
             prev_value = value
-            
+
         return str(total)
 
     def text_to_digits(self, text: str) -> str:
@@ -88,7 +87,7 @@ class Polisher:
             else:
                 new_words.append(words[i])
             i += 1
-            
+
         return " ".join(new_words)
 
     def collapse_whitespace(self, text: str) -> str:
@@ -109,34 +108,34 @@ class Polisher:
 
         # 1. Basic Clean
         text = self.collapse_whitespace(text)
-        
+
         # 2. Punctuation Removal (aggressive for matching)
         cleaned = self.clean_punctuation(text)
-        
+
         # 3. Lowercase
         cleaned = cleaned.lower()
-        
+
         # 4. Spelled numbers (optional, can be risky if "one" is used as noun)
-        # For strict alignment, we might want to skip this or make it configurable. 
+        # For strict alignment, we might want to skip this or make it configurable.
         # Using a safer approach: "Chapter One" contexts are handled by specific logic usually.
         # Let's apply it as it helps match "Chapter 1" to "Chapter One" in audio.
         cleaned = self.text_to_digits(cleaned)
-        
+
         return self.collapse_whitespace(cleaned)
 
-    def rebuild_fragmented_sentences(self, segments: List[Dict], ebook_full_text: str) -> List[Dict]:
+    def rebuild_fragmented_sentences(self, segments: list[dict], ebook_full_text: str) -> list[dict]:
         """
         Rejoins broken sentences in the transcript (e.g., [start, end, "Mr."], [start, end, "Smith"]).
-        
+
         Strategy:
         1. Look at adjacent segments.
         2. If combining them creates a valid sentence/phrase found in the ebook text, merge them.
         3. Prioritize longer matches.
-        
+
         Args:
             segments: List of dicts {'start': float, 'end': float, 'text': str}
             ebook_full_text: The source truth text to validate against.
-            
+
         Returns:
             New list of merged segments.
         """
@@ -149,12 +148,9 @@ class Polisher:
         for next_segment in segments[1:]:
             # Check gap
             gap = next_segment['start'] - current_segment['end']
-            
-            # Heuristic: If gap is small (< 1.5s) and combined text looks like a continuation
-            if gap < 2.0: 
-                combined_text = (current_segment['text'] + " " + next_segment['text']).strip()
-                normalized_combo = self.normalize(combined_text)
 
+            # Heuristic: If gap is small (< 1.5s) and combined text looks like a continuation
+            if gap < 2.0:
                 # Simple check: Does the first segment end with specific punctuation?
                 # If it ends with . or ? or !, likely a real sentence end.
                 if not re.search(r'[.?!"]$', current_segment['text'].strip()):

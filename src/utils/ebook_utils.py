@@ -1,30 +1,26 @@
 """
 Ebook Utilities for Book Stitch
 """
-from typing import Optional
-
-import ebooklib
-from ebooklib import epub
-from bs4 import BeautifulSoup, Tag
-from lxml import html
+import glob
 import hashlib
 import logging
 import os
 import re
-import glob
 import threading
-import rapidfuzz
-import zipfile
-import shutil
-import tempfile
-from pathlib import Path
 from collections import OrderedDict
+from pathlib import Path
+
+import ebooklib
+import epubcfi
+import rapidfuzz
+from bs4 import BeautifulSoup, Tag
+from ebooklib import epub
+from lxml import html
+
 from src.sync_clients.sync_client_interface import LocatorResult
 
 logger = logging.getLogger(__name__)
 
-# Import epubcfi library for accurate CFI parsing
-import epubcfi
 
 class LRUCache:
     def __init__(self, capacity: int = 3):
@@ -97,7 +93,7 @@ class EbookParser:
         filepath = Path(filepath)
         if self.hash_method == "filename":
             return hashlib.md5(filepath.name.encode('utf-8')).hexdigest()
-        
+
         md5 = hashlib.md5()
         try:
             file_size = os.path.getsize(filepath)
@@ -441,7 +437,7 @@ class EbookParser:
             found_anchor = False
         return xpath, target_tag, found_anchor
 
-    def find_text_location(self, filename, search_phrase, hint_percentage=None) -> Optional[LocatorResult]:
+    def find_text_location(self, filename, search_phrase, hint_percentage=None) -> LocatorResult | None:
         """
         Uses BS4 Engine. Good for fuzzy matching phrases from external apps.
         Returns: LocatorResult or None
@@ -459,15 +455,15 @@ class EbookParser:
             # This prevents jumping to duplicate phrases (e.g., "Chapter 1" in the ToC vs the actual chapter).
             clean_search = " ".join(search_phrase.split())
             words = clean_search.split()
-            
+
             match_index = -1
-            
+
             if len(words) >= 10:
                 N = 10
                 # Scan through the search phrase to find a unique anchor
                 for i in range(len(words) - N + 1):
                     candidate = " ".join(words[i:i+N])
-                    
+
                     # Check if this phrase exists exactly ONCE in the text
                     if full_text.count(candidate) == 1:
                         found_idx = full_text.find(candidate)
@@ -475,7 +471,7 @@ class EbookParser:
                             match_index = found_idx
                             logger.info(f"Found unique text anchor: '{candidate[:30]}...' at index {match_index}")
                             break
-            
+
             # [End of NEW logic] - Continue to existing fallbacks
 
             # 1. Exact match (if anchor logic didn't find anything)
@@ -527,10 +523,6 @@ class EbookParser:
                         else:
                             final_xpath = f"{doc_frag_prefix}/{xpath_str}"
                         # Calculate chapter progress (critical for Storyteller)
-                        chapter_len = len(item['content']) # Rough approximation using HTML length
-                        if hasattr(item, 'get_content'): # double check if item object available or just dict
-                             pass 
-                        
                         # better: use start/end from map
                         spine_item_len = item['end'] - item['start']
                         chapter_progress = 0.0
@@ -592,7 +584,7 @@ class EbookParser:
             current = self._get_parent_node(current)
         return node
 
-    def _first_non_empty_direct_text_suffix(self, element) -> Optional[str]:
+    def _first_non_empty_direct_text_suffix(self, element) -> str | None:
         if element is None:
             return None
         try:
@@ -659,7 +651,7 @@ class EbookParser:
 
         return default_xpath
 
-    def get_sentence_level_ko_xpath(self, filename, percentage) -> Optional[str]:
+    def get_sentence_level_ko_xpath(self, filename, percentage) -> str | None:
         """
         Resolve a sentence-level KOReader XPath from percentage.
         Returns node-start offset (.0), not word-level offsets.
@@ -678,7 +670,7 @@ class EbookParser:
             logger.error(f"Error generating sentence-level KOReader XPath: {e}")
             return None
 
-    def get_perfect_ko_xpath(self, filename, position=0) -> Optional[str]:
+    def get_perfect_ko_xpath(self, filename, position=0) -> str | None:
         """
         Generate KOReader XPath for a specific character position in the book.
         Uses BeautifulSoup (Engine A) to perfectly align with the text extraction,
@@ -703,11 +695,10 @@ class EbookParser:
 
             # Parse HTML content with BeautifulSoup
             soup = BeautifulSoup(target_item['content'], 'html.parser')
-            
+
             # Find the exact text element matching the character count
             current_char_count = 0
             target_string = None
-            target_offset = 0
             first_non_empty_string = None
             last_non_empty_string = None
 
@@ -716,29 +707,18 @@ class EbookParser:
                 # Count lengths exactly like extract_text_and_map's get_text(strip=True)
                 clean_text = string.strip()
                 text_len = len(clean_text)
-                
-                if text_len == 0: 
+
+                if text_len == 0:
                     continue
 
                 if first_non_empty_string is None:
                     first_non_empty_string = string
                 last_non_empty_string = string
-                
+
                 if current_char_count + text_len > local_pos:
                     target_string = string
-                    # Calculate offset within the CLEAN string
-                    clean_offset = local_pos - current_char_count
-                    
-                    # KOReader needs the offset within the RAW string (including leading whitespace etc)
-                    # Find where the clean text starts inside the raw string to determine true offset
-                    raw_text = str(string)
-                    raw_start = raw_text.find(clean_text)
-                    if raw_start == -1: 
-                        raw_start = 0
-                    
-                    target_offset = raw_start + clean_offset
                     break
-                
+
                 current_char_count += text_len
                 # extract_text_and_map uses separator=' ', adding exactly 1 space between words
                 if current_char_count <= local_pos:
@@ -746,7 +726,6 @@ class EbookParser:
 
             if target_string is None:
                 target_string = last_non_empty_string or first_non_empty_string
-                target_offset = 0
 
             if not target_string:
                 logger.warning(f"No matching text element found in spine {target_item['spine_index']}")
@@ -771,17 +750,17 @@ class EbookParser:
             # =================================================================
             search_text = str(target_string)
             occurrence_index = 0
-            
+
             # Count which occurrence of this exact text this is in the BS4 document
             for string in elements:
                 if string is target_string:
                     break
                 if str(string) == search_text:
                     occurrence_index += 1
-                    
+
             tree = html.fromstring(target_item['content'])
             current_occurrence = 0
-            
+
             for el in tree.iter():
                 if el.text and el.text == search_text:
                     if current_occurrence == occurrence_index:
@@ -791,7 +770,7 @@ class EbookParser:
                             target_item['content']
                         )
                     current_occurrence += 1
-                    
+
                 if el.tail and el.tail == search_text:
                     if current_occurrence == occurrence_index:
                         parent = el.getparent()
@@ -813,18 +792,18 @@ class EbookParser:
                 if curr.name == 'body':
                     path_segments.append("body")
                     break
-                
+
                 if curr.name in self.CRENGINE_FRAGILE_INLINE_TAGS:
                     curr = curr.parent
                     continue
-                
+
                 index = 1
                 sibling = curr.previous_sibling
                 while sibling:
                     if isinstance(sibling, Tag) and sibling.name == curr.name:
                         index += 1
                     sibling = sibling.previous_sibling
-                
+
                 path_segments.append(f"{curr.name}[{index}]")
                 curr = curr.parent
 
@@ -859,7 +838,7 @@ class EbookParser:
             if tag_name in self.CRENGINE_FRAGILE_INLINE_TAGS:
                 current = current.getparent()
                 continue
-            
+
             # Get siblings of same tag to determine index
             parent = current.getparent()
             if parent is not None:
@@ -916,13 +895,13 @@ class EbookParser:
                 clean_xpath = '.' + clean_xpath
 
             tree = html.fromstring(target_item['content'])
-            
+
             elements = []
             try:
                 elements = tree.xpath(clean_xpath)
             except Exception as e:
                 logger.debug(f"XPath query failed: {e}")
-            
+
             # [Fallback logic from original code for finding elements...]
             if not elements and clean_xpath.startswith('./'):
                 try: elements = tree.xpath(clean_xpath[2:])
@@ -948,12 +927,12 @@ class EbookParser:
             # [NEW LOGIC STARTS HERE]
             # Instead of calculating offset via LXML iteration (which drifts),
             # grab the text and FIND it in the spine item content.
-            
+
             # 1. Extract a unique-ish fingerprint from the node
             node_text = ""
             if target_node.text: node_text += target_node.text.strip()
             if target_node.tail: node_text += " " + target_node.tail.strip()
-            
+
             # If node text is too short, grab parent context
             if len(node_text) < 20:
                 parent = target_node.getparent()
@@ -967,26 +946,26 @@ class EbookParser:
             # 2. Find this anchor in the BS4 content (spine_map item)
             # We search specifically in this chapter's content to minimize false positives
             bs4_chapter_text = BeautifulSoup(target_item['content'], 'html.parser').get_text(separator=' ', strip=True)
-            
+
             local_start_index = bs4_chapter_text.find(clean_anchor)
-            
+
             if local_start_index != -1:
                 # Found it! Calculate global position
                 # Add target_offset (clamped to length of anchor)
                 safe_offset = min(target_offset, len(clean_anchor))
                 global_index = target_item['start'] + local_start_index + safe_offset
-                
+
                 # 3. Return text from the Main Source of Truth (full_text)
                 start = max(0, global_index)
                 end = min(len(full_text), global_index + 600) # Grab enough context
                 return full_text[start:end]
-            
+
             else:
                 # Fallback: If exact match fails (rare), try the old calculation method
                 # (This preserves old behavior if the new matching fails)
                 logger.debug("Exact text match failed, falling back to LXML offset calculation")
                 # Falling back to strict calculation (Logic from original implementation)
-                
+
                 preceding_len = 0
                 found_target = False
                 SEPARATOR_LEN = 1
@@ -1005,7 +984,7 @@ class EbookParser:
                         preceding_len += (len(node.text.strip()) + SEPARATOR_LEN)
                     if node.tail and node.tail.strip():
                         preceding_len += (len(node.tail.strip()) + SEPARATOR_LEN)
-                
+
                 if found_target:
                      local_pos = preceding_len
                      global_offset = target_item['start'] + local_pos

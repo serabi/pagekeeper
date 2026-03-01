@@ -3,10 +3,11 @@
 import logging
 import os
 import time
+from pathlib import Path
 
-from flask import Blueprint, render_template, redirect, url_for
+from flask import Blueprint, redirect, render_template, url_for
 
-from src.blueprints.helpers import get_container, get_manager, get_database_service
+from src.blueprints.helpers import get_booklore_clients, get_container, get_database_service, get_manager
 from src.version import APP_VERSION, get_update_status
 
 logger = logging.getLogger(__name__)
@@ -54,6 +55,12 @@ def index():
     all_hardcover = database_service.get_all_hardcover_details()
     hardcover_by_book = {h.abs_id: h for h in all_hardcover}
 
+    # Fetch Booklore metadata for ebook-only title/author enrichment
+    all_booklore_books = database_service.get_all_booklore_books()
+    booklore_by_filename = {}
+    for bl_book in all_booklore_books:
+        booklore_by_filename[bl_book.filename.lower()] = bl_book
+
     integrations = {}
     sync_clients = container.sync_clients()
     for client_name, client in sync_clients.items():
@@ -75,18 +82,39 @@ def index():
         else:
             book_type = 'linked'
 
+        # Look up Booklore metadata by ebook_filename or original_ebook_filename
+        bl_meta = None
+        for fn in (book.ebook_filename, getattr(book, 'original_ebook_filename', None)):
+            if fn:
+                bl_meta = booklore_by_filename.get(fn.lower())
+                if bl_meta:
+                    break
+
         # Skip ABS metadata enrichment for ebook-only books (synthetic ID won't resolve)
         if book_type == 'ebook-only':
             abs_subtitle = ''
-            abs_author = ''
+            abs_author = (bl_meta.authors or '') if bl_meta else ''
         else:
             _abs_meta = abs_metadata_by_id.get(book.abs_id, {})
             abs_subtitle = _abs_meta.get('subtitle', '')
             abs_author = _abs_meta.get('author', '')
 
+        # Enrich title from Booklore if stored title looks like a filename
+        enriched_title = book.abs_title
+        if bl_meta and bl_meta.title:
+            stems = set()
+            for fn in (book.ebook_filename, getattr(book, 'original_ebook_filename', None)):
+                if fn:
+                    stems.add(Path(fn).stem)
+            if book.abs_title in stems or book.abs_title in (book.ebook_filename, getattr(book, 'original_ebook_filename', None)):
+                enriched_title = bl_meta.title
+                # Persist the improved title so it sticks
+                book.abs_title = bl_meta.title
+                database_service.save_book(book)
+
         mapping = {
             'abs_id': book.abs_id,
-            'abs_title': book.abs_title,
+            'abs_title': enriched_title,
             'abs_subtitle': abs_subtitle,
             'abs_author': abs_author,
             'ebook_filename': book.ebook_filename,
@@ -163,19 +191,28 @@ def index():
         else:
             mapping['abs_url'] = None
 
-        if manager.booklore_client.is_configured() and book.ebook_filename:
-            bl_book = manager.booklore_client.find_book_by_filename(book.ebook_filename, allow_refresh=False)
-            if not bl_book and book.original_ebook_filename:
-                bl_book = manager.booklore_client.find_book_by_filename(book.original_ebook_filename, allow_refresh=False)
-        else:
-            bl_book = None
-
-        if bl_book:
-            mapping['booklore_id'] = bl_book.get('id')
-            mapping['booklore_url'] = f"{manager.booklore_client.base_url}/book/{bl_book.get('id')}?tab=view"
-        else:
-            mapping['booklore_id'] = None
-            mapping['booklore_url'] = None
+        # Booklore deep links (check all instances)
+        mapping['booklore_id'] = None
+        mapping['booklore_url'] = None
+        mapping['booklore_2_url'] = None
+        if book.ebook_filename:
+            for bl_client in get_booklore_clients():
+                try:
+                    if not bl_client.is_configured():
+                        continue
+                    bl_book = bl_client.find_book_by_filename(book.ebook_filename, allow_refresh=False)
+                    if not bl_book and book.original_ebook_filename:
+                        bl_book = bl_client.find_book_by_filename(book.original_ebook_filename, allow_refresh=False)
+                    if bl_book:
+                        url = f"{bl_client.base_url}/book/{bl_book.get('id')}?tab=view"
+                        if bl_client.source_tag == 'booklore':
+                            mapping['booklore_id'] = bl_book.get('id')
+                            mapping['booklore_url'] = url
+                        else:
+                            mapping['booklore_2_url'] = url
+                except Exception:
+                    logger.debug(f"Booklore lookup failed for '{getattr(bl_client, 'source_tag', '?')}', skipping")
+                    continue
 
         if mapping.get('hardcover_slug'):
             mapping['hardcover_url'] = f"https://hardcover.app/books/{mapping['hardcover_slug']}"
@@ -220,6 +257,9 @@ def index():
 
     latest_version, update_available = get_update_status()
 
+    booklore_label = os.environ.get('BOOKLORE_LABEL', 'Booklore') or 'Booklore'
+    booklore_2_label = os.environ.get('BOOKLORE_2_LABEL', 'Booklore 2') or 'Booklore 2'
+
     return render_template(
         'index.html',
         mappings=mappings,
@@ -228,7 +268,9 @@ def index():
         suggestions=suggestions,
         app_version=APP_VERSION,
         update_available=update_available,
-        latest_version=latest_version
+        latest_version=latest_version,
+        booklore_label=booklore_label,
+        booklore_2_label=booklore_2_label
     )
 
 

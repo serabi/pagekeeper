@@ -1,7 +1,8 @@
 from dataclasses import dataclass, field
-from typing import Optional, Callable, Tuple
+from typing import Callable
 
 from src.db.models import Book, State
+
 
 @dataclass
 class ServiceState:
@@ -11,41 +12,41 @@ class ServiceState:
     delta: float
     threshold: float
     is_configured: bool
-    display: Tuple[str, str]
+    display: tuple[str, str]
     value_formatter: Callable[[float], str]
     value_seconds_formatter: Callable[[float], str] = None
 
 @dataclass
 class LocatorResult:
     percentage: float
-    xpath: Optional[str] = None
-    match_index: Optional[int] = None
-    cfi: Optional[str] = None
-    href: Optional[str] = None
-    fragment: Optional[str] = None
-    perfect_ko_xpath: Optional[str] = None
-    css_selector: Optional[str] = None
-    chapter_progress: Optional[float] = None
-    fragments: Optional[list] = None
+    xpath: str | None = None
+    match_index: int | None = None
+    cfi: str | None = None
+    href: str | None = None
+    fragment: str | None = None
+    perfect_ko_xpath: str | None = None
+    css_selector: str | None = None
+    chapter_progress: float | None = None
+    fragments: list | None = None
 
 @dataclass
 class UpdateProgressRequest:
     locator_result: LocatorResult
-    txt: Optional[str] = None
+    txt: str | None = None
     # can be percentage or timestamp (ABS)
-    previous_location: Optional[float] = None
+    previous_location: float | None = None
 
 @dataclass
 class SyncResult:
     # can be percentage or timestamp (ABS)
-    location: Optional[float] = None
+    location: float | None = None
     success: bool = False
     updated_state: dict = field(default_factory=dict)
 
 class SyncClient:
     """
     Base class for sync clients.
-    
+
     Error Handling Convention:
     - Methods return None when data is not found (e.g., book doesn't exist)
     - Methods return SyncResult(success=False) for operational failures
@@ -73,7 +74,7 @@ class SyncClient:
         """
         return True
 
-    def fetch_bulk_state(self) -> Optional[dict]:
+    def fetch_bulk_state(self) -> dict | None:
         """
         Pre-fetch all progress data in one API call.
         Returns a dict keyed by book identifier for quick lookup.
@@ -90,22 +91,22 @@ class SyncClient:
         """
         return {'audiobook', 'ebook'}  # Default: supports both
 
-    def get_service_state(self, book: Book, prev_state: Optional[State], title_snip: str = "", bulk_context: dict = None) -> Optional[ServiceState]:
+    def get_service_state(self, book: Book, prev_state: State | None, title_snip: str = "", bulk_context: dict = None) -> ServiceState | None:
         """
         Args:
             bulk_context: Optional pre-fetched data to avoid redundant API calls
         """
         ...
-    def get_text_from_current_state(self, book: Book, state: ServiceState) -> Optional[str]:
+    def get_text_from_current_state(self, book: Book, state: ServiceState) -> str | None:
         ...
-    def get_fallback_text(self, book: Book, state: ServiceState) -> Optional[str]:
+    def get_fallback_text(self, book: Book, state: ServiceState) -> str | None:
         """Optional method to return fallback text (e.g. previous segment) if primary match fails."""
         return None
 
     def update_progress(self, book: Book, request: UpdateProgressRequest) -> SyncResult:
         ...
 
-    def get_locator_from_text(self, txt: str, epub_file_name: str, hint_percentage: float) -> Optional[LocatorResult]:
+    def get_locator_from_text(self, txt: str, epub_file_name: str, hint_percentage: float) -> LocatorResult | None:
         if not txt or not epub_file_name:
             return None
         locator_result: LocatorResult = self.ebook_parser.find_text_location(epub_file_name, txt, hint_percentage=hint_percentage)

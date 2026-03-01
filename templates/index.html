@@ -8,16 +8,19 @@
     {% macro render_book_card(mapping, integrations) %}
     {# Calculate sync discrepancy for highlighting #}
     {% set progress_values = [] %}
-    {% if mapping.states.abs is defined and mapping.states.abs.percentage %}
+    {% if mapping.states.abs is defined and mapping.states.abs.percentage is not none %}
     {% set _ = progress_values.append(mapping.states.abs.percentage) %}
     {% endif %}
-    {% if mapping.states.storyteller is defined and mapping.states.storyteller.percentage %}
+    {% if mapping.states.storyteller is defined and mapping.states.storyteller.percentage is not none %}
     {% set _ = progress_values.append(mapping.states.storyteller.percentage) %}
     {% endif %}
-    {% if mapping.states.booklore is defined and mapping.states.booklore.percentage %}
+    {% if mapping.states.booklore is defined and mapping.states.booklore.percentage is not none %}
     {% set _ = progress_values.append(mapping.states.booklore.percentage) %}
     {% endif %}
-    {% if mapping.states.kosync is defined and mapping.states.kosync.percentage %}
+    {% if mapping.states.booklore2 is defined and mapping.states.booklore2.percentage is not none %}
+    {% set _ = progress_values.append(mapping.states.booklore2.percentage) %}
+    {% endif %}
+    {% if mapping.states.kosync is defined and mapping.states.kosync.percentage is not none %}
     {% set _ = progress_values.append(mapping.states.kosync.percentage) %}
     {% endif %}
     {% set max_diff = (progress_values|max|default(0) - progress_values|min|default(0)) if progress_values|length > 1
@@ -141,12 +144,28 @@
                 {# Booklore section - hide for audio-only #}
                 {% if bt != 'audio-only' and integrations.booklore and (mapping.states.booklore is defined or mapping.booklore_id) %}
                 <a href="{{ mapping.booklore_url|default('#') }}" target="_blank" rel="noopener noreferrer"
-                    class="service-item" title="Open in Booklore">
+                    class="service-item" title="Open in {{ booklore_label }}">
                     <img src="/static/booklore.png" alt="BL" class="service-icon">
-                    <span class="service-name">Booklore</span>
+                    <span class="service-name">{{ booklore_label }}</span>
                     <span class="service-value">
                         {% if mapping.states.booklore is defined %}
                         {{ '%.1f' | format(mapping.states.booklore.percentage) }}%
+                        {% else %}
+                        0.0%
+                        {% endif %}
+                    </span>
+                </a>
+                {% endif %}
+
+                {# Booklore 2 section - hide for audio-only #}
+                {% if bt != 'audio-only' and integrations.booklore2 and (mapping.states.booklore2 is defined or mapping.booklore_2_url) %}
+                <a href="{{ mapping.booklore_2_url|default('#') }}" target="_blank" rel="noopener noreferrer"
+                    class="service-item" title="Open in {{ booklore_2_label }}">
+                    <img src="/static/booklore.png" alt="BL2" class="service-icon">
+                    <span class="service-name">{{ booklore_2_label }}</span>
+                    <span class="service-value">
+                        {% if mapping.states.booklore2 is defined %}
+                        {{ '%.1f' | format(mapping.states.booklore2.percentage) }}%
                         {% else %}
                         0.0%
                         {% endif %}

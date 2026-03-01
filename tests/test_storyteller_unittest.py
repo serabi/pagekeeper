@@ -3,9 +3,10 @@
 Unit test for the Storyteller leading scenario using unittest.TestCase.
 """
 
-import unittest
 import sys
+import unittest
 from pathlib import Path
+
 # Add the project root to the path to resolve module imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 

@@ -4,11 +4,11 @@ This allows for seamless migration from JSON to SQLAlchemy ORM without changing 
 """
 
 import logging
-from typing import Dict, Any, Callable
 from pathlib import Path
+from typing import Any, Callable, Dict
 
-from src.db.database_service import DatabaseService, DatabaseMigrator
-from src.db.models import Book, State, Job
+from src.db.database_service import DatabaseMigrator, DatabaseService
+from src.db.models import Book, Job, State
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +105,7 @@ class SQLiteJsonDBWrapper:
             logger.error(f"Failed to load data from SQLAlchemy database: {e}")
             return default
 
-    def save(self, data: Dict[str, Any]) -> bool:
+    def save(self, data: dict[str, Any]) -> bool:
         """
         Save data in JsonDB-compatible format.
         Converts the data to the appropriate SQLAlchemy operations.

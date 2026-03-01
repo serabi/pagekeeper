@@ -3,19 +3,18 @@ import os
 import sys
 import threading
 import time
-from pathlib import Path
 
 import schedule
 from dependency_injector import providers
 from flask import Flask
 
-from src.utils.config_loader import ConfigLoader
-from src.utils.logging_utils import memory_log_handler, LOG_PATH
-from src.api.kosync_server import kosync_sync_bp, kosync_admin_bp, init_kosync_server
 from src.api.hardcover_routes import hardcover_bp, init_hardcover_routes
-from src.version import APP_VERSION, get_update_status
+from src.api.kosync_server import init_kosync_server, kosync_admin_bp, kosync_sync_bp
 from src.blueprints import register_blueprints
 from src.blueprints.helpers import safe_folder_name
+from src.utils.config_loader import ConfigLoader
+from src.version import get_update_status
+
 
 def _reconfigure_logging():
     """Force update of root logger level based on env var."""
@@ -291,7 +290,7 @@ if __name__ == '__main__':
     books_volume_exists = container.books_dir().exists()
 
     if booklore_configured:
-        logger.info(f"Booklore integration enabled - ebooks sourced from API")
+        logger.info("Booklore integration enabled - ebooks sourced from API")
     elif books_volume_exists:
         logger.info(f"Ebooks directory mounted at {container.books_dir()}")
     else:
@@ -301,7 +300,7 @@ if __name__ == '__main__':
             "or mount the ebooks directory to /books."
         )
 
-    logger.info(f"Web interface starting on port 4477")
+    logger.info("Web interface starting on port 4477")
 
     # --- Split-Port Mode ---
     sync_port = os.environ.get('KOSYNC_PORT')

@@ -5,7 +5,8 @@ This handles the one-time migration from JSON to SQLAlchemy on application start
 
 import logging
 from pathlib import Path
-from .database_service import DatabaseService, DatabaseMigrator
+
+from .database_service import DatabaseMigrator, DatabaseService
 
 logger = logging.getLogger(__name__)
 

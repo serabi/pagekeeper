@@ -1,13 +1,13 @@
 """create settings table
 
 Revision ID: add_settings_table
-Revises: 
+Revises:
 Create Date: 2024-01-20 10:00:00.000000
 
 """
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = 'add_settings_table'
@@ -21,7 +21,7 @@ def upgrade() -> None:
     conn = op.get_bind()
     inspector = sa.inspect(conn)
     tables = inspector.get_table_names()
-    
+
     if 'settings' not in tables:
         op.create_table('settings',
             sa.Column('key', sa.String(length=255), nullable=False),

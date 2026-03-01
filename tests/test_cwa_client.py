@@ -1,7 +1,9 @@
-import unittest
 import os
+import unittest
 from unittest.mock import MagicMock, patch
+
 from src.api.cwa_client import CWAClient
+
 
 class TestCWAClient(unittest.TestCase):
     def setUp(self):
@@ -33,7 +35,7 @@ class TestCWAClient(unittest.TestCase):
         """
         mock_get.return_value.status_code = 200
         mock_get.return_value.text = mock_response_content
-        
+
         results = self.client.search_ebooks("Test Book")
         self.assertEqual(len(results), 1)
         self.assertEqual(results[0]['title'], 'Test Book')
@@ -44,7 +46,7 @@ class TestCWAClient(unittest.TestCase):
     def test_download_ebook(self, mock_get):
         mock_get.return_value.__enter__.return_value.status_code = 200
         mock_get.return_value.__enter__.return_value.iter_content.return_value = [b"fake content" * 100]
-        
+
         with patch('builtins.open', unittest.mock.mock_open()) as mock_file:
             with patch('os.path.getsize', return_value=2000): # Mock size > 1024
                  success = self.client.download_ebook('http://url', 'test.epub')

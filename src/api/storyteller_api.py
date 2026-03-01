@@ -1,10 +1,10 @@
+import logging
 import os
 import re
 import time
-import logging
-import requests
-from typing import Optional, Dict, Tuple
 from pathlib import Path
+
+import requests
 
 from src.sync_clients.sync_client_interface import LocatorResult
 
@@ -18,7 +18,7 @@ class StorytellerAPIClient:
         self.base_url = raw_url
         self.username = os.environ.get("STORYTELLER_USER")
         self.password = os.environ.get("STORYTELLER_PASSWORD")
-        self._book_cache: Dict[str, Dict] = {}
+        self._book_cache: dict[str, dict] = {}
         self._cache_timestamp = 0
         self._token = None
         self._token_timestamp = 0
@@ -38,7 +38,7 @@ class StorytellerAPIClient:
             return False
         return bool(self.username and self.password)
 
-    def _get_fresh_token(self) -> Optional[str]:
+    def _get_fresh_token(self) -> str | None:
         if self._token and (time.time() - self._token_timestamp) < self._token_max_age:
             return self._token
         if not self.username or not self.password:
@@ -59,7 +59,7 @@ class StorytellerAPIClient:
             logger.error(f"Storyteller login error: {e}")
         return None
 
-    def _make_request(self, method: str, endpoint: str, json_data: dict = None) -> Optional[requests.Response]:
+    def _make_request(self, method: str, endpoint: str, json_data: dict = None) -> requests.Response | None:
         token = self._get_fresh_token()
         if not token: return None
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
@@ -108,7 +108,7 @@ class StorytellerAPIClient:
             return True
         return False
 
-    def find_book_by_title(self, ebook_filename: str) -> Optional[Dict]:
+    def find_book_by_title(self, ebook_filename: str) -> dict | None:
         if time.time() - self._cache_timestamp > 3600: self._refresh_book_cache()
         if not self._book_cache: self._refresh_book_cache()
 
@@ -124,12 +124,12 @@ class StorytellerAPIClient:
         if cache_key in self._filename_to_book_cache:
             return self._filename_to_book_cache[cache_key]
 
-        if clean_stem in self._book_cache: 
+        if clean_stem in self._book_cache:
             self._filename_to_book_cache[cache_key] = self._book_cache[clean_stem]
             return self._book_cache[clean_stem]
 
         for title, book_info in self._book_cache.items():
-            if clean_stem in title or title in clean_stem: 
+            if clean_stem in title or title in clean_stem:
                 self._filename_to_book_cache[cache_key] = book_info
                 return book_info
 
@@ -142,7 +142,7 @@ class StorytellerAPIClient:
                 return book_info
         return None
 
-    def get_position_details(self, book_uuid: str) -> Tuple[Optional[float], Optional[int], Optional[str], Optional[str]]:
+    def get_position_details(self, book_uuid: str) -> tuple[float | None, int | None, str | None, str | None]:
         """
         Returns: (percentage, timestamp, href, fragment_id)
         """
@@ -169,7 +169,7 @@ class StorytellerAPIClient:
         """Fetch all book positions in one pass. Returns {title_lower: {pct, ts, href, frag, uuid}}"""
         if not self._book_cache:
             self._refresh_book_cache()
-        
+
         positions = {}
         for title, book in self._book_cache.items():
             uuid = book.get('uuid')
@@ -184,7 +184,7 @@ class StorytellerAPIClient:
 
     def update_position(self, book_uuid: str, percentage: float, rich_locator: LocatorResult = None) -> bool:
         new_ts = int(time.time() * 1000)
-        
+
         # Base Payload with UUID (critical)
         payload = {
             "uuid": book_uuid,
@@ -206,27 +206,27 @@ class StorytellerAPIClient:
             # 2. CSS Selector
             if rich_locator.css_selector:
                 payload['locator']['locations']['cssSelector'] = rich_locator.css_selector
-                
+
             # 3. Fragments (List)
             if rich_locator.fragment:
                 payload['locator']['locations']['fragments'] = [rich_locator.fragment]
             elif rich_locator.fragments: # Check if list already populated (future proof)
                 payload['locator']['locations']['fragments'] = rich_locator.fragments
-                
+
             # 4. Chapter Progress (Critical for Storyteller)
             if rich_locator.chapter_progress is not None:
                 payload['locator']['locations']['progression'] = rich_locator.chapter_progress
             else:
                  # Fallback: if we don't have chapter progress, maybe default to 0 or omit?
-                 # Storyteller logs show it as distinct. 
-                 # If we omit, it might calculate it? 
+                 # Storyteller logs show it as distinct.
+                 # If we omit, it might calculate it?
                  # For now, let's leave it out if None to avoid sending null.
                  pass
 
             # 5. Position (Global Integer)
             if rich_locator.match_index is not None:
                 payload['locator']['locations']['position'] = rich_locator.match_index
-                
+
             # 6. CFI
             if rich_locator.cfi:
                 payload['locator']['locations']['cfi'] = rich_locator.cfi
@@ -242,7 +242,7 @@ class StorytellerAPIClient:
             except Exception: pass
 
         response = self._make_request("POST", f"/api/v2/books/{book_uuid}/positions", payload)
-        
+
         if response:
             if response.status_code == 204:
                 logger.info(f"Storyteller API: {book_uuid[:8]}... -> {percentage:.1%} (TS: {new_ts})")
@@ -252,10 +252,10 @@ class StorytellerAPIClient:
                 return True # Treat as 'handled' to prevent retry loops
             else:
                 logger.warning(f"Storyteller API error: {response.status_code} - {response.text[:100]}")
-        
+
         return False
 
-    def get_progress_by_filename(self, ebook_filename: str) -> Tuple[Optional[float], Optional[int], Optional[str], Optional[str]]:
+    def get_progress_by_filename(self, ebook_filename: str) -> tuple[float | None, int | None, str | None, str | None]:
         book = self.find_book_by_title(ebook_filename)
         if not book: return None, None, None, None
         return self.get_position_details(book['uuid'])
@@ -301,7 +301,7 @@ class StorytellerAPIClient:
             return results
         return []
 
-    def get_book_details(self, book_uuid: str) -> Optional[Dict]:
+    def get_book_details(self, book_uuid: str) -> dict | None:
         """Fetch full book details from Storyteller API."""
         try:
             response = self._make_request("GET", f"/api/v2/books/{book_uuid}")
@@ -311,12 +311,12 @@ class StorytellerAPIClient:
             logger.error(f"Error fetching book details: {e}")
         return None
 
-    def get_progress(self, ebook_filename: str) -> Tuple[Optional[float], Optional[int]]:
+    def get_progress(self, ebook_filename: str) -> tuple[float | None, int | None]:
         """Legacy compatibility wrapper."""
         pct, ts, _, _ = self.get_progress_by_filename(ebook_filename)
         return pct, ts
 
-    def get_progress_with_fragment(self, ebook_filename: str) -> Tuple[Optional[float], Optional[int], Optional[str], Optional[str]]:
+    def get_progress_with_fragment(self, ebook_filename: str) -> tuple[float | None, int | None, str | None, str | None]:
         """Legacy compatibility wrapper."""
         return self.get_progress_by_filename(ebook_filename)
 

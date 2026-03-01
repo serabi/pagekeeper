@@ -4,7 +4,7 @@ import logging
 import os
 import threading
 
-from flask import Blueprint, render_template, request, redirect, url_for, session
+from flask import Blueprint, redirect, render_template, request, session, url_for
 
 from src.blueprints.helpers import get_database_service, restart_server
 
@@ -25,6 +25,7 @@ def settings():
             'KOSYNC_ENABLED',
             'STORYTELLER_ENABLED',
             'BOOKLORE_ENABLED',
+            'BOOKLORE_2_ENABLED',
             'CWA_ENABLED',
             'HARDCOVER_ENABLED',
             'TELEGRAM_ENABLED',
@@ -52,7 +53,7 @@ def settings():
             clean_value = value.strip()
 
             url_keys = [
-                'SHELFMARK_URL', 'ABS_SERVER', 'BOOKLORE_SERVER',
+                'SHELFMARK_URL', 'ABS_SERVER', 'BOOKLORE_SERVER', 'BOOKLORE_2_SERVER',
                 'STORYTELLER_API_URL', 'CWA_SERVER', 'KOSYNC_SERVER'
             ]
             if key in url_keys and clean_value:

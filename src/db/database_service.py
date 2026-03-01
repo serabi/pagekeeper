@@ -5,11 +5,23 @@ Direct model-based interface without dictionary conversions.
 
 import json
 import logging
-from pathlib import Path
-from typing import List, Optional
 from contextlib import contextmanager
-from .models import DatabaseManager, Book, State, Job, HardcoverDetails, Setting, KosyncDocument, PendingSuggestion, BookloreBook, Base
 from datetime import datetime
+from pathlib import Path
+from typing import Optional
+
+from .models import (
+    Base,
+    Book,
+    BookloreBook,
+    DatabaseManager,
+    HardcoverDetails,
+    Job,
+    KosyncDocument,
+    PendingSuggestion,
+    Setting,
+    State,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,12 +48,14 @@ class DatabaseService:
 
     def _run_alembic_migrations(self):
         """Run Alembic migrations to ensure database schema is up to date."""
+        import io
         import sys
         import traceback
+
         from alembic.config import Config
-        from alembic import command
         from sqlalchemy import inspect, text
-        import io
+
+        from alembic import command
 
         # In Docker, we expect alembic.ini at /app/alembic.ini
         # Calculate project root relative to this file: src/db/database_service.py -> ../../ -> project_root
@@ -84,7 +98,7 @@ class DatabaseService:
         alembic_logger.setLevel(logging.WARNING)
 
         logger.info("Running Alembic migrations to head")
-        
+
         try:
             command.upgrade(alembic_cfg, "head")
             logger.info("Database migrations completed successfully")
@@ -121,7 +135,7 @@ class DatabaseService:
             session.close()
 
     # Setting operations
-    def get_setting(self, key: str, default: str = None) -> Optional[str]:
+    def get_setting(self, key: str, default: str = None) -> str | None:
         """Get a setting value by key."""
         with self.get_session() as session:
             setting = session.query(Setting).filter(Setting.key == key).first()
@@ -152,7 +166,7 @@ class DatabaseService:
         with self.get_session() as session:
             settings = session.query(Setting).all()
             return {s.key: s.value for s in settings}
-            
+
     def delete_setting(self, key: str) -> bool:
         """Delete a setting by key."""
         with self.get_session() as session:
@@ -163,7 +177,7 @@ class DatabaseService:
             return False
 
     # Book operations
-    def get_book(self, abs_id: str) -> Optional[Book]:
+    def get_book(self, abs_id: str) -> Book | None:
         """Get a book by its ABS ID."""
         with self.get_session() as session:
             book = session.query(Book).filter(Book.abs_id == abs_id).first()
@@ -171,7 +185,7 @@ class DatabaseService:
                 session.expunge(book)  # Detach from session
             return book
 
-    def get_book_by_kosync_id(self, kosync_id: str) -> Optional[Book]:
+    def get_book_by_kosync_id(self, kosync_id: str) -> Book | None:
         """Get a book by its KoSync document ID."""
         with self.get_session() as session:
             book = session.query(Book).filter(Book.kosync_doc_id == kosync_id).first()
@@ -179,7 +193,7 @@ class DatabaseService:
                 session.expunge(book)
             return book
 
-    def get_all_books(self) -> List[Book]:
+    def get_all_books(self) -> list[Book]:
         """Get all books as model objects."""
         with self.get_session() as session:
             books = session.query(Book).all()
@@ -232,14 +246,14 @@ class DatabaseService:
                 session.query(State).filter(State.abs_id == old_abs_id).update({State.abs_id: new_abs_id}, synchronize_session=False)
                 session.query(Job).filter(Job.abs_id == old_abs_id).update({Job.abs_id: new_abs_id}, synchronize_session=False)
                 session.query(KosyncDocument).filter(KosyncDocument.linked_abs_id == old_abs_id).update({KosyncDocument.linked_abs_id: new_abs_id}, synchronize_session=False)
-                
+
                 # Cleanup non-migratable data (Alignment/Hardcover)
-                from .models import BookAlignment # Import here to avoid circulars if any, though likely safe at top
+                from .models import BookAlignment  # Import here to avoid circulars if any, though likely safe at top
                 try:
                     session.query(BookAlignment).filter(BookAlignment.abs_id == old_abs_id).delete(synchronize_session=False)
                     session.query(HardcoverDetails).filter(HardcoverDetails.abs_id == old_abs_id).delete(synchronize_session=False)
                 except Exception: pass
-                
+
                 logger.info(f"Migrated data from '{old_abs_id}' to '{new_abs_id}'")
             except Exception as e:
                 logger.error(f"Failed to migrate book data: {e}")
@@ -252,14 +266,14 @@ class DatabaseService:
             session.query(KosyncDocument).filter(
                 KosyncDocument.linked_abs_id == abs_id
             ).update({KosyncDocument.linked_abs_id: None})
-            
+
             book = session.query(Book).filter(Book.abs_id == abs_id).first()
             if book:
                 session.delete(book)  # Cascade will handle states and jobs
                 return True
             return False
 
-    def get_books_by_status(self, status: str) -> List[Book]:
+    def get_books_by_status(self, status: str) -> list[Book]:
         """Get books by status."""
         with self.get_session() as session:
             books = session.query(Book).filter(Book.status == status).all()
@@ -268,7 +282,7 @@ class DatabaseService:
             return books
 
     # State operations
-    def get_state(self, abs_id: str, client_name: str) -> Optional[State]:
+    def get_state(self, abs_id: str, client_name: str) -> State | None:
         """Get a specific state by book and client."""
         with self.get_session() as session:
             state = session.query(State).filter(
@@ -279,7 +293,7 @@ class DatabaseService:
                 session.expunge(state)
             return state
 
-    def get_states_for_book(self, abs_id: str) -> List[State]:
+    def get_states_for_book(self, abs_id: str) -> list[State]:
         """Get all states for a book."""
         with self.get_session() as session:
             states = session.query(State).filter(State.abs_id == abs_id).all()
@@ -287,7 +301,7 @@ class DatabaseService:
                 session.expunge(state)
             return states
 
-    def get_all_states(self) -> List[State]:
+    def get_all_states(self) -> list[State]:
         """Get all states."""
         with self.get_session() as session:
             states = session.query(State).all()
@@ -328,7 +342,7 @@ class DatabaseService:
             return count
 
     # Job operations
-    def get_latest_job(self, abs_id: str) -> Optional[Job]:
+    def get_latest_job(self, abs_id: str) -> Job | None:
         """Get the latest job for a book."""
         with self.get_session() as session:
             job = session.query(Job).filter(Job.abs_id == abs_id).order_by(Job.last_attempt.desc()).first()
@@ -336,7 +350,7 @@ class DatabaseService:
                 session.expunge(job)
             return job
 
-    def get_jobs_for_book(self, abs_id: str) -> List[Job]:
+    def get_jobs_for_book(self, abs_id: str) -> list[Job]:
         """Get all jobs for a book."""
         with self.get_session() as session:
             jobs = session.query(Job).filter(Job.abs_id == abs_id).order_by(Job.last_attempt.desc()).all()
@@ -344,7 +358,7 @@ class DatabaseService:
                 session.expunge(job)
             return jobs
 
-    def get_all_jobs(self) -> List[Job]:
+    def get_all_jobs(self) -> list[Job]:
         """Get all jobs."""
         with self.get_session() as session:
             jobs = session.query(Job).all()
@@ -361,7 +375,7 @@ class DatabaseService:
             session.expunge(job)
             return job
 
-    def update_latest_job(self, abs_id: str, **kwargs) -> Optional[Job]:
+    def update_latest_job(self, abs_id: str, **kwargs) -> Job | None:
         """Update the latest job for a book."""
         with self.get_session() as session:
             job = session.query(Job).filter(Job.abs_id == abs_id).order_by(Job.last_attempt.desc()).first()
@@ -383,7 +397,7 @@ class DatabaseService:
             return count
 
     # HardcoverDetails operations
-    def get_hardcover_details(self, abs_id: str) -> Optional[HardcoverDetails]:
+    def get_hardcover_details(self, abs_id: str) -> HardcoverDetails | None:
         """Get hardcover details for a book."""
         with self.get_session() as session:
             details = session.query(HardcoverDetails).filter(HardcoverDetails.abs_id == abs_id).first()
@@ -423,7 +437,7 @@ class DatabaseService:
                 return True
             return False
 
-    def get_all_hardcover_details(self) -> List[HardcoverDetails]:
+    def get_all_hardcover_details(self) -> list[HardcoverDetails]:
         """Get all hardcover details."""
         with self.get_session() as session:
             details = session.query(HardcoverDetails).all()
@@ -432,7 +446,7 @@ class DatabaseService:
             return details
 
     # Advanced queries
-    def get_books_with_recent_activity(self, limit: int = 10) -> List[Book]:
+    def get_books_with_recent_activity(self, limit: int = 10) -> list[Book]:
         """Get books with the most recent state updates."""
         with self.get_session() as session:
             books = session.query(Book).join(State).order_by(State.last_updated.desc()).limit(limit).all()
@@ -440,7 +454,7 @@ class DatabaseService:
                 session.expunge(book)
             return books
 
-    def get_failed_jobs(self, limit: int = 20) -> List[Job]:
+    def get_failed_jobs(self, limit: int = 20) -> list[Job]:
         """Get recent failed jobs."""
         with self.get_session() as session:
             jobs = session.query(Job).filter(Job.last_error.isnot(None)).order_by(Job.last_attempt.desc()).limit(limit).all()
@@ -470,7 +484,7 @@ class DatabaseService:
 
             return stats
 
-    def get_kosync_document(self, document_hash: str) -> Optional[KosyncDocument]:
+    def get_kosync_document(self, document_hash: str) -> KosyncDocument | None:
         """Get a KOSync document by its hash."""
         with self.get_session() as session:
             doc = session.query(KosyncDocument).filter(
@@ -490,7 +504,7 @@ class DatabaseService:
             session.expunge(merged)
             return merged
 
-    def get_all_kosync_documents(self) -> List[KosyncDocument]:
+    def get_all_kosync_documents(self) -> list[KosyncDocument]:
         """Get all KOSync documents."""
         with self.get_session() as session:
             docs = session.query(KosyncDocument).order_by(
@@ -500,7 +514,7 @@ class DatabaseService:
                 session.expunge(doc)
             return docs
 
-    def get_unlinked_kosync_documents(self) -> List[KosyncDocument]:
+    def get_unlinked_kosync_documents(self) -> list[KosyncDocument]:
         """Get KOSync documents not linked to any ABS book."""
         with self.get_session() as session:
             docs = session.query(KosyncDocument).filter(
@@ -510,7 +524,7 @@ class DatabaseService:
                 session.expunge(doc)
             return docs
 
-    def get_linked_kosync_documents(self) -> List[KosyncDocument]:
+    def get_linked_kosync_documents(self) -> list[KosyncDocument]:
         """Get KOSync documents that are linked to an ABS book."""
         with self.get_session() as session:
             docs = session.query(KosyncDocument).filter(
@@ -555,7 +569,7 @@ class DatabaseService:
                 return True
             return False
 
-    def get_kosync_document_by_linked_book(self, abs_id: str) -> Optional[KosyncDocument]:
+    def get_kosync_document_by_linked_book(self, abs_id: str) -> KosyncDocument | None:
         """Get a KOSync document linked to a specific ABS book."""
         with self.get_session() as session:
             doc = session.query(KosyncDocument).filter(
@@ -565,7 +579,7 @@ class DatabaseService:
                 session.expunge(doc)
             return doc
 
-    def get_kosync_documents_for_book(self, abs_id: str) -> List[KosyncDocument]:
+    def get_kosync_documents_for_book(self, abs_id: str) -> list[KosyncDocument]:
         """Get ALL KOSync documents linked to a specific ABS book."""
         with self.get_session() as session:
             docs = session.query(KosyncDocument).filter(
@@ -589,7 +603,7 @@ class DatabaseService:
                 session.expunge(book)
             return book
 
-    def get_kosync_doc_by_filename(self, filename: str) -> Optional[KosyncDocument]:
+    def get_kosync_doc_by_filename(self, filename: str) -> KosyncDocument | None:
         """Find a KOSync document by its associated filename."""
         with self.get_session() as session:
             doc = session.query(KosyncDocument).filter(
@@ -599,7 +613,7 @@ class DatabaseService:
                 session.expunge(doc)
             return doc
 
-    def get_kosync_doc_by_booklore_id(self, booklore_id: str) -> Optional[KosyncDocument]:
+    def get_kosync_doc_by_booklore_id(self, booklore_id: str) -> KosyncDocument | None:
         """Find a KOSync document by its Booklore ID."""
         with self.get_session() as session:
             doc = session.query(KosyncDocument).filter(
@@ -611,7 +625,7 @@ class DatabaseService:
 
 
     # PendingSuggestion operations
-    def get_pending_suggestion(self, source_id: str) -> Optional[PendingSuggestion]:
+    def get_pending_suggestion(self, source_id: str) -> PendingSuggestion | None:
         """Get a pending suggestion by source ID (e.g. ABS ID). Only returns pending, not dismissed."""
         with self.get_session() as session:
             suggestion = session.query(PendingSuggestion).filter(
@@ -655,13 +669,13 @@ class DatabaseService:
         """Check if a document hash is actively linked to a device document."""
         if not doc_hash:
             return False
-            
+
         with self.get_session() as session:
             return session.query(KosyncDocument).filter(
                 KosyncDocument.document_hash == doc_hash
             ).count() > 0
 
-    def get_all_pending_suggestions(self) -> List[PendingSuggestion]:
+    def get_all_pending_suggestions(self) -> list[PendingSuggestion]:
         """Get all pending suggestions."""
         with self.get_session() as session:
             suggestions = session.query(PendingSuggestion).filter(
@@ -705,26 +719,25 @@ class DatabaseService:
             # regardless of its status. This ensures that if the user matched it
             # or it's pending transcription, we don't wipe it accidentally.
             # But junk suggestions for books they haven't touched are wiped.
-            from sqlalchemy import select
-            
+
             # Using raw delete with subquery for efficiency
             # We delete suggestions where source_id is not in the books table
             from sqlalchemy import not_
-            
+
             # Find all suggestions not in the books table
             stale_query = session.query(PendingSuggestion).filter(
                 not_(PendingSuggestion.source_id.in_(
                     session.query(Book.abs_id)
                 ))
             )
-            
+
             count = stale_query.count()
             stale_query.delete(synchronize_session=False)
-            
+
             return count
 
     # BookloreBook operations
-    def get_booklore_book(self, filename: str) -> Optional[BookloreBook]:
+    def get_booklore_book(self, filename: str) -> BookloreBook | None:
         """Get a cached Booklore book by filename."""
         with self.get_session() as session:
             book = session.query(BookloreBook).filter(BookloreBook.filename == filename).first()
@@ -732,10 +745,13 @@ class DatabaseService:
                 session.expunge(book)
             return book
 
-    def get_all_booklore_books(self) -> List[BookloreBook]:
-        """Get all cached Booklore books."""
+    def get_all_booklore_books(self, source: str = None) -> list[BookloreBook]:
+        """Get all cached Booklore books, optionally filtered by source."""
         with self.get_session() as session:
-            books = session.query(BookloreBook).all()
+            query = session.query(BookloreBook)
+            if source:
+                query = query.filter(BookloreBook.source == source)
+            books = query.all()
             for book in books:
                 session.expunge(book)
             return books
@@ -744,7 +760,8 @@ class DatabaseService:
         """Save or update a Booklore book."""
         with self.get_session() as session:
             existing = session.query(BookloreBook).filter(
-                BookloreBook.filename == booklore_book.filename
+                BookloreBook.filename == booklore_book.filename,
+                BookloreBook.source == booklore_book.source
             ).first()
 
             if existing:
@@ -762,16 +779,19 @@ class DatabaseService:
                 session.expunge(booklore_book)
                 return booklore_book
 
-    def delete_booklore_book(self, filename: str) -> bool:
+    def delete_booklore_book(self, filename: str, source: str = None) -> bool:
         """Delete a Booklore book from the cache table."""
+        if not source:
+            logger.warning(f"delete_booklore_book called without source for '{filename}', skipping to avoid cross-instance deletion")
+            return False
         try:
-            from src.db.models import BookloreBook
-            # Use safe session context manager
             with self.get_session() as session:
-                # STRICT DELETION: Use exact filename as passed by client
-                # This ensures we delete "mybook.epub" but not "MyBook.epub" if both exist
-                session.query(BookloreBook).filter(BookloreBook.filename == filename).delete(synchronize_session=False)
-                return True
+                query = session.query(BookloreBook).filter(
+                    BookloreBook.filename == filename,
+                    BookloreBook.source == source
+                )
+                deleted = query.delete(synchronize_session=False)
+                return deleted > 0
         except Exception as e:
             logger.error(f"Failed to delete Booklore book '{filename}': {e}")
             return False
@@ -792,7 +812,7 @@ class DatabaseMigrator:
         # Migrate mappings/books
         if self.json_db_path.exists():
             try:
-                with open(self.json_db_path, 'r') as f:
+                with open(self.json_db_path) as f:
                     mapping_data = json.load(f)
 
                 if 'mappings' in mapping_data:
@@ -805,7 +825,7 @@ class DatabaseMigrator:
         # Migrate state
         if self.json_state_path.exists():
             try:
-                with open(self.json_state_path, 'r') as f:
+                with open(self.json_state_path) as f:
                     state_data = json.load(f)
 
                 self._migrate_states(state_data)
@@ -816,7 +836,7 @@ class DatabaseMigrator:
 
         logger.info("Migration completed")
 
-    def _migrate_books(self, mappings_list: List[dict]):
+    def _migrate_books(self, mappings_list: list[dict]):
         """Migrate book mappings to Book models."""
         for mapping in mappings_list:
             book = Book(

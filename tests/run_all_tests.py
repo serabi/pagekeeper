@@ -7,6 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+
 def run_test_file(test_file, description):
     """Run a single test file."""
     print(f"\n[RUN] Running {description}")
@@ -16,7 +17,7 @@ def run_test_file(test_file, description):
         # Run from the project root directory (parent of tests/)
         # Run from the project root directory (parent of tests/)
         project_root = Path(__file__).parent.parent
-        
+
         # Merge PYTHONPATH with existing environment to preserve system paths
         import os
         env = os.environ.copy()

@@ -1,9 +1,8 @@
 import logging
-from typing import Optional
 
 from src.api.hardcover_client import HardcoverClient
-from src.db.models import Book, State, HardcoverDetails
-from src.sync_clients.sync_client_interface import SyncClient, SyncResult, UpdateProgressRequest, ServiceState
+from src.db.models import Book, HardcoverDetails, State
+from src.sync_clients.sync_client_interface import ServiceState, SyncClient, SyncResult, UpdateProgressRequest
 from src.utils.ebook_utils import EbookParser
 from src.utils.logging_utils import sanitize_log_data
 
@@ -41,7 +40,7 @@ class HardcoverSyncClient(SyncClient):
         """Hardcover supports both audiobook and ebook syncing (as a follower)."""
         return {'audiobook', 'ebook'}
 
-    def get_service_state(self, book: Book, prev_state: Optional[State], title_snip: str = "", bulk_context: dict = None) -> Optional[ServiceState]:
+    def get_service_state(self, book: Book, prev_state: State | None, title_snip: str = "", bulk_context: dict = None) -> ServiceState | None:
         """
         Since Hardcover can never be the leader, its service state is not used for
         leader selection or text extraction. Return None to indicate no state needed.
@@ -190,7 +189,7 @@ class HardcoverSyncClient(SyncClient):
         self.hardcover_client.update_status(match['book_id'], 1, match.get('edition_id'))
         return True
 
-    def get_text_from_current_state(self, book: Book, state: ServiceState) -> Optional[str]:
+    def get_text_from_current_state(self, book: Book, state: ServiceState) -> str | None:
         """
         Hardcover doesn't provide text content, so return None.
         This client is primarily for progress synchronization.

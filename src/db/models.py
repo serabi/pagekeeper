@@ -2,11 +2,12 @@
 SQLAlchemy ORM models for Book Stitch database.
 """
 
-from sqlalchemy import create_engine, Column, Integer, String, Float, Text, DateTime, ForeignKey, Numeric
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
-from typing import Optional
+
+import sqlalchemy as sa
+from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, Numeric, String, Text, create_engine
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import relationship, sessionmaker
 
 Base = declarative_base()
 
@@ -24,12 +25,12 @@ class KosyncDocument(Base):
     device = Column(String(128), nullable=True)
     device_id = Column(String(64), nullable=True)
     timestamp = Column(DateTime, nullable=True)
-    
+
     # Bridge specific fields
     linked_abs_id = Column(String(255), ForeignKey('books.abs_id'), nullable=True, index=True)
     first_seen = Column(DateTime, default=datetime.utcnow)
     last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    
+
     # Hash cache replacement fields
     filename = Column(String(500), nullable=True)
     source = Column(String(50), nullable=True)
@@ -222,7 +223,7 @@ class PendingSuggestion(Base):
     status = Column(String(20), default='pending')
     created_at = Column(DateTime, default=datetime.utcnow)
 
-    def __init__(self, source_id: str, title: str, author: str = None, 
+    def __init__(self, source_id: str, title: str, author: str = None,
                  cover_url: str = None, matches_json: str = "[]", status: str = 'pending'):
         self.source_id = source_id
         self.title = title
@@ -239,7 +240,7 @@ class PendingSuggestion(Base):
             return json.loads(self.matches_json) if self.matches_json else []
         except json.JSONDecodeError:
             return []
-    
+
     @property
     def audiobook_count(self):
         """Count only audiobook matches, excluding ebook entries."""
@@ -290,9 +291,13 @@ class BookloreBook(Base):
     Model for caching Booklore search results, replacing local JSON cache.
     """
     __tablename__ = 'booklore_books'
+    __table_args__ = (
+        sa.UniqueConstraint('filename', 'source', name='uq_booklore_books_filename_source'),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    filename = Column(String(500), index=True, nullable=False, unique=True)
+    filename = Column(String(500), index=True, nullable=False)
+    source = Column(String(50), default='booklore')
     title = Column(String(500))
     authors = Column(String(500))
     raw_metadata = Column(Text)  # JSON blob of full booklore response
@@ -306,11 +311,13 @@ class BookloreBook(Base):
         except json.JSONDecodeError:
             return {}
 
-    def __init__(self, filename: str, title: str = None, authors: str = None, raw_metadata: str = None):
+    def __init__(self, filename: str, title: str | None = None, authors: str | None = None,
+                 raw_metadata: str | None = None, source: str = 'booklore'):
         self.filename = filename
         self.title = title
         self.authors = authors
         self.raw_metadata = raw_metadata
+        self.source = source
 
 
 # Database configuration
@@ -325,11 +332,11 @@ class DatabaseManager:
         # Increase timeout to reduce lock errors, enable WAL mode for concurrency, allow multi-thread access
         # Using 4 slashes guarantees an absolute path in SQLAlchemy
         self.engine = create_engine(
-            f'sqlite:///{self.db_path}', 
-            echo=False, 
+            f'sqlite:///{self.db_path}',
+            echo=False,
             connect_args={'timeout': 30, 'check_same_thread': False}
         )
-        
+
         from sqlalchemy import event
         @event.listens_for(self.engine, "connect")
         def set_sqlite_pragma(dbapi_connection, connection_record):

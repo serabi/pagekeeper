@@ -6,37 +6,38 @@ AudioBookShelf (ABS), Booklore (Metadata), and our local database.
 
 import logging
 import os
-from typing import List, Optional
 
-from src.db.models import Book
-from src.db.database_service import DatabaseService
 from src.api.api_clients import ABSClient
 from src.api.cwa_client import CWAClient
+from src.db.database_service import DatabaseService
+from src.db.models import Book
 
 logger = logging.getLogger(__name__)
 
 class LibraryService:
-    def __init__(self, database_service: DatabaseService, booklore_client, cwa_client: CWAClient, abs_client: ABSClient, epub_cache_dir: str):
+    def __init__(self, database_service: DatabaseService, booklore_client, cwa_client: CWAClient, abs_client: ABSClient, epub_cache_dir: str, booklore_client_2=None):
         self.database_service = database_service
         self.booklore = booklore_client
+        self.booklore_2 = booklore_client_2
+        self._booklore_clients = [c for c in [booklore_client, booklore_client_2] if c]
         self.cwa_client = cwa_client
         self.abs_client = abs_client
         self.epub_cache_dir = epub_cache_dir
-        
+
         if not os.path.exists(self.epub_cache_dir):
             try:
                 os.makedirs(self.epub_cache_dir)
             except Exception:
                 pass
 
-    def get_syncable_books(self) -> List[Book]:
+    def get_syncable_books(self) -> list[Book]:
         """
         Returns a list of books that are active and candidates for synchronization.
         """
         # This wraps the low-level DB query
         return self.database_service.get_all_books()
 
-    def acquire_ebook(self, abs_item: dict) -> Optional[str]:
+    def acquire_ebook(self, abs_item: dict) -> str | None:
         """
         Attempt to acquire an ebook for the given audiobook item.
         Priority Chain:
@@ -45,7 +46,7 @@ class LibraryService:
         3. CWA (Automated Library Search via OPDS)
         4. ABS Search (Search other libraries for title)
         5. Filesystem (Fallback - handled by caller)
-        
+
         Returns:
             Absolute path to the downloaded/found ebook, or None.
         """
@@ -55,7 +56,7 @@ class LibraryService:
         item_id = abs_item.get('id')
         title = abs_item.get('media', {}).get('metadata', {}).get('title')
         author = abs_item.get('media', {}).get('metadata', {}).get('authorName')
-        
+
         # Sanity check
         if not item_id or not title:
             return None
@@ -74,7 +75,7 @@ class LibraryService:
                 target = ebooks[0]
                 filename = f"{item_id}_direct.{target['ext']}"
                 output_path = os.path.join(self.epub_cache_dir, filename)
-                
+
                 # Check if already exists?
                 if os.path.exists(output_path) and os.path.getsize(output_path) > 1024:
                     logger.info(f"   Using cached ebook: {output_path}")
@@ -85,23 +86,23 @@ class LibraryService:
                      return output_path
 
         # 2. Booklore (Curated)
-        # Placeholder for curated DB lookup. 
+        # Placeholder for curated DB lookup.
         # Future: Check self.db.find_booklore_match(title, author)
-        
+
         # 3. CWA (OPDS)
         if self.cwa_client and self.cwa_client.is_configured():
             # Use title + author for better precision
             query = f"{title}"
             if author:
                 query += f" {author}"
-            
+
             results = self.cwa_client.search_ebooks(query)
             if results:
                 logger.info(f"   Priority 3 (CWA): Found {len(results)} matches for '{query}'")
                 target = results[0]
                 filename = f"{item_id}_cwa.{target['ext']}"
                 output_path = os.path.join(self.epub_cache_dir, filename)
-                
+
                 if self.cwa_client.download_ebook(target['download_url'], output_path):
                     logger.info(f"   Downloaded CWA match to {output_path}")
                     return output_path
@@ -125,7 +126,7 @@ class LibraryService:
                          tf = target_files[0]
                          filename = f"{item_id}_abs_search.{tf['ext']}"
                          output_path = os.path.join(self.epub_cache_dir, filename)
-                         
+
                          if self.abs_client.download_file(tf['stream_url'], output_path):
                              logger.info(f"   Downloaded ABS search match to {output_path}")
                              return output_path
@@ -136,34 +137,24 @@ class LibraryService:
     def sync_library_books(self):
         """
         Main Routine: Synchronize our local library DB with external metadata sources (Booklore).
-        
+
         The new BookloreClient handles its own file-based caching internally.
         This method now simply triggers a cache refresh by calling get_all_books().
         """
         books = self.get_syncable_books()
         logger.info(f"LibraryService: Syncing metadata for {len(books)} books...")
-        
-        # Check if Booklore is configured
-        if not self.booklore or not self.booklore.is_configured():
-            logger.info("   Booklore not configured, skipping library sync.")
-            return
-            
-        logger.info("Booklore integration enabled - ebooks sourced from API")
-        
-        # Trigger cache refresh by calling get_all_books()
-        # This will refresh the internal JSON-based cache if stale and PRUNE ghosts
-        try:
-            # Note: get_all_books() triggers _refresh_book_cache() if needed.
-            # The client now handles persistence of new/pruned items internally.
-            # We do NOT need to iterate and save everything again, as that is redundant
-            # and could mask pruning operations.
-            
-            all_books = self.booklore.get_all_books()
-            logger.info(f"   Booklore cache is active with {len(all_books)} books.")
-            
-            # FUTURE: If we want to ensure DB sync for fields that changed without ID change,
-            # we could do it here, but efficiently. For now, trust the client's cache logic.
-            
-        except Exception as e:
-            logger.error(f"   Library sync failed: {e}")
+
+        any_configured = False
+        for bl_client in self._booklore_clients:
+            if not bl_client or not bl_client.is_configured():
+                continue
+            any_configured = True
+            try:
+                all_books = bl_client.get_all_books()
+                logger.info(f"   Booklore ({bl_client.source_tag}) cache is active with {len(all_books)} books.")
+            except Exception as e:
+                logger.error(f"   Library sync failed for Booklore ({bl_client.source_tag}): {e}")
+
+        if not any_configured:
+            logger.info("   No Booklore instances configured, skipping library sync.")
 

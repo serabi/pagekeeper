@@ -3,10 +3,10 @@
 Quick test to verify SyncManager gets paths from DI container instead of hardcoded values.
 """
 
-import sys
 import os
-import tempfile
 import shutil
+import sys
+import tempfile
 
 # Add project root to path
 project_root = os.path.join(os.path.dirname(__file__), '..')
@@ -93,7 +93,7 @@ def test_syncmanager_di_paths():
         for handler in logging.root.handlers[:]:
             handler.close()
             logging.root.removeHandler(handler)
-            
+
         if 'container' in locals():
             try:
                 # Retrieve the database service singleton (if initialized)
@@ -103,7 +103,7 @@ def test_syncmanager_di_paths():
                     db_service.db_manager.close()
             except Exception as e:
                 print(f"[WARN] Failed to close database: {e}")
-                
+
         # Clean up temporary directories
         if os.path.exists(temp_base_dir):
             try:

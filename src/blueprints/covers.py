@@ -3,9 +3,9 @@
 import logging
 
 import requests
-from flask import Blueprint, send_from_directory, Response
+from flask import Blueprint, Response, send_from_directory
 
-from src.blueprints.helpers import get_container, get_database_service, get_covers_dir
+from src.blueprints.helpers import get_container, get_covers_dir, get_database_service
 
 logger = logging.getLogger(__name__)
 
