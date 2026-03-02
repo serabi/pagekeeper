@@ -99,11 +99,6 @@
                     KOSync
                 </button>
 
-                <button type="button" class="sidebar-tab" role="tab" onclick="switchTab('sync')" data-tab="sync">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-                    Sync Behavior
-                </button>
-
                 <button type="button" class="sidebar-tab" role="tab" onclick="switchTab('notifications')" data-tab="notifications">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
                     Notifications
@@ -200,6 +195,25 @@
                             <input type="number" name="ABS_SOCKET_DEBOUNCE_SECONDS"
                                 value="{{ get_val('ABS_SOCKET_DEBOUNCE_SECONDS') }}">
                             <div class="help-text">Debounce delay for Socket.IO events</div>
+                        </div>
+                    </div>
+
+                    <!-- Sync Settings -->
+                    <div class="sub-section">
+                        <div class="sub-section-header">
+                            <h3>Sync Settings</h3>
+                        </div>
+                        <div class="sub-section-body">
+                            <div class="form-group">
+                                <label>Min ABS Change (Seconds)</label>
+                                <input type="number" name="SYNC_DELTA_ABS_SECONDS"
+                                    value="{{ get_val('SYNC_DELTA_ABS_SECONDS') }}">
+                            </div>
+                            <div class="checkbox-wrapper full-width">
+                                <input type="checkbox" id="abs_ebook" name="SYNC_ABS_EBOOK" {% if get_bool('SYNC_ABS_EBOOK')
+                                    %}checked{% endif %}>
+                                <label for="abs_ebook">Enable ABS Ebook Sync (Bi-directional)</label>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -541,141 +555,6 @@
                     </div>
                 </div>
 
-                <!-- ─── Sync Behavior ─── -->
-                <div class="tab-panel" id="panel-sync">
-                    <div class="panel-header">
-                        <h2>Sync Behavior</h2>
-                        <p>Timing, thresholds, and real-time sync options.</p>
-                    </div>
-
-                    <div class="field-grid">
-                        <div class="form-group">
-                            <label>Sync Period (Minutes)</label>
-                            <input type="number" name="SYNC_PERIOD_MINS" value="{{ get_val('SYNC_PERIOD_MINS') }}">
-                        </div>
-                        <div class="form-group">
-                            <label>Min ABS Change (Seconds)</label>
-                            <input type="number" name="SYNC_DELTA_ABS_SECONDS"
-                                value="{{ get_val('SYNC_DELTA_ABS_SECONDS') }}">
-                        </div>
-                        <div class="form-group">
-                            <label>Min Ebook Change (%)</label>
-                            <input type="number" step="0.1" name="SYNC_DELTA_KOSYNC_PERCENT"
-                                value="{{ get_val('SYNC_DELTA_KOSYNC_PERCENT') }}">
-                        </div>
-                        <div class="form-group">
-                            <label>Client Diff Threshold (%)</label>
-                            <input type="number" step="0.1" name="SYNC_DELTA_BETWEEN_CLIENTS_PERCENT"
-                                value="{{ get_val('SYNC_DELTA_BETWEEN_CLIENTS_PERCENT') }}">
-                        </div>
-
-                        <div class="checkbox-wrapper full-width">
-                            <input type="checkbox" id="xpath_fallback" name="XPATH_FALLBACK_TO_PREVIOUS_SEGMENT" {% if
-                                get_bool('XPATH_FALLBACK_TO_PREVIOUS_SEGMENT') %}checked{% endif %}>
-                            <label for="xpath_fallback">XPath Fallback (Try previous segment if match fails)</label>
-                        </div>
-                        <div class="checkbox-wrapper full-width">
-                            <input type="checkbox" id="abs_ebook" name="SYNC_ABS_EBOOK" {% if get_bool('SYNC_ABS_EBOOK')
-                                %}checked{% endif %}>
-                            <label for="abs_ebook">Enable ABS Ebook Sync (Bi-directional)</label>
-                        </div>
-                        <div class="checkbox-wrapper full-width">
-                            <input type="checkbox" id="reprocess_on_clear" name="REPROCESS_ON_CLEAR_IF_NO_ALIGNMENT" {% if
-                                get_bool('REPROCESS_ON_CLEAR_IF_NO_ALIGNMENT') %}checked{% endif %}>
-                            <label for="reprocess_on_clear">Regenerate Missing Data on Reset</label>
-                        </div>
-                        <div class="full-width">
-                            <div class="help-text">
-                                When resetting your progress, check for missing sync data. If found, the system will attempt
-                                to regenerate it (which may require re-transcription).
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Instant Sync sub-section -->
-                    <div class="sub-section">
-                        <div class="sub-section-header">
-                            <h3>Instant Sync</h3>
-                            <div class="toggle-switch-wrapper">
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="toggle_instant_sync" name="INSTANT_SYNC_ENABLED"
-                                        onchange="toggleSection('instant_sync_body', this.checked)"
-                                        {% if get_bool('INSTANT_SYNC_ENABLED') %}checked{% endif %}>
-                                    <span class="slider"></span>
-                                </label>
-                            </div>
-                        </div>
-                        <div id="instant_sync_body" class="sub-section-body {% if not get_bool('INSTANT_SYNC_ENABLED') %}collapsed{% endif %}">
-                            <div class="full-width">
-                                <div class="help-text" style="margin-bottom: 12px;">
-                                    Triggers immediate sync on ABS playback or KOReader progress. Disable to rely solely on polling.
-                                </div>
-                            </div>
-
-                            <div class="section-label">Per-Client Polling</div>
-                            <div class="full-width">
-                                <div class="help-text" style="margin-bottom: 8px;">
-                                    <em>Global</em> uses the main sync interval. <em>Custom</em> sets a separate check frequency per client.
-                                </div>
-                            </div>
-
-                            {% if get_bool('STORYTELLER_ENABLED') %}
-                            <div class="form-group">
-                                <label>Storyteller Poll Mode</label>
-                                <select name="STORYTELLER_POLL_MODE" id="storyteller_poll_mode"
-                                        onchange="togglePollSeconds('storyteller_poll_seconds_row', this.value)">
-                                    <option value="global" {% if get_val('STORYTELLER_POLL_MODE', 'global') == 'global' %}selected{% endif %}>Global</option>
-                                    <option value="custom" {% if get_val('STORYTELLER_POLL_MODE') == 'custom' %}selected{% endif %}>Custom</option>
-                                </select>
-                            </div>
-                            <div class="form-group" id="storyteller_poll_seconds_row"
-                                 {% if get_val('STORYTELLER_POLL_MODE') != 'custom' %}style="opacity: 0.45; pointer-events: none;"{% endif %}>
-                                <label>Storyteller Poll Interval (seconds)</label>
-                                <input type="number" name="STORYTELLER_POLL_SECONDS" min="10"
-                                       value="{{ get_val('STORYTELLER_POLL_SECONDS', '45') }}">
-                                <div class="help-text">Recommended: 30-60s for Storyteller (active reading source).</div>
-                            </div>
-                            {% endif %}
-
-                            {% if get_bool('BOOKLORE_ENABLED') %}
-                            <div class="form-group">
-                                <label>{{ get_val('BOOKLORE_LABEL', 'Booklore') or 'Booklore' }} Poll Mode</label>
-                                <select name="BOOKLORE_POLL_MODE" id="booklore_poll_mode"
-                                        onchange="togglePollSeconds('booklore_poll_seconds_row', this.value)">
-                                    <option value="global" {% if get_val('BOOKLORE_POLL_MODE', 'global') == 'global' %}selected{% endif %}>Global</option>
-                                    <option value="custom" {% if get_val('BOOKLORE_POLL_MODE') == 'custom' %}selected{% endif %}>Custom</option>
-                                </select>
-                            </div>
-                            <div class="form-group" id="booklore_poll_seconds_row"
-                                 {% if get_val('BOOKLORE_POLL_MODE') != 'custom' %}style="opacity: 0.45; pointer-events: none;"{% endif %}>
-                                <label>{{ get_val('BOOKLORE_LABEL', 'Booklore') or 'Booklore' }} Poll Interval (seconds)</label>
-                                <input type="number" name="BOOKLORE_POLL_SECONDS" min="10"
-                                       value="{{ get_val('BOOKLORE_POLL_SECONDS', '300') }}">
-                                <div class="help-text">Recommended: 300s for Booklore.</div>
-                            </div>
-                            {% endif %}
-
-                            {% if get_bool('BOOKLORE_2_ENABLED') %}
-                            <div class="form-group">
-                                <label>{{ get_val('BOOKLORE_2_LABEL', 'Booklore 2') or 'Booklore 2' }} Poll Mode</label>
-                                <select name="BOOKLORE_2_POLL_MODE" id="booklore2_poll_mode"
-                                        onchange="togglePollSeconds('booklore2_poll_seconds_row', this.value)">
-                                    <option value="global" {% if get_val('BOOKLORE_2_POLL_MODE', 'global') == 'global' %}selected{% endif %}>Global</option>
-                                    <option value="custom" {% if get_val('BOOKLORE_2_POLL_MODE') == 'custom' %}selected{% endif %}>Custom</option>
-                                </select>
-                            </div>
-                            <div class="form-group" id="booklore2_poll_seconds_row"
-                                 {% if get_val('BOOKLORE_2_POLL_MODE') != 'custom' %}style="opacity: 0.45; pointer-events: none;"{% endif %}>
-                                <label>{{ get_val('BOOKLORE_2_LABEL', 'Booklore 2') or 'Booklore 2' }} Poll Interval (seconds)</label>
-                                <input type="number" name="BOOKLORE_2_POLL_SECONDS" min="10"
-                                       value="{{ get_val('BOOKLORE_2_POLL_SECONDS', '300') }}">
-                                <div class="help-text">Recommended: 300s for Booklore.</div>
-                            </div>
-                            {% endif %}
-                        </div>
-                    </div>
-                </div>
-
                 <!-- ─── Notifications ─── -->
                 <div class="tab-panel" id="panel-notifications">
                     <div class="panel-header">
@@ -818,6 +697,128 @@
                             <input type="number" step="1" min="0" max="100" name="SMIL_VALIDATION_THRESHOLD"
                                 value="{{ get_val('SMIL_VALIDATION_THRESHOLD', '60') }}">
                             <div class="help-text">Minimum token match % to accept EPUB SMIL data. Lower = more lenient.</div>
+                        </div>
+                    </div>
+
+                    <!-- Sync Engine -->
+                    <div class="sub-section">
+                        <div class="sub-section-header">
+                            <h3>Sync Engine</h3>
+                        </div>
+                        <div class="sub-section-body">
+                            <div class="form-group">
+                                <label>Sync Period (Minutes)</label>
+                                <input type="number" name="SYNC_PERIOD_MINS" value="{{ get_val('SYNC_PERIOD_MINS') }}">
+                            </div>
+                            <div class="form-group">
+                                <label>Min Ebook Change (%)</label>
+                                <input type="number" step="0.1" name="SYNC_DELTA_KOSYNC_PERCENT"
+                                    value="{{ get_val('SYNC_DELTA_KOSYNC_PERCENT') }}">
+                            </div>
+                            <div class="form-group">
+                                <label>Client Diff Threshold (%)</label>
+                                <input type="number" step="0.1" name="SYNC_DELTA_BETWEEN_CLIENTS_PERCENT"
+                                    value="{{ get_val('SYNC_DELTA_BETWEEN_CLIENTS_PERCENT') }}">
+                            </div>
+                            <div class="checkbox-wrapper full-width">
+                                <input type="checkbox" id="xpath_fallback" name="XPATH_FALLBACK_TO_PREVIOUS_SEGMENT" {% if
+                                    get_bool('XPATH_FALLBACK_TO_PREVIOUS_SEGMENT') %}checked{% endif %}>
+                                <label for="xpath_fallback">XPath Fallback (Try previous segment if match fails)</label>
+                            </div>
+                            <div class="checkbox-wrapper full-width">
+                                <input type="checkbox" id="reprocess_on_clear" name="REPROCESS_ON_CLEAR_IF_NO_ALIGNMENT" {% if
+                                    get_bool('REPROCESS_ON_CLEAR_IF_NO_ALIGNMENT') %}checked{% endif %}>
+                                <label for="reprocess_on_clear">Regenerate Missing Data on Reset</label>
+                            </div>
+                            <div class="full-width">
+                                <div class="help-text">
+                                    When resetting your progress, check for missing sync data. If found, the system will attempt
+                                    to regenerate it (which may require re-transcription).
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Instant Sync -->
+                    <div class="sub-section">
+                        <div class="sub-section-header">
+                            <h3>Instant Sync</h3>
+                            <div class="toggle-switch-wrapper">
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="toggle_instant_sync" name="INSTANT_SYNC_ENABLED"
+                                        onchange="toggleSection('instant_sync_body', this.checked)"
+                                        {% if get_bool('INSTANT_SYNC_ENABLED') %}checked{% endif %}>
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                        <div id="instant_sync_body" class="sub-section-body {% if not get_bool('INSTANT_SYNC_ENABLED') %}collapsed{% endif %}">
+                            <div class="full-width">
+                                <div class="help-text" style="margin-bottom: 12px;">
+                                    Syncs your reading position as soon as you start or stop listening in Audiobookshelf, or update progress in KOReader. Turn this off if you only want the system to check on a schedule.
+                                </div>
+                            </div>
+
+                            <div class="section-label">Per-Client Polling</div>
+                            <div class="full-width">
+                                <div class="help-text" style="margin-bottom: 8px;">
+                                    <em>Global</em> checks each client at the same rate as the main sync period above. <em>Custom</em> lets you set a faster or slower check rate for each client individually.
+                                </div>
+                            </div>
+
+                            {% if get_bool('STORYTELLER_ENABLED') %}
+                            <div class="form-group">
+                                <label>Storyteller Poll Mode</label>
+                                <select name="STORYTELLER_POLL_MODE" id="storyteller_poll_mode"
+                                        onchange="togglePollSeconds('storyteller_poll_seconds_row', this.value)">
+                                    <option value="global" {% if get_val('STORYTELLER_POLL_MODE', 'global') == 'global' %}selected{% endif %}>Global</option>
+                                    <option value="custom" {% if get_val('STORYTELLER_POLL_MODE') == 'custom' %}selected{% endif %}>Custom</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="storyteller_poll_seconds_row"
+                                 {% if get_val('STORYTELLER_POLL_MODE') != 'custom' %}style="opacity: 0.45; pointer-events: none;"{% endif %}>
+                                <label>Storyteller Poll Interval (seconds)</label>
+                                <input type="number" name="STORYTELLER_POLL_SECONDS" min="10"
+                                       value="{{ get_val('STORYTELLER_POLL_SECONDS', '45') }}">
+                                <div class="help-text">Recommended: 30-60s for Storyteller (active reading source).</div>
+                            </div>
+                            {% endif %}
+
+                            {% if get_bool('BOOKLORE_ENABLED') %}
+                            <div class="form-group">
+                                <label>{{ get_val('BOOKLORE_LABEL', 'Booklore') or 'Booklore' }} Poll Mode</label>
+                                <select name="BOOKLORE_POLL_MODE" id="booklore_poll_mode"
+                                        onchange="togglePollSeconds('booklore_poll_seconds_row', this.value)">
+                                    <option value="global" {% if get_val('BOOKLORE_POLL_MODE', 'global') == 'global' %}selected{% endif %}>Global</option>
+                                    <option value="custom" {% if get_val('BOOKLORE_POLL_MODE') == 'custom' %}selected{% endif %}>Custom</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="booklore_poll_seconds_row"
+                                 {% if get_val('BOOKLORE_POLL_MODE') != 'custom' %}style="opacity: 0.45; pointer-events: none;"{% endif %}>
+                                <label>{{ get_val('BOOKLORE_LABEL', 'Booklore') or 'Booklore' }} Poll Interval (seconds)</label>
+                                <input type="number" name="BOOKLORE_POLL_SECONDS" min="10"
+                                       value="{{ get_val('BOOKLORE_POLL_SECONDS', '300') }}">
+                                <div class="help-text">Recommended: 300s for Booklore.</div>
+                            </div>
+                            {% endif %}
+
+                            {% if get_bool('BOOKLORE_2_ENABLED') %}
+                            <div class="form-group">
+                                <label>{{ get_val('BOOKLORE_2_LABEL', 'Booklore 2') or 'Booklore 2' }} Poll Mode</label>
+                                <select name="BOOKLORE_2_POLL_MODE" id="booklore2_poll_mode"
+                                        onchange="togglePollSeconds('booklore2_poll_seconds_row', this.value)">
+                                    <option value="global" {% if get_val('BOOKLORE_2_POLL_MODE', 'global') == 'global' %}selected{% endif %}>Global</option>
+                                    <option value="custom" {% if get_val('BOOKLORE_2_POLL_MODE') == 'custom' %}selected{% endif %}>Custom</option>
+                                </select>
+                            </div>
+                            <div class="form-group" id="booklore2_poll_seconds_row"
+                                 {% if get_val('BOOKLORE_2_POLL_MODE') != 'custom' %}style="opacity: 0.45; pointer-events: none;"{% endif %}>
+                                <label>{{ get_val('BOOKLORE_2_LABEL', 'Booklore 2') or 'Booklore 2' }} Poll Interval (seconds)</label>
+                                <input type="number" name="BOOKLORE_2_POLL_SECONDS" min="10"
+                                       value="{{ get_val('BOOKLORE_2_POLL_SECONDS', '300') }}">
+                                <div class="help-text">Recommended: 300s for Booklore.</div>
+                            </div>
+                            {% endif %}
                         </div>
                     </div>
 
