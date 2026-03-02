@@ -131,7 +131,7 @@ class SyncManager:
             logger.debug("CWA not available (library_service or cwa_client missing)")
 
         # Check ABS ebook search capability
-        if self.abs_client:
+        if self.abs_client and self.abs_client.is_configured():
             try:
                 # Just verify methods exist (don't actually search during startup)
                 if hasattr(self.abs_client, 'get_ebook_files') and hasattr(self.abs_client, 'search_ebooks'):
@@ -1267,7 +1267,7 @@ class SyncManager:
                         prev = cfg.previous_pct
                         curr = cfg.current.get('pct')
                         label, fmt = cfg.display
-                        status_lines.append(f"📊 {label}: {fmt.format(prev=prev, curr=curr)}")
+                        status_lines.append(f"{label}: {fmt.format(prev=prev, curr=curr)}")
 
                 for line in status_lines:
                     logger.info(line)

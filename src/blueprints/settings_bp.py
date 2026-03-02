@@ -19,6 +19,7 @@ def settings():
 
     if request.method == 'POST':
         bool_keys = [
+            'ABS_ENABLED',
             'KOSYNC_USE_PERCENTAGE_FROM_SERVER',
             'SYNC_ABS_EBOOK',
             'XPATH_FALLBACK_TO_PREVIOUS_SEGMENT',

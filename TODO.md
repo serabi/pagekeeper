@@ -13,24 +13,27 @@
 ## ABS Integration — Remove "Required" Assumptions
 
 ### QUICKSTART.md
-- [ ] Remove `# REQUIRED` from ABS env vars in compose template (lines 49–52: `ABS_SERVER`, `ABS_KEY`, `ABS_LIBRARY_IDS`)
-- [ ] Rewrite Step 1 ("Get Your API Keys") — currently assumes ABS is the starting point
-- [ ] Remove "Book Linker" reference (line 156) — product removed with Forge
-- [ ] Fix port references: lines 71 and 106 say 8080, should be 4477
-- [ ] Remove 7 emojis throughout (project convention: no emojis)
-- [ ] Add ebook-only and audio-only setup paths — entire flow assumes linked audiobook+ebook
+- [x] Remove `# REQUIRED` from ABS env vars in compose template
+- [x] Rewrite Step 1 — replaced ABS-first flow with "Choose Your Services" approach
+- [x] Remove "Book Linker" reference
+- [x] Fix port references to 4477
+- [x] Remove emojis throughout
+- [x] Add ebook-only and audio-only setup paths
 
 ### Settings UI
-- [ ] Add `ABS_ENABLED` toggle to settings — ABS is the only integration without one
-  - ABS is tab 1 in `templates/settings.html` (lines 112–169)
-  - Every other integration has an `_ENABLED` toggle: `KOSYNC`, `STORYTELLER`, `BOOKLORE`, `BOOKLORE_2`, `CWA`, `HARDCOVER`, `TELEGRAM`, `SHELFMARK`
-  - ABS only has `ABS_SOCKET_ENABLED` (socket listener) and `SYNC_ABS_EBOOK` (ebook sync), neither controls ABS itself
+- [x] Add `ABS_ENABLED` toggle to settings (matches Storyteller/Booklore pattern)
 
 ### Backend / Sync Engine
-- [ ] Fix `abs_sync_client.py` `is_configured()` — hardcoded to `return True` with comment "ABS is always considered configured (it's the primary service)" (line 23); should check `ABS_ENABLED` + required env vars
-- [ ] Add `ABS_ENABLED` to `config_loader.py` `ALL_SETTINGS` and `DEFAULT_CONFIG`
-- [ ] Add `ABS_ENABLED` to `settings_bp.py` `bool_keys` list (lines 21–37) — all other `_ENABLED` toggles are present, ABS is missing
-- [ ] Audit `sync_manager.py` `_setup_sync_clients` (lines 100–107) — ABS is always added to active clients because `is_configured()` returns `True`; will resolve once `is_configured()` checks the toggle
+- [x] Fix `abs_sync_client.py` `is_configured()` — delegates to `ABSClient.is_configured()`
+- [x] Add `ABS_ENABLED` to `config_loader.py` `ALL_SETTINGS` and `DEFAULT_CONFIG`
+- [x] Add `ABS_ENABLED` to `settings_bp.py` `bool_keys` list
+- [x] `sync_manager.py` `_setup_sync_clients` — resolved by `is_configured()` fix
+- [x] `ABSClient.is_configured()` checks `ABS_ENABLED` env var
+- [x] `ABSEbookSyncClient.is_configured()` checks ABS availability before `SYNC_ABS_EBOOK`
+- [x] Extracted `ABSService` wrapper with `is_available()` guards
+- [x] Created `abs_bp` blueprint for ABS-specific routes (libraries, cover proxy)
+- [x] Migrated all direct `abs_client` calls in blueprints to use `abs_service`
+- [x] Guarded Hardcover automatch and resolve when ABS disabled
 - [ ] Fix `sync_manager.py` cross-format normalization (line ~280): `if not has_abs or not ebook_clients: return None` assumes ABS is always present — ebook-only books should still normalize between ebook clients
 
 ## Frontend
