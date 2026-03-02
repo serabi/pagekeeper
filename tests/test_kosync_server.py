@@ -175,7 +175,8 @@ class TestKosyncEndpoints(unittest.TestCase):
              session.query(KosyncDocument).delete()
         # Reset rate limiter between tests
         from src.api import kosync_server
-        kosync_server._rate_limit_store.clear()
+        with kosync_server._rate_limit_lock:
+            kosync_server._rate_limit_store.clear()
 
     def test_put_progress_creates_document(self):
         """Test that PUT creates a new document."""
@@ -616,7 +617,8 @@ class TestKosyncEndpoints(unittest.TestCase):
     def test_rate_limiting_triggers(self):
         """Rapid auth requests should eventually return 429."""
         from src.api import kosync_server
-        kosync_server._rate_limit_store.clear()
+        with kosync_server._rate_limit_lock:
+            kosync_server._rate_limit_store.clear()
 
         got_429 = False
         for _ in range(20):

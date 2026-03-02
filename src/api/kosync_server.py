@@ -853,7 +853,7 @@ def _is_private_ip(addr: str) -> bool:
     try:
         ip = ipaddress.ip_address(addr)
         return any(ip in net for net in _PRIVATE_NETWORKS)
-    except ValueError:
+    except (ValueError, TypeError):
         return False
 
 
