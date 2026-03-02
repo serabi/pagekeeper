@@ -274,7 +274,7 @@ select:focus {
   font-weight: 700;
   color: var(--color-text);
   line-height: 1.3;
-  word-break: break-word;
+  overflow-wrap: break-word;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
