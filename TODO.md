@@ -19,12 +19,18 @@
 
 ## Frontend
 - [ ] Continue frontend improvements (UI/UX polish, responsiveness, design consistency)
-- [x] ~~Improve System Paths in Settings -> General~~ — Removed; paths and timezone are now Docker-only env vars
 - [ ] Add a "Trigger Sync" button to the UI
   - Currently the only way to force a full sync cycle is restarting the container
   - Per-book sync exists (`/api/sync-now/<abs_id>`) but no full-cycle trigger
   - Add a button (settings page or dashboard) that calls a new `/api/sync-all` endpoint
   - Endpoint should call `manager.sync_cycle()` in a background thread
+
+## Book Status: Paused / DNF
+- [ ] Add ability to mark a book as Paused or DNF (Did Not Finish)
+  - New status values alongside existing `active`, `pending`, etc.
+  - Paused/DNF books should be excluded from automatic sync cycles
+  - Add UI controls in the card action panel to set/clear these statuses
+  - Consider a filtered view or section to separate paused/DNF books from active ones
 
 ## Reading History
 - [ ] Add reading history feature
@@ -47,8 +53,7 @@
   - Detects books with Storyteller state but no UUID, shows re-link prompt
   - `storyteller_legacy_link` flag carried through to `templates/index.html`
 - [ ] Rethink match UI for Storyteller
-  - `templates/match.html` and `templates/batch_match.html` have a dedicated "Storyteller (Preferred)" column as step 2
-  - With Forge removed, Storyteller isn't the automatic ebook pipeline — the UI hierarchy should reflect that
+  - `templates/match.html` and `templates/batch_match.html` have Storyteller as step 2 (no longer labeled "Preferred")
   - Consider making Storyteller linking optional/secondary rather than a required step in the flow
 - [ ] Address N+1 in `get_all_positions_bulk()` — fetches each book's position individually in a loop
 - [ ] `search_books()` fetches the entire Storyteller library then filters client-side — no server-side search
