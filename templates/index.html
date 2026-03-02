@@ -99,7 +99,7 @@
                 <div class="service-item" title="Storyteller">
                     <img src="/static/storyteller.png" alt="ST" class="service-icon
                         {%- if not mapping.storyteller_uuid and not mapping.storyteller_legacy_link and mapping.states.storyteller is not defined %} grayscale-muted{% endif %}">
-                    <span class="service-name">Story</span>
+                    <span class="service-name">Storyteller</span>
                     {% if mapping.storyteller_legacy_link %}
                     <span class="service-value cursor-pointer" style="color: #FF9800;"
                         onclick='openStorytellerModal({{ mapping.abs_id|tojson }}, {{ mapping.abs_title|tojson }})'
@@ -164,7 +164,7 @@
                             onerror="this.style.display='none'; this.nextElementSibling.classList.remove('hidden');">
                         <span class="hidden service-icon-emoji"></span>
                     </a>
-                    <span class="service-name">Hardcvr</span>
+                    <span class="service-name">Hardcover</span>
                     <span class="service-value cursor-pointer color-inherit" title="Click to edit Hardcover link"
                         data-abs-id="{{ mapping.abs_id }}" data-title="{{ mapping.hardcover_title|default('')|escape }}"
                         onclick="linkHardcover(event)">
