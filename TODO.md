@@ -34,7 +34,7 @@
 - [x] Created `abs_bp` blueprint for ABS-specific routes (libraries, cover proxy)
 - [x] Migrated all direct `abs_client` calls in blueprints to use `abs_service`
 - [x] Guarded Hardcover automatch and resolve when ABS disabled
-- [ ] Fix `sync_manager.py` cross-format normalization (line ~280): `if not has_abs or not ebook_clients: return None` assumes ABS is always present — ebook-only books should still normalize between ebook clients
+- [x] Fix `sync_manager.py` cross-format normalization (line ~280): `if not has_abs or not ebook_clients: return None` assumes ABS is always present — ebook-only books should still normalize between ebook clients
 
 ## Frontend
 - [ ] Continue frontend improvements (UI/UX polish, responsiveness, design consistency)
