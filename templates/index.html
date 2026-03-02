@@ -36,11 +36,11 @@
         <div class="book-cover-section">
             <div class="book-cover-inner">
                 {% if mapping.cover_url %}
-                <img src="{{ mapping.cover_url }}" alt="Cover" class="book-cover"
+                <img src="{{ mapping.cover_url }}" alt="Cover" class="book-cover" loading="lazy"
                     onerror="{% if mapping.kosync_doc_id %}this.onerror=null; this.src='/covers/{{ mapping.kosync_doc_id }}.jpg';{% else %}this.style.display='none'; this.nextElementSibling.classList.remove('hidden');{% endif %}">
                 <div class="book-cover-placeholder hidden"></div>
                 {% elif mapping.kosync_doc_id %}
-                <img src="/covers/{{ mapping.kosync_doc_id }}.jpg" alt="Cover" class="book-cover"
+                <img src="/covers/{{ mapping.kosync_doc_id }}.jpg" alt="Cover" class="book-cover" loading="lazy"
                     onerror="this.style.display='none'; this.nextElementSibling.classList.remove('hidden');">
                 <div class="book-cover-placeholder hidden"></div>
                 {% else %}
@@ -57,130 +57,16 @@
                 </div>
             </div>
 
+            <div class="book-author">{{ mapping.abs_author or mapping.ebook_filename or '—' }}</div>
+
             {% if mapping.status == 'active' %}
-            {# Service progress - single column list #}
-            <div class="service-progress">
-                {# ABS audiobook section - hide for ebook-only #}
-                {% if bt != 'ebook-only' and integrations.abs %}
-                <a href="{{ mapping.abs_url }}" target="_blank" rel="noopener noreferrer" class="service-item"
-                    title="Open in Audiobookshelf">
-                    <img src="/static/audiobookshelf.png" alt="ABS" class="service-icon">
-                    <span class="service-name">ABS</span>
-                    {% if mapping.states.abs is defined %}
-                    <span class="service-value">{{ '%d:%02d:%02d' | format((mapping.states.abs.timestamp|default(0)|int)
-                        // 3600,
-                        ((mapping.states.abs.timestamp|default(0)|int) % 3600) // 60,
-                        (mapping.states.abs.timestamp|default(0)|int) % 60) }}</span>
-                    {% else %}
-                    <span class="service-value">0:00:00</span>
-                    {% endif %}
-                </a>
-                {% endif %}
-
-                {# KoSync section - hide for audio-only #}
-                {% if bt != 'audio-only' and integrations.kosync %}
-                <div class="service-item cursor-pointer"
-                    title="Update KoReader Hash (Current: {{ mapping.kosync_doc_id }})"
-                    data-abs-id="{{ mapping.abs_id }}" data-title="{{ mapping.abs_title|escape }}"
-                    data-hash="{{ mapping.kosync_doc_id }}" onclick="updateKoSyncHash(event)">
-                    <span class="service-icon-emoji"></span>
-                    <span class="service-name">KoSync</span>
-                    {% if mapping.states.kosync is defined %}
-                    <span class="service-value">{{ '%.1f' | format(mapping.states.kosync.percentage|default(0))
-                        }}%</span>
-                    {% else %}
-                    <span class="service-value">0.0%</span>
-                    {% endif %}
+            <div class="book-progress">
+                <div class="progress-bar">
+                    <div class="progress-bar-fill" style="width: {{ mapping.unified_progress }}%"></div>
                 </div>
-                {% endif %}
-
-                {# Storyteller section - hide for audio-only #}
-                {% if bt != 'audio-only' and integrations.storyteller %}
-                <div class="service-item" title="Storyteller">
-                    <img src="/static/storyteller.png" alt="ST" class="service-icon
-                        {%- if not mapping.storyteller_uuid and not mapping.storyteller_legacy_link and mapping.states.storyteller is not defined %} grayscale-muted{% endif %}">
-                    <span class="service-name">Storyteller</span>
-                    {% if mapping.storyteller_legacy_link %}
-                    <span class="service-value cursor-pointer" style="color: #FF9800;"
-                        onclick='openStorytellerModal({{ mapping.abs_id|tojson }}, {{ mapping.abs_title|tojson }})'
-                        title="Legacy Link: Click to fix">
-                        Fix Link
-                    </span>
-                    {% elif mapping.states.storyteller is defined %}
-                    <span class="service-value">{{ '%.1f' | format(mapping.states.storyteller.percentage|default(0))
-                        }}%</span>
-                    {% elif mapping.storyteller_uuid %}
-                    <span class="service-value" title="Linked via UUID">0.0%</span>
-                    {% else %}
-                    <span class="service-value cursor-pointer color-inherit"
-                        onclick='openStorytellerModal({{ mapping.abs_id|tojson }}, {{ mapping.abs_title|tojson }})'
-                        title="Click to search and link a Storyteller book">
-                        <span class="link-icon">+</span>
-                    </span>
-                    {% endif %}
-                </div>
-                {% endif %}
-
-                {# Booklore section - hide for audio-only #}
-                {% if bt != 'audio-only' and integrations.booklore and (mapping.states.booklore is defined or mapping.booklore_id) %}
-                <a href="{{ mapping.booklore_url|default('#') }}" target="_blank" rel="noopener noreferrer"
-                    class="service-item" title="Open in {{ booklore_label }}">
-                    <img src="/static/booklore.png" alt="BL" class="service-icon">
-                    <span class="service-name">{{ booklore_label }}</span>
-                    <span class="service-value">
-                        {% if mapping.states.booklore is defined %}
-                        {{ '%.1f' | format(mapping.states.booklore.percentage) }}%
-                        {% else %}
-                        0.0%
-                        {% endif %}
-                    </span>
-                </a>
-                {% endif %}
-
-                {# Booklore 2 section - hide for audio-only #}
-                {% if bt != 'audio-only' and integrations.booklore2 and (mapping.states.booklore2 is defined or mapping.booklore_2_url) %}
-                <a href="{{ mapping.booklore_2_url|default('#') }}" target="_blank" rel="noopener noreferrer"
-                    class="service-item" title="Open in {{ booklore_2_label }}">
-                    <img src="/static/booklore.png" alt="BL2" class="service-icon">
-                    <span class="service-name">{{ booklore_2_label }}</span>
-                    <span class="service-value">
-                        {% if mapping.states.booklore2 is defined %}
-                        {{ '%.1f' | format(mapping.states.booklore2.percentage) }}%
-                        {% else %}
-                        0.0%
-                        {% endif %}
-                    </span>
-                </a>
-                {% endif %}
-
-                {% if integrations.hardcover %}
-                <div class="service-item progress-item-hc">
-                    <a href="{{ mapping.hardcover_url|default('https://hardcover.app') }}" target="_blank"
-                        rel="noopener noreferrer"
-                        title="{% if mapping.hardcover_book_id %}Open {{ mapping.hardcover_title }} in Hardcover{% else %}Not linked to Hardcover{% endif %}"
-                        class="hc-link {% if not mapping.hardcover_book_id %}pe-none{% endif %}">
-                        <img src="/static/hardcover.png" alt="HC"
-                            class="service-icon {% if not mapping.hardcover_book_id %}grayscale-muted{% endif %}"
-                            onerror="this.style.display='none'; this.nextElementSibling.classList.remove('hidden');">
-                        <span class="hidden service-icon-emoji"></span>
-                    </a>
-                    <span class="service-name">Hardcover</span>
-                    <span class="service-value cursor-pointer color-inherit" title="Click to edit Hardcover link"
-                        data-abs-id="{{ mapping.abs_id }}" data-title="{{ mapping.hardcover_title|default('')|escape }}"
-                        onclick="linkHardcover(event)">
-                        {% if mapping.hardcover_book_id %}
-                        {% if mapping.states.hardcover is defined %}
-                        {{ '%.0f' | format(mapping.states.hardcover.percentage|default(0)) }}%
-                        {% else %}
-                        0%
-                        {% endif %}
-                        {% else %}
-                        <span class="link-icon">+</span>
-                        {% endif %}
-                    </span>
-                </div>
-                {% endif %}
+                <span class="progress-percent">{{ '%.0f' | format(mapping.unified_progress) }}%</span>
             </div>
+            {% endif %}
 
             {# Attach action buttons for incomplete book types #}
             {% if bt == 'audio-only' %}
@@ -198,7 +84,6 @@
                 </a>
             </div>
             {% endif %}
-            {% endif %}
 
             <div class="card-footer">
                 <div class="last-sync">Synced {{ mapping.last_sync }}</div>
@@ -207,10 +92,6 @@
                     <div class="card-menu-dropdown">
                         {# Info section at top of menu #}
                         <div class="card-menu-info">
-                            <div class="card-menu-info-row">
-                                <span class="card-menu-info-label">Author</span>
-                                <span class="card-menu-info-value book-author">{{ mapping.abs_author or mapping.ebook_filename or '—' }}</span>
-                            </div>
                             <div class="card-menu-info-row">
                                 <span class="card-menu-info-label">Status</span>
                                 <span class="status-badge status-{{ mapping.status }}">
@@ -230,10 +111,6 @@
                                     {% endif %}
                                 </span>
                             </div>
-                            <div class="card-menu-info-row">
-                                <span class="card-menu-info-label">Overall</span>
-                                <span class="card-menu-info-value progress-percent">{{ '%.1f' | format(mapping.unified_progress) }}%</span>
-                            </div>
                             {% if max_diff > 5 %}
                             <div class="card-menu-info-row card-menu-info-warning">
                                 <span class="card-menu-info-label">Sync</span>
@@ -241,6 +118,135 @@
                             </div>
                             {% endif %}
                         </div>
+
+                        {% if mapping.status == 'active' %}
+                        {# Per-service progress #}
+                        <div class="card-menu-divider"></div>
+                        <div class="card-menu-services">
+                            {# ABS audiobook - hide for ebook-only #}
+                            {% if bt != 'ebook-only' and integrations.abs %}
+                            <a href="{{ mapping.abs_url }}" target="_blank" rel="noopener noreferrer" class="service-item"
+                                title="Open in Audiobookshelf">
+                                <img src="/static/audiobookshelf.png" alt="ABS" class="service-icon">
+                                <span class="service-name">ABS</span>
+                                {% if mapping.states.abs is defined %}
+                                <span class="service-value">{{ '%d:%02d:%02d' | format((mapping.states.abs.timestamp|default(0)|int)
+                                    // 3600,
+                                    ((mapping.states.abs.timestamp|default(0)|int) % 3600) // 60,
+                                    (mapping.states.abs.timestamp|default(0)|int) % 60) }}</span>
+                                {% else %}
+                                <span class="service-value">0:00:00</span>
+                                {% endif %}
+                            </a>
+                            {% endif %}
+
+                            {# KoSync - hide for audio-only #}
+                            {% if bt != 'audio-only' and integrations.kosync %}
+                            <div class="service-item cursor-pointer"
+                                title="Update KoReader Hash (Current: {{ mapping.kosync_doc_id }})"
+                                data-abs-id="{{ mapping.abs_id }}" data-title="{{ mapping.abs_title|escape }}"
+                                data-hash="{{ mapping.kosync_doc_id }}" onclick="updateKoSyncHash(event)">
+                                <span class="service-icon-emoji"></span>
+                                <span class="service-name">KoSync</span>
+                                {% if mapping.states.kosync is defined %}
+                                <span class="service-value">{{ '%.1f' | format(mapping.states.kosync.percentage|default(0))
+                                    }}%</span>
+                                {% else %}
+                                <span class="service-value">0.0%</span>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+
+                            {# Storyteller - hide for audio-only #}
+                            {% if bt != 'audio-only' and integrations.storyteller %}
+                            <div class="service-item" title="Storyteller">
+                                <img src="/static/storyteller.png" alt="ST" class="service-icon
+                                    {%- if not mapping.storyteller_uuid and not mapping.storyteller_legacy_link and mapping.states.storyteller is not defined %} grayscale-muted{% endif %}">
+                                <span class="service-name">Storyteller</span>
+                                {% if mapping.storyteller_legacy_link %}
+                                <span class="service-value cursor-pointer" style="color: #FF9800;"
+                                    onclick='openStorytellerModal({{ mapping.abs_id|tojson }}, {{ mapping.abs_title|tojson }})'
+                                    title="Legacy Link: Click to fix">
+                                    Fix Link
+                                </span>
+                                {% elif mapping.states.storyteller is defined %}
+                                <span class="service-value">{{ '%.1f' | format(mapping.states.storyteller.percentage|default(0))
+                                    }}%</span>
+                                {% elif mapping.storyteller_uuid %}
+                                <span class="service-value" title="Linked via UUID">0.0%</span>
+                                {% else %}
+                                <span class="service-value cursor-pointer color-inherit"
+                                    onclick='openStorytellerModal({{ mapping.abs_id|tojson }}, {{ mapping.abs_title|tojson }})'
+                                    title="Click to search and link a Storyteller book">
+                                    <span class="link-icon">+</span>
+                                </span>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+
+                            {# Booklore - hide for audio-only #}
+                            {% if bt != 'audio-only' and integrations.booklore and (mapping.states.booklore is defined or mapping.booklore_id) %}
+                            <a href="{{ mapping.booklore_url|default('#') }}" target="_blank" rel="noopener noreferrer"
+                                class="service-item" title="Open in {{ booklore_label }}">
+                                <img src="/static/booklore.png" alt="BL" class="service-icon">
+                                <span class="service-name">{{ booklore_label }}</span>
+                                <span class="service-value">
+                                    {% if mapping.states.booklore is defined %}
+                                    {{ '%.1f' | format(mapping.states.booklore.percentage) }}%
+                                    {% else %}
+                                    0.0%
+                                    {% endif %}
+                                </span>
+                            </a>
+                            {% endif %}
+
+                            {# Booklore 2 - hide for audio-only #}
+                            {% if bt != 'audio-only' and integrations.booklore2 and (mapping.states.booklore2 is defined or mapping.booklore_2_url) %}
+                            <a href="{{ mapping.booklore_2_url|default('#') }}" target="_blank" rel="noopener noreferrer"
+                                class="service-item" title="Open in {{ booklore_2_label }}">
+                                <img src="/static/booklore.png" alt="BL2" class="service-icon">
+                                <span class="service-name">{{ booklore_2_label }}</span>
+                                <span class="service-value">
+                                    {% if mapping.states.booklore2 is defined %}
+                                    {{ '%.1f' | format(mapping.states.booklore2.percentage) }}%
+                                    {% else %}
+                                    0.0%
+                                    {% endif %}
+                                </span>
+                            </a>
+                            {% endif %}
+
+                            {# Hardcover #}
+                            {% if integrations.hardcover %}
+                            <div class="service-item progress-item-hc">
+                                <a href="{{ mapping.hardcover_url|default('https://hardcover.app') }}" target="_blank"
+                                    rel="noopener noreferrer"
+                                    title="{% if mapping.hardcover_book_id %}Open {{ mapping.hardcover_title }} in Hardcover{% else %}Not linked to Hardcover{% endif %}"
+                                    class="hc-link {% if not mapping.hardcover_book_id %}pe-none{% endif %}">
+                                    <img src="/static/hardcover.png" alt="HC"
+                                        class="service-icon {% if not mapping.hardcover_book_id %}grayscale-muted{% endif %}"
+                                        onerror="this.style.display='none'; this.nextElementSibling.classList.remove('hidden');">
+                                    <span class="hidden service-icon-emoji"></span>
+                                </a>
+                                <span class="service-name">Hardcover</span>
+                                <span class="service-value cursor-pointer color-inherit" title="Click to edit Hardcover link"
+                                    data-abs-id="{{ mapping.abs_id }}" data-title="{{ mapping.hardcover_title|default('')|escape }}"
+                                    onclick="linkHardcover(event)">
+                                    {% if mapping.hardcover_book_id %}
+                                    {% if mapping.states.hardcover is defined %}
+                                    {{ '%.0f' | format(mapping.states.hardcover.percentage|default(0)) }}%
+                                    {% else %}
+                                    0%
+                                    {% endif %}
+                                    {% else %}
+                                    <span class="link-icon">+</span>
+                                    {% endif %}
+                                </span>
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+
                         <div class="card-menu-divider"></div>
                         {# Actions #}
                         <button class="card-menu-item" onclick="syncNow('{{ mapping.abs_id }}', this)">Sync Now</button>
@@ -264,6 +270,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="icon" type="image/png" href="/static/icon.png">
     <link rel="apple-touch-icon" href="/static/icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/variables.css">
     <link rel="stylesheet" href="/static/css/base.css">
@@ -796,7 +804,7 @@
                 </div>
             </div>
         </div>
-        <script src="/static/js/hardcover-modal.js"></script>
+        <script src="/static/js/hardcover-modal.js" defer></script>
         <!-- Storyteller Link Modal -->
         <div id="st-modal" class="hidden">
             <div class="st-modal-content">
@@ -815,7 +823,7 @@
                 </div>
             </div>
         </div>
-        <script src="/static/js/storyteller-modal.js"></script>
+        <script src="/static/js/storyteller-modal.js" defer></script>
         <div
             style="position: fixed; bottom: 20px; right: 20px; z-index: 1000; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; background: rgba(20, 20, 20, 0.85); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); padding: 8px 12px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.05); box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);">
             <span
@@ -964,6 +972,31 @@
                 }
 
                 panel.style.display = '';
+
+                // On desktop, position sheet near the trigger button
+                const sheet = panel.querySelector('.action-panel-sheet');
+                if (window.innerWidth > 600) {
+                    const rect = trigger.getBoundingClientRect();
+                    let top = rect.bottom + 4;
+                    let left = rect.right - 280;
+
+                    // Clamp: don't overflow bottom
+                    const sheetHeight = Math.min(sheet.scrollHeight, window.innerHeight * 0.8);
+                    if (top + sheetHeight > window.innerHeight - 8) {
+                        top = rect.top - sheetHeight - 4;
+                    }
+                    // Clamp: don't overflow left
+                    if (left < 8) left = 8;
+
+                    sheet.style.position = 'fixed';
+                    sheet.style.top = top + 'px';
+                    sheet.style.left = left + 'px';
+                    sheet.style.right = 'auto';
+                    sheet.style.bottom = 'auto';
+                } else {
+                    sheet.style.cssText = '';
+                }
+
                 // Force reflow then add .open for CSS transition
                 panel.offsetHeight;
                 panel.classList.add('open');
@@ -973,8 +1006,10 @@
             function closeActionPanel() {
                 const panel = document.getElementById('action-panel');
                 const panelBody = document.getElementById('action-panel-body');
+                const sheet = panel.querySelector('.action-panel-sheet');
 
                 panel.classList.remove('open');
+                sheet.style.cssText = '';
 
                 // Move children back to original dropdown
                 if (_panelSourceMenu) {

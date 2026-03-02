@@ -442,8 +442,31 @@ select:focus {
 .progress-percent {
   font-size: 11px;
   font-weight: 700;
-  color: var(--color-primary-hover);
+  color: var(--color-success);
   white-space: nowrap;
+}
+
+/* Progress bar */
+.book-progress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.progress-bar {
+  flex: 1;
+  height: 4px;
+  background: var(--color-border-light);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: var(--color-success);
+  border-radius: 2px;
+  transition: width 300ms ease;
 }
 
 /* Service progress list */
@@ -598,6 +621,14 @@ select:focus {
 .card-menu-info-warning .card-menu-info-value {
   color: var(--color-warning);
   font-weight: 600;
+}
+
+.card-menu-services {
+  padding: 4px 8px 8px;
+}
+
+.card-menu-services .service-item {
+  padding: 4px 0;
 }
 
 .card-menu-item {
@@ -883,14 +914,13 @@ select:focus {
   margin: 0 auto 8px;
 }
 
-/* Desktop: center the panel as a small modal */
+/* Desktop: anchored dropdown near trigger (JS sets top/left) */
 @media (min-width: 601px) {
   .action-panel-sheet {
     bottom: auto;
-    top: 50%;
-    left: 50%;
     right: auto;
-    transform: translate(-50%, -50%) scale(0.95);
+    transform-origin: top right;
+    transform: scale(0.95);
     opacity: 0;
     transition: transform 200ms ease, opacity 200ms ease;
     width: 280px;
@@ -901,7 +931,7 @@ select:focus {
   }
 
   #action-panel.open .action-panel-sheet {
-    transform: translate(-50%, -50%) scale(1);
+    transform: scale(1);
     opacity: 1;
   }
 
