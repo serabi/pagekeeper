@@ -6,6 +6,11 @@ All notable changes to Book Stitch will be documented in this file.
 
 ## [1.0.2] - 2026-03-02
 
+### Changed
+
+- **KoSync password is now visible after save** — The KoSync password field now displays the saved value (masked) with a Show/Hide toggle, since this is a password you set here and need to retype in KOReader.
+- **Save Settings button right-aligned** — The floating Save bar now aligns the button to the right.
+
 ### Removed
 
 - **Shelfmark integration** — Removed the Shelfmark iframe view, navbar icon, settings UI, and all associated configuration (`SHELFMARK_URL`, `SHELFMARK_ENABLED`).
