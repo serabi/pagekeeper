@@ -21,15 +21,15 @@ from src.version import get_update_status
 def _reconfigure_logging():
     """Force update of root logger level based on env var."""
     try:
-            new_level_str = os.environ.get('LOG_LEVEL', 'INFO').upper()
-            new_level = getattr(logging, new_level_str, logging.INFO)
+        new_level_str = os.environ.get('LOG_LEVEL', 'INFO').upper()
+        new_level = getattr(logging, new_level_str, logging.INFO)
 
-            root = logging.getLogger()
-            root.setLevel(new_level)
+        root = logging.getLogger()
+        root.setLevel(new_level)
 
-            logger.info(f"Logging level updated to {new_level_str}")
+        logger.info(f"Logging level updated to {new_level_str}")
     except Exception as e:
-            logger.warning(f"Failed to reconfigure logging: {e}")
+        logger.warning(f"Failed to reconfigure logging: {e}")
 
 def _reconcile_socket_listener(app):
     """Start, stop, or restart the ABS Socket.IO listener to match current env vars."""

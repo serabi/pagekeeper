@@ -432,8 +432,8 @@
                                 <label>Password</label>
                                 <div class="input-row">
                                     <input type="password" id="kosync_key_input" name="KOSYNC_KEY"
-                                        value="{{ get_val('KOSYNC_KEY') }}"
-                                        placeholder="">
+                                        data-secret-key="KOSYNC_KEY"
+                                        placeholder="{{ '(unchanged)' if get_val('KOSYNC_KEY') else '' }}">
                                     <button type="button" class="btn" onclick="togglePasswordVisibility('kosync_key_input', this)">Show</button>
                                 </div>
                                 <div class="help-text">This will be your KOSync password in KOReader.</div>
@@ -1211,6 +1211,28 @@
         function togglePasswordVisibility(inputId, btn) {
             var input = document.getElementById(inputId);
             if (input.type === 'password') {
+                var secretKey = input.dataset.secretKey;
+                if (secretKey && !input.dataset.fetched && !input.value) {
+                    btn.textContent = '...';
+                    btn.disabled = true;
+                    fetch('/api/settings/secret/' + secretKey)
+                        .then(function(r) { return r.json(); })
+                        .then(function(data) {
+                            if (data.value) {
+                                input.value = data.value;
+                                input.placeholder = '';
+                            }
+                            input.dataset.fetched = 'true';
+                            input.type = 'text';
+                            btn.textContent = 'Hide';
+                            btn.disabled = false;
+                        })
+                        .catch(function() {
+                            btn.textContent = 'Show';
+                            btn.disabled = false;
+                        });
+                    return;
+                }
                 input.type = 'text';
                 btn.textContent = 'Hide';
             } else {

@@ -100,6 +100,16 @@ def settings():
                            is_error=is_error)
 
 
+@settings_bp.route('/api/settings/secret/<key>', methods=['GET'])
+def get_secret(key):
+    """Return a stored secret value (for reveal-on-demand UI)."""
+    allowed = {'KOSYNC_KEY'}
+    if key not in allowed:
+        return jsonify({'error': 'Not allowed'}), 403
+    value = os.environ.get(key, '')
+    return jsonify({'value': value})
+
+
 @settings_bp.route('/api/kosync/test', methods=['POST'])
 def test_kosync_connection():
     """Test connection to the configured KoSync server."""
