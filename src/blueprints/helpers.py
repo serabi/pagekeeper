@@ -15,6 +15,8 @@ from pathlib import Path
 
 from flask import current_app
 
+from src.utils.path_utils import is_safe_path_within
+
 logger = logging.getLogger(__name__)
 
 
@@ -394,11 +396,17 @@ def cleanup_mapping_resources(book):
     manager = get_manager()
     database_service = get_database_service()
 
-    if book.transcript_file:
-        try:
-            Path(book.transcript_file).unlink()
-        except Exception as e:
-            logger.debug(f"Failed to delete transcript file '{book.transcript_file}': {e}")
+    if book.transcript_file and book.transcript_file != "DB_MANAGED":
+        data_dir = container.data_dir()
+        transcript_dir = data_dir / "transcripts"
+        transcript_path = Path(book.transcript_file)
+        if is_safe_path_within(transcript_path, transcript_dir):
+            try:
+                transcript_path.unlink()
+            except Exception as e:
+                logger.debug(f"Failed to delete transcript file '{book.transcript_file}': {e}")
+        else:
+            logger.warning(f"Blocked transcript deletion — path escapes transcripts dir: '{book.transcript_file}'")
 
     if book.ebook_filename:
         cache_dirs = []
@@ -420,6 +428,9 @@ def cleanup_mapping_resources(book):
             seen_dirs.add(cache_dir_key)
 
             cached_path = cache_dir_path / book.ebook_filename
+            if not is_safe_path_within(cached_path, cache_dir_path):
+                logger.warning(f"Blocked ebook cache deletion — path escapes cache dir: '{book.ebook_filename}'")
+                continue
             if cached_path.exists():
                 try:
                     cached_path.unlink()

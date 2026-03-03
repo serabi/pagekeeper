@@ -24,6 +24,7 @@ from src.blueprints.helpers import (
 from src.db.models import Book, State
 from src.sync_clients.sync_client_interface import LocatorResult, UpdateProgressRequest
 from src.utils.logging_utils import sanitize_log_data
+from src.utils.path_utils import sanitize_filename
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +71,7 @@ def match():
 
         # --- Ebook-only import (no audiobook required) ---
         if action == 'ebook_only':
-            ebook_filename = request.form.get('ebook_filename')
+            ebook_filename = sanitize_filename(request.form.get('ebook_filename'))
             ebook_display_name = request.form.get('ebook_display_name', '')
             storyteller_uuid = request.form.get('storyteller_uuid') or None
             storyteller_title = request.form.get('storyteller_title', '')
@@ -114,7 +115,7 @@ def match():
         # --- Attach ebook to audio-only book ---
         if action == 'attach_ebook':
             attach_abs_id = request.form.get('attach_abs_id')
-            ebook_filename = request.form.get('ebook_filename')
+            ebook_filename = sanitize_filename(request.form.get('ebook_filename'))
             if not attach_abs_id or not ebook_filename:
                 return "Missing book ID or ebook filename", 400
             book = database_service.get_book(attach_abs_id)
@@ -178,7 +179,7 @@ def match():
         # --- Standard flow (requires audiobook) ---
         abs_service = get_abs_service()
         abs_id = request.form.get('audiobook_id')
-        selected_filename = request.form.get('ebook_filename')
+        selected_filename = sanitize_filename(request.form.get('ebook_filename'))
         ebook_filename = selected_filename
         original_ebook_filename = None
         audiobooks = abs_service.get_audiobooks()
@@ -326,7 +327,7 @@ def batch_match():
         if action == 'add_to_queue':
             session.setdefault('queue', [])
             abs_id = request.form.get('audiobook_id')
-            ebook_filename = request.form.get('ebook_filename', '')
+            ebook_filename = sanitize_filename(request.form.get('ebook_filename', '')) or ''
             ebook_display_name = request.form.get('ebook_display_name', ebook_filename)
             storyteller_uuid = request.form.get('storyteller_uuid', '')
             audiobooks = abs_service.get_audiobooks()

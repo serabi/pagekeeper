@@ -7,6 +7,7 @@ from src.api.api_clients import ABSClient
 from src.db.models import Book, State
 from src.sync_clients.sync_client_interface import ServiceState, SyncClient, SyncResult, UpdateProgressRequest
 from src.utils.ebook_utils import EbookParser
+from src.utils.path_utils import is_safe_path_within
 from src.utils.transcriber import AudioTranscriber
 
 logger = logging.getLogger(__name__)
@@ -92,9 +93,12 @@ class ABSSyncClient(SyncClient):
              return None
 
         try:
-            # Check if file exists first
+            data_dir = Path(os.environ.get("DATA_DIR", "/data"))
+            if not is_safe_path_within(transcript_path, data_dir / "transcripts"):
+                logger.warning(f"Blocked transcript access — path escapes transcripts dir: '{transcript_path}'")
+                return None
+
             if not os.path.exists(transcript_path):
-                # If missing, we can't get duration from it.
                 return None
 
             with open(transcript_path) as f:
