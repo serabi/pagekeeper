@@ -158,7 +158,6 @@ def inject_global_vars():
             'EBOOK_CACHE_SIZE': '3',
             'KOSYNC_HASH_METHOD': 'content',
             'TELEGRAM_LOG_LEVEL': 'ERROR',
-            'SHELFMARK_URL': '',
             'ABS_ENABLED': 'true',
             'KOSYNC_ENABLED': 'false',
             'STORYTELLER_ENABLED': 'false',
@@ -176,7 +175,6 @@ def inject_global_vars():
         return val.lower() in ('true', '1', 'yes', 'on')
 
     return dict(
-        shelfmark_url=os.environ.get("SHELFMARK_URL", ""),
         abs_server=os.environ.get("ABS_SERVER", ""),
         booklore_server=os.environ.get("BOOKLORE_SERVER", ""),
         get_val=get_val,

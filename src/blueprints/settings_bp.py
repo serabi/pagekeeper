@@ -34,7 +34,6 @@ def settings():
             'REPROCESS_ON_CLEAR_IF_NO_ALIGNMENT',
             'INSTANT_SYNC_ENABLED',
             'ABS_SOCKET_ENABLED',
-            'SHELFMARK_ENABLED',
         ]
 
         current_settings = database_service.get_all_settings()
@@ -60,7 +59,7 @@ def settings():
             clean_value = value.strip()
 
             url_keys = [
-                'SHELFMARK_URL', 'ABS_SERVER', 'BOOKLORE_SERVER', 'BOOKLORE_2_SERVER',
+                'ABS_SERVER', 'BOOKLORE_SERVER', 'BOOKLORE_2_SERVER',
                 'STORYTELLER_API_URL', 'CWA_SERVER', 'KOSYNC_SERVER'
             ]
             if key in url_keys and clean_value:

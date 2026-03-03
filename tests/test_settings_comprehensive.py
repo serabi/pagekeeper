@@ -65,7 +65,6 @@ class TestSettingsComprehensive(unittest.TestCase):
             'REPROCESS_ON_CLEAR_IF_NO_ALIGNMENT',
             'INSTANT_SYNC_ENABLED',
             'ABS_SOCKET_ENABLED',
-            'SHELFMARK_ENABLED',
         ]
 
     def tearDown(self):

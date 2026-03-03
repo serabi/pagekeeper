@@ -554,29 +554,6 @@
                         <p>Optional features, utilities, and Hardcover.app.</p>
                     </div>
 
-                    <!-- Shelfmark -->
-                    <div class="sub-section">
-                        <div class="sub-section-header">
-                            <h3>Shelfmark View</h3>
-                            <div class="toggle-switch-wrapper">
-                                <span class="toggle-label">Enable</span>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="toggle_shelfmark" aria-label="Enable Shelfmark"
-                                        name="SHELFMARK_ENABLED" {% if get_bool('SHELFMARK_ENABLED') or
-                                        (get_val('SHELFMARK_URL') !='' and get_val('SHELFMARK_ENABLED')=='' ) %}checked{% endif %}>
-                                    <span class="slider"></span>
-                                </label>
-                            </div>
-                        </div>
-                        <div class="sub-section-body">
-                            <div class="form-group full-width">
-                                <label>Shelfmark URL</label>
-                                <input type="text" name="SHELFMARK_URL" value="{{ get_val('SHELFMARK_URL') }}">
-                                <div class="help-text">URL to display in the Shelfmark tab (e.g. your Shelfmark instance URL)</div>
-                            </div>
-                        </div>
-                    </div>
-
                     <!-- Suggestions -->
                     <div class="sub-section">
                         <div class="sub-section-header">

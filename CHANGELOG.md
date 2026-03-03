@@ -4,6 +4,14 @@
 
 All notable changes to Book Stitch will be documented in this file.
 
+## [1.0.2] - 2026-03-02
+
+### Removed
+
+- **Shelfmark integration** — Removed the Shelfmark iframe view, navbar icon, settings UI, and all associated configuration (`SHELFMARK_URL`, `SHELFMARK_ENABLED`).
+
+---
+
 ## [1.0.1] - 2026-03-02
 
 ### Fixed
