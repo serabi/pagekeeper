@@ -700,11 +700,13 @@ class TestCleanupCacheTraversal(unittest.TestCase):
             kosync_server._database_service = mock_db
             kosync_server._container = mock_container
 
-            with patch.object(kosync_server.logger, 'warning') as mock_warn:
+            with patch.object(kosync_server.logger, 'warning') as mock_warn, \
+                 patch('os.remove') as mock_remove:
                 kosync_server._cleanup_cache_for_hash("fakehash")
 
             mock_warn.assert_called_once()
             self.assertIn("Blocked cache deletion", mock_warn.call_args[0][0])
+            mock_remove.assert_not_called()
         finally:
             kosync_server._database_service = orig_db
             kosync_server._container = orig_container
