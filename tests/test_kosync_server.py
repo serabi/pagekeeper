@@ -678,5 +678,39 @@ class TestKosyncEndpoints(unittest.TestCase):
         self.assertTrue(got_429, "Expected 429 after rapid auth attempts")
 
 
+class TestCleanupCacheTraversal(unittest.TestCase):
+    """Ensure _cleanup_cache_for_hash rejects traversal-style filenames."""
+
+    def test_traversal_filename_blocked(self):
+        """A filename containing '../' must be rejected, not deleted."""
+        from src.api import kosync_server
+
+        mock_doc = Mock()
+        mock_doc.filename = "../evil.txt"
+        mock_doc.linked_abs_id = None
+
+        mock_db = Mock()
+        mock_db.get_kosync_document.return_value = mock_doc
+
+        mock_container = _KosyncMockContainer()
+
+        orig_db = kosync_server._database_service
+        orig_container = kosync_server._container
+        try:
+            kosync_server._database_service = mock_db
+            kosync_server._container = mock_container
+
+            with patch.object(kosync_server.logger, 'warning') as mock_warn, \
+                 patch('os.remove') as mock_remove:
+                kosync_server._cleanup_cache_for_hash("fakehash")
+
+            mock_warn.assert_called_once()
+            self.assertIn("Blocked cache deletion", mock_warn.call_args[0][0])
+            mock_remove.assert_not_called()
+        finally:
+            kosync_server._database_service = orig_db
+            kosync_server._container = orig_container
+
+
 if __name__ == '__main__':
     unittest.main()

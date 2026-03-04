@@ -102,7 +102,6 @@ class CleanFlaskIntegrationTest(unittest.TestCase):
         from src.web_server import create_app, setup_dependencies
         self.app, _ = create_app(test_container=self.mock_container)
         self.app.config['TESTING'] = True
-        self.app.config['WTF_CSRF_ENABLED'] = False
         self.client = self.app.test_client()
 
         # Store references for easy access

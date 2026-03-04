@@ -13,6 +13,7 @@ from pathlib import Path
 from flask import Blueprint, jsonify, request
 
 from src.utils.kosync_headers import hash_kosync_key
+from src.utils.path_utils import is_safe_path_within
 
 logger = logging.getLogger(__name__)
 
@@ -1010,7 +1011,9 @@ def _cleanup_cache_for_hash(doc_hash):
             if _container:
                 cache_dir = _container.data_dir() / "epub_cache"
                 file_path = cache_dir / filename
-                if file_path.exists():
+                if not is_safe_path_within(file_path, cache_dir):
+                    logger.warning(f"Blocked cache deletion — path escapes cache dir: '{filename}'")
+                elif file_path.exists():
                     try:
                         os.remove(file_path)
                         logger.info(f"Deleted cached EPUB: {filename}")

@@ -122,6 +122,21 @@ The **LAN Address** field shows `http://<server-ip>:<KOSYNC_PORT>` automatically
 3. In Book Sync settings, enter the public URL
 4. In KOReader: Settings > Cloud storage > Progress sync > Custom server > enter your public URL
 
+### Exposed paths
+
+Only the following paths need to be forwarded through your reverse proxy. All other paths (including `/api/*` admin endpoints) can be blocked at the proxy level for defense in depth, though the app already protects admin endpoints with IP-based access control — exposing the full port won't grant access to the dashboard or management API from outside your network.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/healthcheck` | Connectivity check (no auth) |
+| GET | `/users/auth` | Authenticate KOReader credentials |
+| POST | `/users/create` | KOReader registration |
+| POST | `/users/login` | KOReader login |
+| GET | `/syncs/progress/<document>` | Retrieve reading position |
+| PUT | `/syncs/progress` | Update reading position |
+
+All paths are also available under the `/koreader/` prefix (e.g. `/koreader/users/auth`).
+
 ### Security features
 
 The sync endpoint includes rate limiting, input validation, and MD5-hashed authentication per the KOSync protocol spec. Admin/management endpoints require credentials when accessed from public IPs.
