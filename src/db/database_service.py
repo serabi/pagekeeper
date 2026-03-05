@@ -19,6 +19,8 @@ from .models import (
     Job,
     KosyncDocument,
     PendingSuggestion,
+    ReadingGoal,
+    ReadingJournal,
     Setting,
     State,
 )
@@ -280,6 +282,7 @@ class DatabaseService:
                 session.query(State).filter(State.abs_id == old_abs_id).update({State.abs_id: new_abs_id}, synchronize_session=False)
                 session.query(Job).filter(Job.abs_id == old_abs_id).update({Job.abs_id: new_abs_id}, synchronize_session=False)
                 session.query(KosyncDocument).filter(KosyncDocument.linked_abs_id == old_abs_id).update({KosyncDocument.linked_abs_id: new_abs_id}, synchronize_session=False)
+                session.query(ReadingJournal).filter(ReadingJournal.abs_id == old_abs_id).update({ReadingJournal.abs_id: new_abs_id}, synchronize_session=False)
 
                 # Cleanup non-migratable data (Alignment/Hardcover)
                 from .models import BookAlignment  # Import here to avoid circulars if any, though likely safe at top
@@ -771,6 +774,98 @@ class DatabaseService:
             stale_query.delete(synchronize_session=False)
 
             return count
+
+    # Reading tracker operations
+    def update_book_reading_fields(self, abs_id: str, **kwargs) -> Book | None:
+        """Update reading-specific fields on a book (started_at, finished_at, rating, read_count).
+        Separate from save_book() to prevent sync paths from overwriting reading data."""
+        allowed = {'started_at', 'finished_at', 'rating', 'read_count'}
+        with self.get_session() as session:
+            book = session.query(Book).filter(Book.abs_id == abs_id).first()
+            if not book:
+                return None
+            for key, value in kwargs.items():
+                if key in allowed:
+                    setattr(book, key, value)
+            session.flush()
+            session.refresh(book)
+            session.expunge(book)
+            return book
+
+    def get_reading_journals(self, abs_id: str) -> list[ReadingJournal]:
+        """Get journal entries for a book, newest first."""
+        with self.get_session() as session:
+            journals = session.query(ReadingJournal).filter(
+                ReadingJournal.abs_id == abs_id
+            ).order_by(ReadingJournal.created_at.desc()).all()
+            for j in journals:
+                session.expunge(j)
+            return journals
+
+    def add_reading_journal(self, abs_id: str, event: str, entry: str = None,
+                            percentage: float = None) -> ReadingJournal:
+        """Create a new journal entry for a book."""
+        with self.get_session() as session:
+            journal = ReadingJournal(abs_id=abs_id, event=event, entry=entry, percentage=percentage)
+            session.add(journal)
+            session.flush()
+            session.refresh(journal)
+            session.expunge(journal)
+            return journal
+
+    def delete_reading_journal(self, journal_id: int) -> bool:
+        """Delete a journal entry by ID."""
+        with self.get_session() as session:
+            journal = session.query(ReadingJournal).filter(ReadingJournal.id == journal_id).first()
+            if journal:
+                session.delete(journal)
+                return True
+            return False
+
+    def get_reading_goal(self, year: int) -> ReadingGoal | None:
+        """Get the reading goal for a given year."""
+        with self.get_session() as session:
+            goal = session.query(ReadingGoal).filter(ReadingGoal.year == year).first()
+            if goal:
+                session.expunge(goal)
+            return goal
+
+    def save_reading_goal(self, year: int, target_books: int) -> ReadingGoal:
+        """Set or update the reading goal for a year."""
+        with self.get_session() as session:
+            existing = session.query(ReadingGoal).filter(ReadingGoal.year == year).first()
+            if existing:
+                existing.target_books = target_books
+                session.flush()
+                session.refresh(existing)
+                session.expunge(existing)
+                return existing
+            else:
+                goal = ReadingGoal(year=year, target_books=target_books)
+                session.add(goal)
+                session.flush()
+                session.refresh(goal)
+                session.expunge(goal)
+                return goal
+
+    def get_reading_stats(self, year: int) -> dict:
+        """Get reading statistics for a given year."""
+        with self.get_session() as session:
+            finished = session.query(Book).filter(
+                Book.finished_at.like(f"{year}-%")
+            ).all()
+            currently_reading = session.query(Book).filter(Book.status == 'active').count()
+            total_tracked = session.query(Book).filter(
+                Book.status.in_(['active', 'completed', 'paused', 'dnf'])
+            ).count()
+            goal = session.query(ReadingGoal).filter(ReadingGoal.year == year).first()
+
+            return {
+                'books_finished': len(finished),
+                'currently_reading': currently_reading,
+                'total_tracked': total_tracked,
+                'goal_target': goal.target_books if goal else None,
+            }
 
     # BookloreBook operations
     def get_booklore_book(self, filename: str) -> BookloreBook | None:
