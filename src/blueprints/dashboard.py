@@ -30,18 +30,23 @@ def index():
 
     books = database_service.get_all_books()
 
-    # One-time backfill: pull real started_at / finished_at from Hardcover/ABS
-    from src.services.reading_date_service import sync_reading_dates
-    needs_backfill = any(
+    # Auto-complete: detect active books at 100% progress and mark them completed
+    from src.services.reading_date_service import auto_complete_finished_books, sync_reading_dates
+    ac_stats = auto_complete_finished_books(database_service, container)
+    if ac_stats['completed']:
+        logger.info(f"Auto-completed {ac_stats['completed']} book(s) at 100% progress")
+        books = database_service.get_all_books()
+
+    # Backfill: pull real reading dates from Hardcover/ABS for books missing them
+    needs_date_sync = any(
         (not b.started_at and b.status in ('active', 'paused', 'completed', 'dnf'))
         or (not b.finished_at and b.status == 'completed')
         for b in books
     )
-    if needs_backfill:
+    if needs_date_sync:
         stats = sync_reading_dates(database_service, container)
         if stats['updated'] or stats['completed']:
-            logger.info(f"Reading dates backfill: {stats}")
-            # Refresh books list to reflect updates
+            logger.info(f"Reading dates sync: {stats}")
             books = database_service.get_all_books()
 
     abs_service = get_abs_service()
