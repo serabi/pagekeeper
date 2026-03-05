@@ -1,14 +1,6 @@
 # PageKeeper — TODO
 
-## Code Cleanup
-- [x] Remove last 5 emojis from codebase
-- [x] Clean up dead code in Storyteller API client
 
-## Developer Experience
-- [x] Docker-first test runner (`run-tests.sh`, `docker-compose.test.yml`)
-  - Routes all tests through Docker for `epubcfi` and `ffmpeg` dependencies
-  - Claude Code hook blocks bare `pytest` and redirects to `./run-tests.sh`
-  - Updated CLAUDE.md and README with testing conventions
 
 ## ABS Integration — Remove "Required" Assumptions
 
@@ -44,24 +36,16 @@
   - Add a button (settings page or dashboard) that calls a new `/api/sync-all` endpoint
   - Endpoint should call `manager.sync_cycle()` in a background thread
 
-## Book Status: Paused / DNF
-- [x] Add ability to mark a book as Paused or DNF (Did Not Finish)
-  - New status values alongside existing `active`, `pending`, etc.
-  - Paused/DNF books should be excluded from automatic sync cycles
-  - Add UI controls in the card action panel to set/clear these statuses
-  - Consider a filtered view or section to separate paused/DNF books from active ones
+## Local Reading Tracker ([#16](https://github.com/serabi/pagekeeper/issues/16))
+- [x] Data model (Phase 1) — `started_at`, `finished_at`, `rating`, `read_count` on Book; `ReadingJournal` and `ReadingGoal` models; Alembic migration; DatabaseService CRUD
+- [ ] Reading Tab UI (Phase 2) — `reading_bp` blueprint, navbar link, stats bar, status filter pills, book grid, book detail view, journal timeline, API endpoints, JS/CSS
 
-## Reading History
-- [ ] Add reading history feature
-  - New database model to track position changes over time per book
-  - No existing schema, routes, or templates — needs to be built from scratch
-  - Could record each sync event with before/after positions and timestamps
-
-## Statistics
-- [ ] Add statistics page
-  - Sync counts, reading pace, library overview, per-book activity
-  - No existing schema, routes, or templates — needs to be built from scratch
-  - Could aggregate from the existing `State` table and sync logs
+## Reading Stats & Goals ([#18](https://github.com/serabi/pagekeeper/issues/18))
+- [ ] Stats computation: books finished/year, per-month breakdown, average rating, currently reading count
+- [ ] Yearly reading goal: set target, track progress
+- [ ] Stats bar on reading tab (goal progress, monthly chart, stat cards)
+- [ ] API endpoints for stats and goals
+- Depends on #16. Design doc: `future-plans/2026-03 - reading tracker plan.md` (Phase 5)
 
 ## Storyteller Integration
 - [x] Clean up dead code in `src/api/storyteller_api.py`
@@ -88,12 +72,36 @@
   - `bs4_chapter_text.find(clean_anchor)` always picks the first occurrence; if `clean_anchor` repeats, can resolve to wrong position
   - Consider choosing the occurrence closest to `target_offset`
 
-## Hardcover Integration
-- [ ] Improve Hardcover integration
-  - Current state: write-only progress sync, basic auto-matching by ISBN/title
-  - Better edition matching (ASIN, ISBN-13, manual override)
-  - Richer metadata sync (cover art, series info)
-  - Read status tracking (want to read, currently reading, finished)
+## Hardcover Bidirectional Sync ([#17](https://github.com/serabi/pagekeeper/issues/17))
+- [ ] Backend improvements (Phase 3): cached columns on HardcoverDetails, rate limiter, cached `_ensure_user_book()`/`_ensure_read_id()`, smarter status transitions, `get_service_state()`, `fetch_bulk_state()`, edition-aware sync, client poller
+- [ ] Local ↔ Hardcover data sync (Phase 4): push/pull status changes, date sync, optional journal mirroring, status badges on dashboard
+- Depends on #16. Design doc: `future-plans/2026-03 - reading tracker plan.md` (Phases 3-4)
+
+## BookFusion Integration — Phase 2: Journal Highlights
+- [ ] Link BookFusion highlights to PageKeeper `Book` records
+  - Match by title/filename between `BookfusionHighlight.book_title` and `Book` records
+  - Display matched highlights on the book's journal page alongside reading notes
+  - Ties into the journaling feature — highlights become part of the reading story
+- [ ] Add BookFusion highlight sync to the dashboard
+  - Show last sync time and number of highlights synced
+  - Add a "Sync Now" button to force a sync
+- [ ] Add BookFusion icon to header
+- [ ] See if there's a way to pull the BookFusion book list via the highlights sync API
+
+## Decouple Data Model from ABS ID ([#20](https://github.com/serabi/pagekeeper/issues/20))
+- [ ] Introduce source-agnostic primary key (internal UUID) for `Book` model
+- [ ] Make `abs_id` an optional field rather than the required anchor
+- [ ] Allow books to be anchored to any service (Storyteller, Booklore, ABS)
+- [ ] Update `PendingSuggestion` to support non-ABS source IDs
+- [ ] Update sync logic to handle books without ABS associations
+
+## Refactor: Extract Matching Routes ([#23](https://github.com/serabi/pagekeeper/issues/23))
+- [ ] Extract `suggestions()`, `match()`, `batch_match()` into `src/blueprints/matching.py`
+- [ ] Register new `matching_bp` blueprint in app factory
+- [ ] Inline or move `_pull_started_at()` into `reading_date_service.py`
+
+## Create PWA ([#22](https://github.com/serabi/pagekeeper/issues/22))
+- [ ] Look into making the frontend a PWA for better mobile compatibility
 
 ## Smart Match Suggestions
 - [ ] Auto-suggest likely book pairings when linking

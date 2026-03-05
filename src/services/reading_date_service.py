@@ -227,9 +227,16 @@ def sync_reading_dates(database_service, container):
                     continue
 
             # Fill in missing dates for books that don't need completion
+            # For active books, only set started_at if there's real progress (>1%).
+            # ABS/Hardcover auto-set startedAt on first sync even at 0% — unreliable.
             updates = {}
             if needs_started and dates.get('started_at'):
-                updates['started_at'] = dates['started_at']
+                if book.status == 'active':
+                    local_pct = _max_state_progress(book.abs_id, database_service)
+                    if local_pct > 0.01:
+                        updates['started_at'] = dates['started_at']
+                else:
+                    updates['started_at'] = dates['started_at']
             if needs_finished and dates.get('finished_at'):
                 updates['finished_at'] = dates['finished_at']
 

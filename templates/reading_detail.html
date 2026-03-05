@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>{{ book.abs_title }} - PageKeeper</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/png" href="/static/icon.png">
+    <link rel="apple-touch-icon" href="/static/icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/variables.css">
+    <link rel="stylesheet" href="/static/css/base.css">
+    <link rel="stylesheet" href="/static/css/layout.css">
+    <link rel="stylesheet" href="/static/css/components.css">
+    <link rel="stylesheet" href="/static/css/reading.css">
+</head>
+
+<body>
+    {% include 'partials/navbar.html' %}
+
+    <div class="container r-detail-container">
+        <a href="/reading" class="r-back-link">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8L10 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Reading
+        </a>
+
+        {# ── Hero section with blurred background ── #}
+        <div class="r-detail-hero">
+            {% if book.cover_url %}
+            <div class="r-hero-bg" style="background-image: url('{{ book.cover_url }}')"></div>
+            {% endif %}
+            <div class="r-hero-content">
+                <div class="r-hero-cover">
+                    {% if book.cover_url %}
+                    <img src="{{ book.cover_url }}" alt=""
+                        onerror="{% if book.kosync_doc_id %}this.onerror=null; this.src='/covers/{{ book.kosync_doc_id }}.jpg';{% else %}this.style.display='none'; this.nextElementSibling.classList.remove('hidden');{% endif %}">
+                    <div class="r-cover-placeholder hidden"></div>
+                    {% elif book.kosync_doc_id %}
+                    <img src="/covers/{{ book.kosync_doc_id }}.jpg" alt=""
+                        onerror="this.style.display='none'; this.nextElementSibling.classList.remove('hidden');">
+                    <div class="r-cover-placeholder hidden"></div>
+                    {% else %}
+                    <div class="r-cover-placeholder"></div>
+                    {% endif %}
+                </div>
+                <div class="r-hero-info">
+                    <h1 class="r-detail-title">{{ book.abs_title }}</h1>
+
+                    <div class="r-detail-badges">
+                        <span class="status-badge status-{{ book.status }}">{{ book.status }}</span>
+                        {% if book.unified_progress > 0 and book.status != 'completed' %}
+                        <span class="r-detail-pct">{{ '%.0f' | format(book.unified_progress) }}% complete</span>
+                        {% endif %}
+                        {% if book.read_count and book.read_count > 1 %}
+                        <span class="r-detail-reread">Read {{ book.read_count }}x</span>
+                        {% endif %}
+                    </div>
+
+                    {# Progress bar for non-completed books #}
+                    {% if book.status != 'completed' and book.unified_progress > 0 %}
+                    <div class="r-detail-progress">
+                        <div class="progress-bar">
+                            <div class="progress-bar-fill {% if book.status == 'paused' %}progress-paused-fill{% elif book.status == 'dnf' %}progress-dnf-fill{% endif %}"
+                                 style="width: {{ book.unified_progress }}%"></div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    {# Rating #}
+                    <div class="r-detail-rating" id="rating-stars" data-abs-id="{{ book.abs_id }}" data-rating="{{ book.rating or 0 }}">
+                        {% for i in range(1, 6) %}
+                        <button class="r-star-btn {% if i <= (book.rating or 0) %}filled{% elif i - 0.5 <= (book.rating or 0) %}half{% endif %}" data-value="{{ i }}" type="button">&#9733;</button>
+                        {% endfor %}
+                        <span class="r-rating-label" id="rating-label">{% if book.rating %}{{ book.rating }}/5{% else %}Rate{% endif %}</span>
+                    </div>
+
+                    {# Dates #}
+                    <div class="r-detail-dates">
+                        <label class="r-date-field">
+                            <span class="r-date-label">Started</span>
+                            <input type="date" id="started-at" value="{{ book.started_at or '' }}" data-abs-id="{{ book.abs_id }}">
+                        </label>
+                        <label class="r-date-field">
+                            <span class="r-date-label">Finished</span>
+                            <input type="date" id="finished-at" value="{{ book.finished_at or '' }}" data-abs-id="{{ book.abs_id }}">
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {# ── Journal ── #}
+        <div class="r-journal">
+            <div class="r-journal-head">
+                <h2>Journal</h2>
+            </div>
+
+            <form class="r-journal-form" id="journal-form" data-abs-id="{{ book.abs_id }}">
+                <textarea id="journal-entry" placeholder="Write a note..." rows="2"></textarea>
+                <button type="submit" class="btn btn-primary btn-sm">Add Note</button>
+            </form>
+
+            <div class="r-timeline" id="journal-timeline">
+                {% for journal in journals %}
+                <div class="r-tl-item" data-journal-id="{{ journal.id }}">
+                    <div class="r-tl-line"></div>
+                    <div class="r-tl-dot r-tl-dot-{{ journal.event }}"></div>
+                    <div class="r-tl-body">
+                        <div class="r-tl-head">
+                            <span class="r-tl-event r-tl-event-{{ journal.event }}">{{ journal.event|capitalize }}</span>
+                            <span class="r-tl-date">{{ journal.created_at.strftime('%b %d, %Y') if journal.created_at else '' }}</span>
+                            {% if journal.percentage is not none %}
+                            <span class="r-tl-pct">{{ '%.0f' | format(journal.percentage * 100) }}%</span>
+                            {% endif %}
+                        </div>
+                        {% if journal.entry %}
+                        <p class="r-tl-text">{{ journal.entry }}</p>
+                        {% endif %}
+                        {% if journal.event == 'note' %}
+                        <button class="r-tl-delete" data-journal-id="{{ journal.id }}" title="Delete">&times;</button>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endfor %}
+
+                {% if not journals %}
+                <div class="r-journal-empty">No journal entries yet</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/reading.js"></script>
+    <script>
+        initReadingDetail();
+    </script>
+</body>
+</html>

@@ -9,6 +9,7 @@ def register_blueprints(app):
     from src.blueprints.covers import covers_bp
     from src.blueprints.dashboard import dashboard_bp
     from src.blueprints.logs import logs_bp
+    from src.blueprints.reading_bp import reading_bp
     from src.blueprints.settings_bp import settings_bp
 
     app.register_blueprint(dashboard_bp)
@@ -18,3 +19,4 @@ def register_blueprints(app):
     app.register_blueprint(api_bp)
     app.register_blueprint(abs_bp)
     app.register_blueprint(logs_bp)
+    app.register_blueprint(reading_bp)
