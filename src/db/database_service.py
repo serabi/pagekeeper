@@ -808,9 +808,15 @@ class DatabaseService:
                 session.expunge(j)
             return journals
 
+    VALID_JOURNAL_EVENTS = {'started', 'progress', 'finished', 'paused', 'dnf', 'resumed', 'note'}
+
     def add_reading_journal(self, abs_id: str, event: str, entry: str = None,
                             percentage: float = None) -> ReadingJournal:
         """Create a new journal entry for a book."""
+        if event not in self.VALID_JOURNAL_EVENTS:
+            raise ValueError(f"event must be one of {self.VALID_JOURNAL_EVENTS}")
+        if percentage is not None and not (0.0 <= percentage <= 1.0):
+            raise ValueError("percentage must be between 0.0 and 1.0")
         with self.get_session() as session:
             journal = ReadingJournal(abs_id=abs_id, event=event, entry=entry, percentage=percentage)
             session.add(journal)
@@ -859,9 +865,9 @@ class DatabaseService:
     def get_reading_stats(self, year: int) -> dict:
         """Get reading statistics for a given year."""
         with self.get_session() as session:
-            finished = session.query(Book).filter(
+            books_finished = session.query(Book).filter(
                 Book.finished_at.like(f"{year}-%")
-            ).all()
+            ).count()
             currently_reading = session.query(Book).filter(Book.status == 'active').count()
             total_tracked = session.query(Book).filter(
                 Book.status.in_(['active', 'completed', 'paused', 'dnf'])
@@ -869,7 +875,7 @@ class DatabaseService:
             goal = session.query(ReadingGoal).filter(ReadingGoal.year == year).first()
 
             return {
-                'books_finished': len(finished),
+                'books_finished': books_finished,
                 'currently_reading': currently_reading,
                 'total_tracked': total_tracked,
                 'goal_target': goal.target_books if goal else None,

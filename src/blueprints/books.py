@@ -36,21 +36,16 @@ books_bp = Blueprint('books', __name__)
 def suggestions():
     """Dedicated page for browsing and acting on pairing suggestions."""
     database_service = get_database_service()
-    import json as _json
     raw_suggestions = database_service.get_all_pending_suggestions()
     suggestions_list = []
     for s in raw_suggestions:
-        try:
-            matches = _json.loads(s.matches_json) if s.matches_json else []
-        except Exception:
-            matches = []
         suggestions_list.append({
             'id': s.id,
             'source_id': s.source_id,
             'title': s.title,
             'author': s.author,
             'cover_url': s.cover_url,
-            'matches': matches,
+            'matches': s.matches,
             'created_at': s.created_at,
         })
     return render_template('suggestions.html', suggestions=suggestions_list)
@@ -577,19 +572,20 @@ def mark_complete(abs_id):
             )
             database_service.save_state(state)
 
-    # Record completion locally
-    today = date.today().isoformat()
-    reading_updates = {'finished_at': today}
-    if not book.started_at:
-        reading_updates['started_at'] = today
-    if book.finished_at and book.status != 'completed':
-        # Re-read: increment read_count
-        reading_updates['read_count'] = (book.read_count or 1) + 1
+    # Record completion locally (skip if already completed — idempotent)
+    if book.status != 'completed':
+        today = date.today().isoformat()
+        reading_updates = {'finished_at': today}
+        if not book.started_at:
+            reading_updates['started_at'] = today
+        if book.finished_at:
+            # Re-read: increment read_count
+            reading_updates['read_count'] = (book.read_count or 1) + 1
 
-    book.status = 'completed'
-    database_service.save_book(book)
-    database_service.update_book_reading_fields(abs_id, **reading_updates)
-    database_service.add_reading_journal(abs_id, event='finished', percentage=1.0)
+        book.status = 'completed'
+        database_service.save_book(book)
+        database_service.update_book_reading_fields(abs_id, **reading_updates)
+        database_service.add_reading_journal(abs_id, event='finished', percentage=1.0)
 
     if perform_delete:
         cleanup_mapping_resources(book)
