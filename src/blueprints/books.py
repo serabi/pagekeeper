@@ -715,6 +715,11 @@ def resume_book(abs_id):
                 except Exception as e:
                     logger.warning(f"Failed to update Hardcover resume status: {e}")
 
+        # Push READING status to Booklore
+        if book.ebook_filename:
+            from src.services.reading_date_service import _push_booklore_read_status
+            _push_booklore_read_status(book, container, 'READING')
+
     return jsonify({"success": True})
 
 
