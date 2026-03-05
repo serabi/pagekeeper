@@ -1,5 +1,5 @@
 """
-Ebook Utilities for Book Sync
+Ebook Utilities for PageKeeper
 """
 import glob
 import hashlib

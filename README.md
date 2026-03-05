@@ -1,10 +1,10 @@
-# Book Sync
+# PageKeeper
 
 <div align="center">
 
-<img src="static/icon.png" alt="Book Sync" width="128">
+<img src="static/icon.png" alt="PageKeeper" width="128">
 
-**Sync your audiobooks with your ebooks across your various self-hosted services.**
+**Keep your place across every book, every app, every format.**
 
 [![License](https://img.shields.io/github/license/serabi/book-sync?cacheSeconds=3600)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/serabi/book-sync)](https://github.com/serabi/book-sync/releases)
@@ -15,13 +15,17 @@
 
 ---
 
-## What is this?
+## What is PageKeeper?
 
-If you listen to audiobooks on a regular basis on [Audiobookshelf](https://www.audiobookshelf.org/) or [Storyteller](https://storyteller-platform.gitlab.io/storyteller/) during the day and then pick up the same book via KoReader or Kobo before bed, you know how frustrating it can be to find your place in the book. 
+PageKeeper is a self-hosted reading companion that tracks what you read and keeps your place across platforms. Whether you listen to an audiobook during your commute on [Audiobookshelf](https://www.audiobookshelf.org/) and pick up the same book on your e-reader before bed, or just want a single place to see your reading progress across services — PageKeeper handles it.
 
-The goal of Book Sync is to keep your books in sync across multiple platforms so that you can resume reading where you left off, no matter which app you use. It's a self-hosted, Docker based sync engine that links your audiobook position to the matching spot in the ebook (and vice versa), then pushes that position to every app you use. It works by transcribing a segment of the audiobook audio and fuzzy-matching it against the EPUB text. Once that alignment map is built, converting between a timestamp and a page position simply takes a sync. 
+At its core, PageKeeper is a **reading tracker**: it knows which books you're reading, how far along you are, when you started and finished, and keeps a journal of your progress. On top of that, it can **sync your position** between audiobook and ebook platforms by building an alignment map between the audio and the text. Once that map is built, jumping between formats is seamless.
 
-Major kudos and credit goes to [abs-kosync-bridge](https://github.com/cporcellijr/abs-kosync-bridge) for being the inspiration and original jumping-off point for this project. A big thing I love about the open source community is the ability for us to contribute to projects, fork projects, and give back to the community through those efforts. In the spirit of open source, I'm sharing Book Sync in case anyone else finds it useful, and I'm open to suggestions and contributions.  
+### Origin story
+
+This project started as a fork of [abs-kosync-bridge](https://github.com/cporcellijr/abs-kosync-bridge), a clever tool that synced Audiobookshelf positions to KOReader via the KoSync protocol. Major kudos to [cporcellijr](https://github.com/cporcellijr) for the original idea and implementation.
+
+Over time, the scope grew well beyond that bridge: multi-platform sync, reading tracking, auto-completion, suggestion discovery, alignment from multiple sources, and a full web dashboard. At this point it's essentially a new application, but the spirit of open source that made it possible is the same. If you find PageKeeper useful, contributions and suggestions are always welcome.
 
 ### Supported platforms
 
@@ -33,7 +37,7 @@ Major kudos and credit goes to [abs-kosync-bridge](https://github.com/cporcellij
 | [Booklore](https://github.com/booklore) | Ebook library and shelf manager |
 | [Hardcover](https://hardcover.app/) | Book tracking service (write-only) |
 
-You can use as few or as many of the above services as you want. None are required to use the app. 
+You can use as few or as many of the above services as you want. None are required to use the app.
 
 
 ---
@@ -42,9 +46,9 @@ You can use as few or as many of the above services as you want. None are requir
 
 ```yaml
 services:
-  book-sync:
+  pagekeeper:
     build: .
-    container_name: book_sync
+    container_name: pagekeeper
     restart: unless-stopped
     environment:
       - TZ=America/New_York
@@ -65,23 +69,23 @@ Start the container, open `http://your-server:4477`, and configure everything fr
 
 ## How it works
 
-Book Sync runs three sync layers simultaneously, from fastest to slowest:
+PageKeeper runs three sync layers simultaneously, from fastest to slowest:
 
-1. **Instant sync** — Listens to Audiobookshelf's Socket.IO stream and KOReader's KoSync updates in real time. When you pause an audiobook or push an update from KoReader via KoSync, Book Sync picks up the change within seconds.
+1. **Instant sync** — Listens to Audiobookshelf's Socket.IO stream and KOReader's KoSync updates in real time. When you pause an audiobook or push an update from KoReader via KoSync, PageKeeper picks up the change within seconds.
 
 2. **Per-client polling** — Lightweight checks against individual services (Storyteller, Booklore) at their own intervals. Only triggers a sync when the position has actually changed.
 
 3. **Scheduled full sync** — A background sweep every few minutes that catches anything the other layers missed.
 
-When a position change is detected, Book Sync converts it to every other format (timestamp to percentage, percentage to EPUB position, etc.) and pushes updates to all connected clients. A write-tracker prevents feedback loops — if Book Sync just pushed a position to a client, it ignores the echo that comes back.
+When a position change is detected, PageKeeper converts it to every other format (timestamp to percentage, percentage to EPUB position, etc.) and pushes updates to all connected clients. A write-tracker prevents feedback loops — if PageKeeper just pushed a position to a client, it ignores the echo that comes back.
 
 ---
 
 ## The alignment process
 
-The first time you link an audiobook to its EPUB, Book Sync needs to build an alignment map — a lookup table that converts between audio timestamps and ebook character positions. It tries three sources in priority order:
+The first time you link an audiobook to its EPUB, PageKeeper needs to build an alignment map — a lookup table that converts between audio timestamps and ebook character positions. It tries three sources in priority order:
 
-1. **Storyteller native** — If the book is linked to Storyteller and you've mounted the Storyteller data directory, Book Sync reads Storyteller's word-level timing data (`wordTimeline`) directly. No transcription needed — fastest option.
+1. **Storyteller native** — If the book is linked to Storyteller and you've mounted the Storyteller data directory, PageKeeper reads Storyteller's word-level timing data (`wordTimeline`) directly. No transcription needed — fastest option.
 2. **SMIL** — If the EPUB contains embedded SMIL timing data (common in publisher-produced audiobooks), it's extracted and used for alignment. Also fast.
 3. **Whisper** — Falls back to transcribing a segment of the audiobook audio using [Whisper](https://github.com/openai/whisper) (local), [Deepgram](https://deepgram.com/) (cloud), or [Whisper.cpp](https://github.com/ggerganov/whisper.cpp) (external server), then fuzzy-matching the transcript against the EPUB text.
 
@@ -96,13 +100,13 @@ volumes:
   - /path/to/storyteller/processing:/storyteller-data:ro
 ```
 
-Then in Settings → Audiobooks → Storyteller, set **Assets Directory** to `/storyteller-data`.
+Then in Settings > Audiobooks > Storyteller, set **Assets Directory** to `/storyteller-data`.
 
 ---
 
 ## Split-port mode
 
-Book Sync can expose the KoSync API on a separate port from the admin dashboard. This keeps the sync endpoint available to your e-reader over the internet while the dashboard stays on your local network.
+PageKeeper can expose the KoSync API on a separate port from the admin dashboard. This keeps the sync endpoint available to your e-reader over the internet while the dashboard stays on your local network.
 
 **Important:** Port 4477 (the dashboard) must stay on your LAN. Only the `KOSYNC_PORT` can be exposed via a reverse proxy as it does have an authentication layer built in.
 
@@ -113,7 +117,7 @@ environment:
   - KOSYNC_PORT=5758
 ports:
   - "4477:4477"   # Dashboard — LAN only, do NOT forward
-  - "5758:5758"   # Sync API — has authentication 
+  - "5758:5758"   # Sync API — has authentication
 ```
 
 ### TLS requirement
@@ -130,7 +134,7 @@ The **LAN Address** field shows `http://<server-ip>:<KOSYNC_PORT>` automatically
 
 1. Set `KOSYNC_PORT` in your Docker environment
 2. Configure your reverse proxy to forward `https://your-domain` to port `KOSYNC_PORT`
-3. In Book Sync settings, enter the public URL
+3. In PageKeeper settings, enter the public URL
 4. In KOReader: Settings > Cloud storage > Progress sync > Custom server > enter your public URL
 
 ### Exposed paths
@@ -156,24 +160,24 @@ The sync endpoint includes rate limiting, input validation, and MD5-hashed authe
 
 ## Ebook sources
 
-Book Sync needs access to your EPUB files for alignment. Three options, in order of simplicity:
+PageKeeper needs access to your EPUB files for alignment. Three options, in order of simplicity:
 
 - **Mount a volume** — Point `/books` at your EPUB directory. Simplest approach.
-- **Booklore** — Book Sync fetches EPUBs through the Booklore API. No volume mount needed.
+- **Booklore** — PageKeeper fetches EPUBs through the Booklore API. No volume mount needed.
 - **Calibre-Web Automated (CWA)** — Same idea, fetches EPUBs through CWA's API.
 
 ---
 
 ## Pairing suggestions
 
-When Book Sync detects an audiobook you're actively listening to in Audiobookshelf, it can automatically search your ebook services (Booklore, Calibre-Web Automated, Storyteller) for a matching title and suggest a pairing. This works in two directions:
+When PageKeeper detects an audiobook you're actively listening to in Audiobookshelf, it can automatically search your ebook services (Booklore, Calibre-Web Automated, Storyteller) for a matching title and suggest a pairing. This works in two directions:
 
 - **Forward:** Audiobooks with progress in ABS trigger searches across your ebook sources.
 - **Reverse:** Books with progress in Storyteller or Booklore trigger searches for matching audiobooks in ABS.
 
 Suggestions appear on the **Suggestions** page (`/suggestions`), where you can link, dismiss, or permanently ignore them. Real-time discovery also happens via Socket.IO — when you start playing an unmapped audiobook, a suggestion is queued automatically.
 
-Enable suggestions in **Settings → General → Pairing Suggestions**.
+Enable suggestions in **Settings > General > Pairing Suggestions**.
 
 ---
 
@@ -193,7 +197,7 @@ Clone the repository and build the image:
 ```bash
 git clone https://github.com/serabi/book-sync.git
 cd book-sync
-docker build -t book-sync .
+docker build -t pagekeeper .
 ```
 
 Copy the example compose file and edit it for your setup:
@@ -211,7 +215,7 @@ The dashboard will be available at `http://localhost:4477`. All service configur
 To enable NVIDIA GPU acceleration for Whisper transcription, pass the `INSTALL_GPU` build arg. This adds ~800MB to the image for the CUDA libraries.
 
 ```bash
-docker build --build-arg INSTALL_GPU=true -t book-sync .
+docker build --build-arg INSTALL_GPU=true -t pagekeeper .
 ```
 
 You'll also need to uncomment the `deploy.resources` section in your `docker-compose.yml` to expose the GPU to the container. See the example compose file for details.
@@ -221,7 +225,7 @@ You'll also need to uncomment the `deploy.resources` section in your `docker-com
 The build accepts an `APP_VERSION` arg that controls the version displayed in the dashboard. Defaults to `dev` if not set.
 
 ```bash
-docker build --build-arg APP_VERSION=1.0.0 -t book-sync .
+docker build --build-arg APP_VERSION=1.0.0 -t pagekeeper .
 ```
 
 ### Local development
@@ -248,7 +252,7 @@ package installed in the image) and `ffmpeg`. Use the included wrapper script:
 ./run-tests.sh -k "test_sync_cycle"               # filter by name
 ```
 
-If the `book-sync` container is running, tests execute there via `docker exec`
+If the `pagekeeper` container is running, tests execute there via `docker exec`
 (fastest). Otherwise the script falls back to `docker compose -f docker-compose.test.yml run --rm test`.
 
 ---

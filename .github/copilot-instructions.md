@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Book Sync is a self-hosted, Docker-based sync engine that keeps audiobook and ebook reading positions in sync across multiple platforms (Audiobookshelf, KOReader via KoSync, Storyteller, Booklore, and Hardcover). It works by transcribing audiobook audio and fuzzy-matching the transcript against EPUB text to build an alignment map, then converting positions between formats and pushing updates to all connected clients.
+PageKeeper is a self-hosted, Docker-based reading companion that tracks what you read and keeps your position in sync across multiple platforms (Audiobookshelf, KOReader via KoSync, Storyteller, Booklore, and Hardcover). It works by transcribing audiobook audio and fuzzy-matching the transcript against EPUB text to build an alignment map, then converting positions between formats and pushing updates to all connected clients.
 
 The application is a Python/Flask web server with a web dashboard on port 4477, a background sync engine, and an optional split KoSync API port.
 
@@ -33,7 +33,7 @@ Always run tests via `./run-tests.sh` — never bare `pytest`. The test suite re
 ./run-tests.sh -k "test_name" -v            # filtered + verbose
 ```
 
-If the `book-sync` container is running, tests execute there via `docker exec` (fastest). Otherwise the script falls back to `docker compose -f docker-compose.test.yml run --rm test`.
+If the `pagekeeper` container is running, tests execute there via `docker exec` (fastest). Otherwise the script falls back to `docker compose -f docker-compose.test.yml run --rm test`.
 
 ## Code Style
 

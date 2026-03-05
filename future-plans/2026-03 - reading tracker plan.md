@@ -2,11 +2,11 @@
 
 ## Context
 
-Book Sync is currently a sync engine — it moves reading progress between platforms but doesn't own the reading experience itself. The goal is to evolve it into a **local-first reading tracker** where all reading data (status, dates, journals, goals, stats) lives in SQLite, with Hardcover as an optional bidirectional sync target for users who want social features.
+PageKeeper is currently a sync engine — it moves reading progress between platforms but doesn't own the reading experience itself. The goal is to evolve it into a **local-first reading tracker** where all reading data (status, dates, journals, goals, stats) lives in SQLite, with Hardcover as an optional bidirectional sync target for users who want social features.
 
 **Why local-first:** Self-hosters value data privacy. A reading tracker that requires an external service contradicts the self-hosting ethos. By making everything work locally and treating Hardcover as optional, we serve both privacy-focused users and Hardcover users with a single architecture.
 
-**Scope:** Only synced books (books already managed by Book Sync) get reading tracking. No standalone book import/discovery.
+**Scope:** Only synced books (books already managed by PageKeeper) get reading tracking. No standalone book import/discovery.
 
 **Key insight:** `Book.status` already stores reading states (`active`=reading, `paused`, `dnf`, `completed`) alongside sync states (`processing`, `failed_*`). The foundation is there — we need to formalize it with dates, journals, and a dedicated UI.
 
