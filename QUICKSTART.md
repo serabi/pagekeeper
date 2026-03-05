@@ -1,4 +1,4 @@
-# Quick Start Guide - Book Sync
+# Quick Start Guide - PageKeeper
 
 ## Goal
 Get your reading progress syncing across your self-hosted services, and track your reading history. Optionally syncs your reading progress with Hardcover.app.
@@ -7,7 +7,7 @@ Get your reading progress syncing across your self-hosted services, and track yo
 
 ## Step 1: Choose Your Services
 
-Book Sync syncs progress between any combination of these services:
+PageKeeper syncs progress between any combination of these services:
 
 | Service | Type | What It Does |
 |---------|------|-------------|
@@ -29,8 +29,8 @@ You need **at least two services** to sync between. Common setups:
 There is no published Docker image yet — you'll build from source:
 
 ```bash
-git clone https://github.com/serabi/book-sync.git
-cd book-sync
+git clone https://github.com/serabi/pagekeeper.git
+cd pagekeeper
 ```
 
 ---
@@ -41,11 +41,11 @@ Copy this template. All service credentials (API keys, URLs, passwords) are conf
 
 ```yaml
 services:
-  book-sync:
+  pagekeeper:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: book-sync
+    container_name: pagekeeper
     restart: unless-stopped
     environment:
       - TZ=America/New_York
@@ -100,7 +100,7 @@ Press `Ctrl+C` to exit logs.
 
 Open your browser to: **http://localhost:4477**
 
-You should see the Book Sync dashboard.
+You should see the PageKeeper dashboard.
 
 ---
 

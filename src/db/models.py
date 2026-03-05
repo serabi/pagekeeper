@@ -1,5 +1,5 @@
 """
-SQLAlchemy ORM models for Book Sync database.
+SQLAlchemy ORM models for PageKeeper database.
 """
 
 from datetime import datetime

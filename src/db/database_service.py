@@ -1,5 +1,5 @@
 """
-Unified SQLAlchemy database service for Book Sync.
+Unified SQLAlchemy database service for PageKeeper.
 Direct model-based interface without dictionary conversions.
 """
 

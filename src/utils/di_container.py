@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Dependency Injection Container for Book Sync.
+Dependency Injection Container for PageKeeper.
 Using python-dependency-injector library for proper DI functionality.
 """
 

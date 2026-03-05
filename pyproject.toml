@@ -1,5 +1,5 @@
 [project]
-name = "abs-kosync-stitch"
+name = "pagekeeper"
 requires-python = ">=3.11"
 
 [tool.ruff]

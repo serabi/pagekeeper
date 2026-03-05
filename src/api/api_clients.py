@@ -504,13 +504,13 @@ class ABSClient:
             "deviceInfo": {
                 "id": "abs-kosync-bot",
                 "deviceId": "abs-kosync-bot",
-                "clientName": "Book-Sync",
+                "clientName": "PageKeeper",
                 "clientVersion": "1.0",
-                "manufacturer": "Book Sync",
+                "manufacturer": "PageKeeper",
                 "model": "Bridge",
                 "sdkVersion": "1.0"
             },
-            "mediaPlayer": "Book-Sync",
+            "mediaPlayer": "PageKeeper",
             "supportedMimeTypes": ["audio/mpeg", "audio/mp4"],
             "forceDirectPlay": True,
             "forceTranscode": False

@@ -5,7 +5,7 @@
 
 ## Context
 
-Booklore recently added native audiobook support with a full player, streaming API, and progress tracking. Book Sync already integrates with Booklore for **ebook** progress, but the audiobook half is unimplemented — `BookloreSyncClient.get_supported_sync_types()` returns `{'audiobook', 'ebook'}` but only the ebook path has code behind it.
+Booklore recently added native audiobook support with a full player, streaming API, and progress tracking. PageKeeper already integrates with Booklore for **ebook** progress, but the audiobook half is unimplemented — `BookloreSyncClient.get_supported_sync_types()` returns `{'audiobook', 'ebook'}` but only the ebook path has code behind it.
 
 This plan adds Booklore audiobook progress sync so that listening in Booklore's audiobook player stays in sync with ABS, KOReader, Storyteller, etc. — using the same alignment-map cross-format pipeline that already works for ABS audiobooks.
 
@@ -80,7 +80,7 @@ Discovered from Booklore source code (Spring Boot + Angular):
 
 **New private methods:**
 
-- **`_find_booklore_audiobook(book)`** — matches a Book Sync book to a Booklore book record:
+- **`_find_booklore_audiobook(book)`** — matches a PageKeeper book to a Booklore book record:
   - Strategy A: `find_book_by_filename(book.ebook_filename)` — works when Booklore has both epub and audiobook under same book ID
   - Strategy B (fallback): `search_books(book.abs_title)` — accept only unambiguous single match; filter for audio file types if multiple results
 
@@ -244,7 +244,7 @@ Between V1 and V3, these quality-of-life improvements:
 
 - **`booklore_book_id` column** on `books` table (Alembic migration) — O(1) lookup after first match, avoids repeated title search
 - **`fileProgress` write variant** — uses `bookFileId` for newer Booklore versions
-- **Manual book linking UI** — dropdown on book detail page to explicitly link Booklore book ID to Book Sync entry
+- **Manual book linking UI** — dropdown on book detail page to explicitly link Booklore book ID to PageKeeper entry
 - **Bulk audiobook progress prefetch** — enrich `_refresh_book_cache()` with audiobook progress data to avoid per-book API calls
 
 ---
