@@ -36,7 +36,7 @@
         {# ── Hero section with blurred background ── #}
         <div class="r-detail-hero">
             {% if book.cover_url %}
-            <div class="r-hero-bg" style="background-image: url('{{ book.cover_url }}')"></div>
+            <div class="r-hero-bg" style="background-image: url('{{ book.cover_url | urlencode }}')"></div>
             {% endif %}
             <div class="r-hero-content">
                 <div class="r-hero-cover">
@@ -289,7 +289,7 @@
             var pct = parseFloat(input.value);
             if (isNaN(pct) || pct < 0 || pct > 100) return;
 
-            var absId = '{{ book.abs_id }}';
+            var absId = {{ book.abs_id | tojson }};
             fetch('/api/reading/book/' + encodeURIComponent(absId) + '/progress', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},

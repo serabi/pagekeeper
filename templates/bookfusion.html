@@ -411,7 +411,16 @@
         })
         .then(function(r) { return r.json(); })
         .then(function(data) {
-            if (data.success) loadHighlights();
+            if (data.success) {
+                loadHighlights();
+            } else {
+                console.error('Link failed:', data.error || 'unknown error');
+                loadHighlights();
+            }
+        })
+        .catch(function() {
+            console.error('Link request failed');
+            loadHighlights();
         });
     }
 
@@ -451,7 +460,7 @@
             return;
         }
         var filtered = _libraryData.filter(function(b) {
-            var searchable = b.title + ' ' + b.authors + ' ' + b.series + ' ' + (b.filenames || []).join(' ');
+            var searchable = (b.title || '') + ' ' + (b.authors || '') + ' ' + (b.series || '') + ' ' + (b.filenames || []).join(' ');
             return searchable.toLowerCase().indexOf(q) !== -1;
         });
         renderLibrary(filtered);
