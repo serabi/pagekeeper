@@ -38,7 +38,10 @@ function searchBooklore() {
     resultsDiv.appendChild(_blEl('div', 'st-loading', 'Searching Booklore...'));
 
     fetch('/api/booklore/search?q=' + encodeURIComponent(query))
-        .then(function(r) { return r.json(); })
+        .then(function(r) {
+            if (!r.ok) throw new Error('Search failed: ' + r.status);
+            return r.json();
+        })
         .then(function(books) {
             while (resultsDiv.firstChild) resultsDiv.removeChild(resultsDiv.firstChild);
 

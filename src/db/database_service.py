@@ -1112,7 +1112,7 @@ class DatabaseService:
                         series=b.get('series'),
                         highlight_count=b.get('highlight_count', 0),
                     ))
-                saved += 1
+                    saved += 1
         return saved
 
     def get_bookfusion_books(self) -> list[BookfusionBook]:

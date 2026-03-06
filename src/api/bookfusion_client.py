@@ -239,7 +239,7 @@ class BookFusionClient:
                 timeout=15,
             )
             if init_resp.status_code not in (200, 201):
-                logger.error(f"BookFusion upload init failed: HTTP {init_resp.status_code} — {init_resp.text[:500]}")
+                logger.error("BookFusion upload init failed: HTTP %s", init_resp.status_code)
                 return None
             init_data = init_resp.json()
         except requests.RequestException as e:
@@ -248,7 +248,7 @@ class BookFusionClient:
 
         # Step 2: Upload to S3 — POST to pre-signed URL (form params + file)
         s3_url = init_data.get('url')
-        s3_params = init_data.get('params', {})
+        s3_params = init_data.get('params') or {}
         if not s3_url:
             logger.error("BookFusion upload init returned no S3 URL")
             return None
@@ -267,7 +267,7 @@ class BookFusionClient:
                 timeout=120,
             )
             if s3_resp.status_code not in (200, 201, 204):
-                logger.error(f"BookFusion S3 upload failed: HTTP {s3_resp.status_code} — {s3_resp.text[:500]}")
+                logger.error("BookFusion S3 upload failed: HTTP %s", s3_resp.status_code)
                 return None
             logger.info(f"BookFusion S3 upload succeeded: HTTP {s3_resp.status_code}")
         except requests.RequestException as e:
@@ -301,11 +301,11 @@ class BookFusionClient:
                 data=body,
                 timeout=30,
             )
-            logger.info(f"BookFusion finalize response: HTTP {finalize_resp.status_code} — {finalize_resp.text[:500]}")
+            logger.info("BookFusion finalize response: HTTP %s", finalize_resp.status_code)
             if finalize_resp.status_code in (200, 201):
                 logger.info(f"BookFusion upload finalized: {filename}")
                 return finalize_resp.json()
-            logger.error(f"BookFusion finalize failed: HTTP {finalize_resp.status_code} — {finalize_resp.text[:500]}")
+            logger.error("BookFusion finalize failed: HTTP %s", finalize_resp.status_code)
             return None
         except requests.RequestException as e:
             logger.error(f"BookFusion finalize error: {e}")
@@ -381,7 +381,7 @@ class BookFusionClient:
 
         while True:
             data = self.fetch_highlights(cursor)
-            pages = data.get('pages', [])
+            pages = data.get('pages') or []
 
             # Track next_sync_cursor from each response (save the last one)
             if data.get('next_sync_cursor'):
@@ -404,7 +404,7 @@ class BookFusionClient:
                     book_title = book_title[:-3].strip()
 
                 # Collect book metadata (deduplicate by book_id)
-                hl_count = len(page.get('highlights', []))
+                hl_count = len(page.get('highlights') or [])
                 if book_id not in all_books:
                     all_books[book_id] = {
                         'bookfusion_id': book_id,
@@ -419,7 +419,7 @@ class BookFusionClient:
                 else:
                     all_books[book_id]['highlight_count'] += hl_count
 
-                for hl in page.get('highlights', []):
+                for hl in (page.get('highlights') or []):
                     if not isinstance(hl, dict):
                         continue
                     highlight_id = hl.get('id', '')

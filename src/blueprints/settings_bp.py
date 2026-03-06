@@ -172,7 +172,7 @@ def test_kosync_connection():
     return test_connection('kosync')
 
 
-@settings_bp.route('/api/test-connection/<service>', methods=['GET'])
+@settings_bp.route('/api/test-connection/<service>', methods=['GET', 'POST'])
 def test_connection(service):
     """Test connectivity to a configured service. Returns JSON with success/detail."""
     testers = {
@@ -371,15 +371,23 @@ def _test_telegram() -> tuple[bool, str]:
     return False, _http_error(resp.status_code)
 
 
+def _get_api_key_override() -> str | None:
+    """Read api_key from POST JSON body (preferred) or GET query param (legacy fallback)."""
+    if request.method == 'POST' and request.is_json:
+        key = (request.json or {}).get('api_key', '').strip()
+        if key:
+            return key
+    key = request.args.get('api_key', '').strip()
+    return key or None
+
+
 def _test_bookfusion() -> tuple[bool, str]:
     container = get_container()
     client = container.bookfusion_client()
-    override = request.args.get('api_key', '').strip()
-    return client.check_connection(api_key_override=override or None)
+    return client.check_connection(api_key_override=_get_api_key_override())
 
 
 def _test_bookfusion_upload() -> tuple[bool, str]:
     container = get_container()
     client = container.bookfusion_client()
-    override = request.args.get('api_key', '').strip()
-    return client.check_upload_connection(api_key_override=override or None)
+    return client.check_upload_connection(api_key_override=_get_api_key_override())
