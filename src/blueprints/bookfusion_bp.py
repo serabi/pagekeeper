@@ -493,7 +493,7 @@ def add_to_dashboard():
     # Auto-link ALL catalog books + highlights in the group
     for bid in bookfusion_ids:
         db_service.set_bookfusion_book_match(bid, abs_id)
-        db_service.link_bookfusion_highlights_by_book_id(bid, abs_id)
+        db_service.link_bookfusion_book(bid, abs_id)
 
     # Auto-populate reading dates
     date_info = _estimate_reading_dates(db_service, abs_id, bookfusion_ids, title)
@@ -528,7 +528,7 @@ def match_to_book():
     # Link ALL catalog books + highlights in the group
     for bid in bookfusion_ids:
         db_service.set_bookfusion_book_match(bid, abs_id or None)
-        db_service.link_bookfusion_highlights_by_book_id(bid, abs_id or None)
+        db_service.link_bookfusion_book(bid, abs_id or None)
 
     resp = {'success': True, 'abs_id': abs_id}
 
