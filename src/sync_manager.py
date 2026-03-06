@@ -156,13 +156,13 @@ class SyncManager:
             try:
                 client.check_connection()
                 logger.info(f"'{client_name}' connection verified")
-            except Exception:
+            except Exception as first_err:
                 time.sleep(2)
                 try:
                     client.check_connection()
                     logger.info(f"'{client_name}' connection verified (retry)")
                 except Exception as e:
-                    logger.warning(f"'{client_name}' connection failed: {e}")
+                    logger.warning(f"'{client_name}' connection failed after retry: {e} (first attempt: {first_err})")
 
         # Check CWA Integration Status
         if self.library_service and self.library_service.cwa_client:
