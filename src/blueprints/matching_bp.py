@@ -429,6 +429,18 @@ def batch_match():
                     logger.info(f"Preserving existing hash '{current_book_entry.kosync_doc_id}' for '{item['abs_id']}' instead of new hash '{kosync_doc_id}'")
                     kosync_doc_id = current_book_entry.kosync_doc_id
 
+                # Duplicate Merge
+                existing_book = database_service.get_book_by_kosync_id(kosync_doc_id)
+                migration_source_id = None
+                abs_ebook_item_id = None
+
+                if existing_book and existing_book.abs_id != item['abs_id']:
+                    logger.info(f"Found existing book entry '{existing_book.abs_id}' for this ebook -- Merging into '{item['abs_id']}'")
+                    migration_source_id = existing_book.abs_id
+                    abs_ebook_item_id = existing_book.abs_ebook_item_id or existing_book.abs_id
+                    if not original_ebook_filename:
+                        original_ebook_filename = existing_book.original_ebook_filename or existing_book.ebook_filename
+
                 book = Book(
                     abs_id=item['abs_id'],
                     abs_title=item['abs_title'],
@@ -438,10 +450,20 @@ def batch_match():
                     status="pending",
                     duration=duration,
                     storyteller_uuid=storyteller_uuid or None,
-                    original_ebook_filename=original_ebook_filename
+                    original_ebook_filename=original_ebook_filename,
+                    abs_ebook_item_id=abs_ebook_item_id
                 )
 
                 database_service.save_book(book)
+
+                # Duplicate Merge: Migrate
+                if migration_source_id:
+                    try:
+                        database_service.migrate_book_data(migration_source_id, item['abs_id'])
+                        database_service.delete_book(migration_source_id)
+                        logger.info(f"Successfully merged {migration_source_id} into {item['abs_id']}")
+                    except Exception as e:
+                        logger.error(f"Failed to merge book data: {e}")
 
                 # Trigger Hardcover Automatch
                 hardcover_sync_client = container.sync_clients().get('Hardcover')
