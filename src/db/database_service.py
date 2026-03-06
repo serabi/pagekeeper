@@ -1001,8 +1001,13 @@ class DatabaseService:
             ).all() if all_ids else []
             lookup = {row.highlight_id: row for row in existing_rows}
 
+            seen_in_batch = set()
             for h in highlights:
-                existing = lookup.get(h['highlight_id'])
+                highlight_id = h.get('highlight_id')
+                if not highlight_id or highlight_id in seen_in_batch:
+                    continue
+                seen_in_batch.add(highlight_id)
+                existing = lookup.get(highlight_id)
                 if existing:
                     existing.content = h['content']
                     existing.chapter_heading = h.get('chapter_heading')
@@ -1081,7 +1086,7 @@ class DatabaseService:
     # ── BookFusion Books (Library Catalog) ──
 
     def save_bookfusion_books(self, books: list[dict]) -> int:
-        """Bulk upsert BookFusion books by bookfusion_id. Returns count saved."""
+        """Bulk upsert BookFusion books by bookfusion_id. Returns count of new books saved."""
         saved = 0
         with self.get_session() as session:
             for b in books:
@@ -1112,7 +1117,7 @@ class DatabaseService:
                         series=b.get('series'),
                         highlight_count=b.get('highlight_count', 0),
                     ))
-                saved += 1
+                    saved += 1
         return saved
 
     def get_bookfusion_books(self) -> list[BookfusionBook]:

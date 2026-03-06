@@ -259,8 +259,15 @@ def api_booklore_link(abs_id):
     if not isinstance(data, dict):
         return jsonify({"error": "No data provided"}), 400
 
-    filename_raw = data.get('filename', '')
-    filename = filename_raw.strip() if isinstance(filename_raw, str) else ''
+    if 'filename' not in data:
+        return jsonify({"error": "Missing 'filename' in JSON payload"}), 400
+    filename_raw = data.get('filename')
+    if filename_raw is None:
+        filename = ''
+    elif not isinstance(filename_raw, str):
+        return jsonify({"error": "'filename' must be a string or null"}), 400
+    else:
+        filename = filename_raw.strip()
 
     if not filename:
         logger.info(f"Unlinking Booklore for '{book.abs_title}'")
