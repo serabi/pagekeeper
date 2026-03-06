@@ -11,7 +11,6 @@ function initDashboard() {
     const sortSelect = document.getElementById('sort-select');
     const filterSelect = document.getElementById('filter-select');
 
-    // One-time migration: read new key, fall back to legacy key, migrate forward
     function migrateLocalStorage(newKey, legacyKey) {
         let val = localStorage.getItem(newKey);
         if (val !== null) return val;
@@ -71,7 +70,6 @@ function initDashboard() {
             }
         });
 
-        // Hide sections that don't match the active filter
         const statusGridMap = {
             currently_reading: 'currently-reading-grid',
             finished: 'finished-grid',
@@ -95,7 +93,6 @@ function initDashboard() {
         localStorage.setItem('pagekeeper_filter', filterValue);
     }
 
-    // Initial Sort Defaults
     let sortState = {
         title: 'asc',
         progress: 'desc',
@@ -135,7 +132,7 @@ function initDashboard() {
 
     function sortCards(grid, sortBy, direction) {
         if (!grid) return;
-        const cards = Array.from(grid.children);
+        const cards = Array.from(grid.querySelectorAll('.book-card'));
 
         const sortedCards = cards.sort((a, b) => {
             let comparison = 0;
@@ -215,7 +212,6 @@ function initDashboard() {
         dashboardSearch.addEventListener('input', filterBooks);
     }
 
-    // --- Auto-refresh ---
     let refreshPaused = false;
 
     function refreshDashboard() {
@@ -225,7 +221,7 @@ function initDashboard() {
         }
 
         fetch('/api/status')
-            .then(r => r.json())
+            .then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
             .then(data => {
                 if (!data || !data.mappings) return;
                 data.mappings.forEach(book => {
@@ -254,12 +250,12 @@ function initDashboard() {
                     }
 
                     const kosyncItem = card.querySelector('.service-item[title^="Update KoReader Hash"] .service-value');
-                    if (kosyncItem && book.states && book.states.kosync) {
+                    if (kosyncItem && book.states?.kosync?.percentage != null) {
                         kosyncItem.textContent = `${book.states.kosync.percentage.toFixed(1)}%`;
                     }
 
                     const stItem = card.querySelector('.service-item[title="Storyteller"] .service-value');
-                    if (stItem && book.states && book.states.storyteller) {
+                    if (stItem && book.states?.storyteller?.percentage != null) {
                         stItem.textContent = `${book.states.storyteller.percentage.toFixed(1)}%`;
                     }
 
@@ -287,7 +283,6 @@ function initDashboard() {
 
     setTimeout(refreshDashboard, 30000);
 
-    // --- Processing status polling ---
     let emptyReloadAttempts = 0;
     function pollProcessingStatus() {
         const processingSection = document.getElementById('processing-section');
@@ -358,8 +353,6 @@ function initDashboard() {
         setTimeout(pollProcessingStatus, 5000);
     }
 }
-
-// --- Global functions called from inline onclick handlers in book cards ---
 
 function updateKoSyncHash(event) {
     event.stopPropagation();
@@ -584,7 +577,6 @@ function _dmExecuteFetch(absId, shouldDelete) {
 function _dmYesDelete() { _dmExecuteFetch(window._mcAbsId, true); }
 function _dmNoKeepMapping() { _dmExecuteFetch(window._mcAbsId, false); }
 
-// --- Card action panel (shared bottom-sheet / modal) ---
 let _panelSourceMenu = null;
 
 function openActionPanel(trigger) {
@@ -684,7 +676,6 @@ function closeConfirmModal() {
     document.getElementById('confirm-modal').style.display = 'none';
 }
 
-// --- Global event listeners ---
 document.addEventListener('click', function(e) {
     const trigger = e.target.closest('.card-menu-trigger');
     if (trigger) {
