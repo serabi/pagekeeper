@@ -75,7 +75,7 @@ class IntegrationRepository(BaseRepository):
                         BookloreBook.source == booklore_book.source
                     ).first()
                     if existing:
-                        for attr in ['title', 'authors', 'raw_metadata', 'source']:
+                        for attr in ['title', 'authors', 'raw_metadata']:
                             if hasattr(booklore_book, attr):
                                 setattr(existing, attr, getattr(booklore_book, attr))
                         session.flush()

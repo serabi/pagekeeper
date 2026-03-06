@@ -308,10 +308,7 @@ def reading_detail(abs_id):
                     if not metadata.get('description') and bl_book.get('description'):
                         metadata['description'] = bl_book['description']
                     bl_url = f"{bl_client.base_url}/book/{bl_book.get('id')}?tab=view"
-                    if bl_client.source_tag == 'booklore':
-                        metadata['booklore_url'] = bl_url
-                    else:
-                        metadata['booklore_2_url'] = bl_url
+                    metadata['booklore_url'] = bl_url
                     break
             except Exception:
                 continue
