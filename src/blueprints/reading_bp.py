@@ -8,7 +8,13 @@ from pathlib import Path
 
 from flask import Blueprint, abort, jsonify, render_template, request
 
-from src.blueprints.helpers import get_abs_service, get_booklore_clients, get_container, get_database_service, get_service_web_url
+from src.blueprints.helpers import (
+    get_abs_service,
+    get_booklore_clients,
+    get_container,
+    get_database_service,
+    get_service_web_url,
+)
 from src.db.models import State
 
 logger = logging.getLogger(__name__)

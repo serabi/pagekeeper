@@ -5,7 +5,6 @@ ABS-specific routes (/api/abs/*, /api/cover-proxy/*) are in abs_bp.py.
 
 import json
 import logging
-import os
 
 from flask import Blueprint, current_app, jsonify, request
 

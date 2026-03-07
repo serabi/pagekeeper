@@ -1,23 +1,5 @@
-<header class="top-nav">
-    <div class="nav-brand">
-        <a href="/" class="brand-link">
-            <img src="/static/icon.png" alt="PageKeeper" class="app-icon" width="36" height="36">
-            <div class="brand-copy">
-                <h1>PageKeeper</h1>
-            </div>
-        </a>
-    </div>
-    {% set abs_url = get_header_service_url('ABS') %}
-    {% set storyteller_url = get_header_service_url('STORYTELLER') %}
-    {% set booklore_url = get_header_service_url('BOOKLORE') %}
-    {% set cwa_url = get_header_service_url('CWA') %}
-    {% set hardcover_url = get_header_service_url('HARDCOVER') %}
-    {% set show_bookfusion_page = get_bool('BOOKFUSION_ENABLED') and (get_val('BOOKFUSION_API_KEY') or get_val('BOOKFUSION_UPLOAD_API_KEY')) %}
-    {% set show_bookfusion_icon = get_bool('BOOKFUSION_ENABLED') %}
-    {% set has_any_link = abs_url or storyteller_url or booklore_url or cwa_url or hardcover_url or show_bookfusion_icon %}
-
-    {% if has_any_link %}
-    <div class="library-links" role="navigation" aria-label="Service shortcuts">
+{% macro service_links(extra_class='') %}
+    <div class="library-links {{ extra_class }}" role="navigation" aria-label="Service shortcuts">
         {% if abs_url %}
         <a href="{{ abs_url }}" class="nav-icon-link" target="_blank" rel="noopener noreferrer" title="Audiobookshelf">
             <img src="/static/audiobookshelf.png" alt="ABS" class="nav-service-icon">
@@ -54,6 +36,28 @@
         </a>
         {% endif %}
     </div>
+{% endmacro %}
+
+<header class="top-nav">
+    <div class="nav-brand">
+        <a href="/" class="brand-link">
+            <img src="/static/icon.png" alt="PageKeeper" class="app-icon" width="36" height="36">
+            <div class="brand-copy">
+                <h1>PageKeeper</h1>
+            </div>
+        </a>
+    </div>
+    {% set abs_url = get_header_service_url('ABS') %}
+    {% set storyteller_url = get_header_service_url('STORYTELLER') %}
+    {% set booklore_url = get_header_service_url('BOOKLORE') %}
+    {% set cwa_url = get_header_service_url('CWA') %}
+    {% set hardcover_url = get_header_service_url('HARDCOVER') %}
+    {% set show_bookfusion_page = get_bool('BOOKFUSION_ENABLED') and (get_val('BOOKFUSION_API_KEY') or get_val('BOOKFUSION_UPLOAD_API_KEY')) %}
+    {% set show_bookfusion_icon = get_bool('BOOKFUSION_ENABLED') %}
+    {% set has_any_link = abs_url or storyteller_url or booklore_url or cwa_url or hardcover_url or show_bookfusion_icon %}
+
+    {% if has_any_link %}
+    {{ service_links('library-links-desktop') }}
     {% endif %}
 
     <button class="nav-toggle" id="nav-toggle" aria-label="Toggle navigation" aria-controls="nav-menu" aria-expanded="false">
@@ -61,6 +65,9 @@
     </button>
     <nav class="nav-menu" id="nav-menu">
         <div class="nav-actions">
+            {% if has_any_link %}
+            {{ service_links('library-links-mobile') }}
+            {% endif %}
             <a href="/" class="nav-link {% if is_active_path('/') %}active{% endif %}">Dashboard</a>
             <a href="/reading" class="nav-link {% if is_active_path('/reading') %}active{% endif %}">Reading Log</a>
             {% if show_bookfusion_page %}

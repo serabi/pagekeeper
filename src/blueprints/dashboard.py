@@ -3,12 +3,17 @@
 import logging
 import os
 import time
-from datetime import UTC, datetime
 from pathlib import Path
 
 from flask import Blueprint, render_template
 
-from src.blueprints.helpers import get_abs_service, get_booklore_clients, get_container, get_database_service, get_service_web_url
+from src.blueprints.helpers import (
+    get_abs_service,
+    get_booklore_clients,
+    get_container,
+    get_database_service,
+    get_service_web_url,
+)
 from src.version import APP_VERSION
 
 logger = logging.getLogger(__name__)
