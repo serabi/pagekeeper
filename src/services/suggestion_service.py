@@ -399,7 +399,7 @@ class SuggestionService:
                     pct = current_time / duration
                     if pct > 0.01:
                         if self._suggestion_already_recorded(abs_id):
-                            logger.debug(f"Skipping {abs_id}: suggestion already exists/dismissed")
+                            logger.debug(f"Skipping {abs_id}: suggestion already exists/hidden")
                             continue
 
                         # Check if book is already mostly finished (>70%)
@@ -613,8 +613,8 @@ class SuggestionService:
             return {"created": 0, "updated": 0, "deleted": 0, "total": 0, "bookfusion_catalog": False}
 
         mapped_ids = {b.abs_id for b in self.database_service.get_all_books()}
-        existing_pending = {
-            s.source_id: s for s in self.database_service.get_all_pending_suggestions()
+        existing_actionable = {
+            s.source_id: s for s in self.database_service.get_all_actionable_suggestions()
         }
         bookfusion_context = self._get_bookfusion_context()
         candidates = self._build_library_candidates(bookfusion_context=bookfusion_context, include_filesystem=True)
@@ -639,15 +639,16 @@ class SuggestionService:
                 continue
 
             kept_ids.add(abs_id)
+            existing = existing_actionable.get(abs_id)
             suggestion = PendingSuggestion(
                 source_id=abs_id,
                 title=title,
                 author=author,
                 cover_url=f"/api/cover-proxy/{abs_id}",
                 matches_json=json.dumps(matches),
-                status='pending',
+                status='hidden' if existing and getattr(existing, 'status', None) in ('hidden', 'dismissed') else 'pending',
             )
-            if abs_id in existing_pending:
+            if abs_id in existing_actionable:
                 updated += 1
             else:
                 created += 1
@@ -663,13 +664,13 @@ class SuggestionService:
                 time.sleep(0.01)
 
         deleted = 0
-        self._update_rescan_status(phase="cleanup", message="Cleaning stale pending suggestions...")
-        for source_id in list(existing_pending.keys()):
+        self._update_rescan_status(phase="cleanup", message="Cleaning stale suggestions...")
+        for source_id in list(existing_actionable.keys()):
             if source_id not in kept_ids:
-                if self.database_service.delete_pending_suggestion(source_id):
+                if self.database_service.resolve_suggestion(source_id):
                     deleted += 1
 
-        total = len(self.database_service.get_all_pending_suggestions())
+        total = len(self.database_service.get_all_actionable_suggestions())
         logger.info(
             "Suggestions rescan completed: created=%s updated=%s deleted=%s total=%s",
             created, updated, deleted, total

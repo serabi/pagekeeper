@@ -6,6 +6,7 @@ No patches needed - clean dependency injection pattern.
 import os
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -186,6 +187,7 @@ class CleanFlaskIntegrationTest(unittest.TestCase):
         self.mock_database_service.get_all_hardcover_details.return_value = []
         self.mock_database_service.get_all_booklore_books.return_value = []
         self.mock_database_service.get_all_pending_suggestions.return_value = []
+        self.mock_database_service.get_all_actionable_suggestions.return_value = []
 
         # Mock the sync_clients call for integrations
         # Mock the sync_clients call for integrations
@@ -464,6 +466,10 @@ class CleanFlaskIntegrationTest(unittest.TestCase):
         self.assertTrue(response.location.endswith('/'))
 
         # Verify clear_progress was called on manager
+        for _ in range(20):
+            if self.mock_manager.clear_progress.call_count:
+                break
+            time.sleep(0.01)
         self.mock_manager.clear_progress.assert_called_once_with('clear-test-book')
 
         print("[OK] Clear progress endpoint test passed with clean DI")
@@ -563,7 +569,7 @@ class CleanFlaskIntegrationTest(unittest.TestCase):
         self.assertEqual(saved_book.duration, 3600)  # From mock manager
 
         self.mock_abs_client.add_to_collection.assert_called_once()
-        self.mock_database_service.dismiss_suggestion.assert_called_once_with('audio-only-123')
+        self.mock_database_service.resolve_suggestion.assert_called_once_with('audio-only-123')
 
         print("[OK] Audio-only match test passed")
 
@@ -593,7 +599,7 @@ class CleanFlaskIntegrationTest(unittest.TestCase):
             self.assertEqual(saved_book.status, 'active')
             self.assertEqual(saved_book.sync_mode, 'ebook_only')
 
-            self.mock_database_service.dismiss_suggestion.assert_called_once_with('abcdef1234567890aabbccdd')
+            self.mock_database_service.resolve_suggestion.assert_called_once_with('abcdef1234567890aabbccdd')
 
             print("[OK] Ebook-only match test passed")
         finally:
@@ -743,8 +749,8 @@ class CleanFlaskIntegrationTest(unittest.TestCase):
         self.assertEqual(saved_book.storyteller_uuid, 'st-uuid-only-456')
         self.assertEqual(saved_book.sync_mode, 'ebook_only')
 
-        # Should not call dismiss_suggestion since kosync_doc_id is None
-        self.mock_database_service.dismiss_suggestion.assert_not_called()
+        # Should not resolve a suggestion since kosync_doc_id is None
+        self.mock_database_service.resolve_suggestion.assert_not_called()
 
         print("[OK] Storyteller-only match test passed")
 

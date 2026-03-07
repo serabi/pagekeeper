@@ -218,7 +218,7 @@ class SyncManager:
                     valid_filenames.add(book.ebook_filename)
 
             # From Pending Suggestions (covers auto-discovery matches)
-            suggestions = self.database_service.get_all_pending_suggestions()
+            suggestions = self.database_service.get_all_actionable_suggestions()
             for suggestion in suggestions:
                 # matches property automatically parses the JSON
                 for match in suggestion.matches:

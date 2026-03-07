@@ -12,197 +12,7 @@
     <link rel="stylesheet" href="/static/css/base.css">
     <link rel="stylesheet" href="/static/css/layout.css">
     <link rel="stylesheet" href="/static/css/components.css">
-    <style>
-        .suggestions-shell {
-            max-width: 1280px;
-            margin: 0 auto;
-            padding: 24px;
-        }
-        .suggestions-hero {
-            display: flex;
-            justify-content: space-between;
-            gap: 20px;
-            align-items: flex-start;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
-        }
-        .suggestions-hero h2 {
-            margin: 0;
-            font-size: 1.7rem;
-        }
-        .suggestions-hero p {
-            margin: 8px 0 0;
-            color: var(--color-text-muted);
-            max-width: 760px;
-        }
-        .suggestions-toolbar {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-            align-items: center;
-            margin-bottom: 20px;
-        }
-        .suggestions-toolbar input,
-        .suggestions-toolbar select {
-            min-width: 180px;
-            padding: 9px 12px;
-            border: 1px solid var(--color-border-light);
-            border-radius: var(--radius);
-            background: var(--color-surface);
-            color: var(--color-text);
-        }
-        .stats-strip {
-            display: flex;
-            gap: 12px;
-            flex-wrap: wrap;
-            margin-bottom: 22px;
-        }
-        .stat-pill {
-            border: 1px solid var(--color-border-light);
-            background: var(--color-surface);
-            padding: 10px 14px;
-            border-radius: 999px;
-            font-size: 0.9rem;
-            color: var(--color-text-muted);
-        }
-        .stat-pill strong {
-            color: var(--color-text);
-        }
-        .suggestion-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
-            gap: 18px;
-        }
-        .suggestion-card {
-            background: linear-gradient(180deg, rgba(255,255,255,0.03), transparent), var(--color-surface);
-            border: 1px solid var(--color-border-light);
-            border-radius: 18px;
-            padding: 20px;
-        }
-        .suggestion-card[data-has-bookfusion="true"] {
-            border-color: rgba(59, 130, 246, 0.35);
-            box-shadow: 0 12px 32px rgba(59, 130, 246, 0.08);
-        }
-        .suggestion-source {
-            display: flex;
-            gap: 14px;
-            margin-bottom: 16px;
-        }
-        .suggestion-cover {
-            width: 72px;
-            height: 108px;
-            border-radius: 10px;
-            object-fit: cover;
-            flex-shrink: 0;
-            background: var(--color-bg);
-        }
-        .suggestion-meta h3 {
-            margin: 0 0 4px;
-            font-size: 1.05rem;
-        }
-        .suggestion-meta p {
-            margin: 0;
-            color: var(--color-text-muted);
-            font-size: 0.9rem;
-        }
-        .badge-row {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-            margin-top: 10px;
-        }
-        .chip {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            padding: 4px 8px;
-            border-radius: 999px;
-            font-size: 0.72rem;
-            font-weight: 600;
-            background: var(--color-bg);
-            color: var(--color-text-muted);
-        }
-        .chip--bookfusion {
-            background: rgba(59, 130, 246, 0.12);
-            color: var(--color-bookfusion);
-        }
-        .chip--confidence-high {
-            background: rgba(34, 197, 94, 0.14);
-            color: #15803d;
-        }
-        .chip--confidence-medium {
-            background: rgba(245, 158, 11, 0.14);
-            color: #b45309;
-        }
-        .candidate-list {
-            display: flex;
-            flex-direction: column;
-            gap: 10px;
-        }
-        .candidate {
-            border: 1px solid var(--color-border-light);
-            border-radius: 14px;
-            padding: 12px;
-            background: var(--color-bg);
-        }
-        .candidate-top {
-            display: flex;
-            justify-content: space-between;
-            gap: 12px;
-            align-items: flex-start;
-            margin-bottom: 8px;
-        }
-        .candidate-title {
-            font-weight: 600;
-            margin-bottom: 2px;
-        }
-        .candidate-author {
-            color: var(--color-text-muted);
-            font-size: 0.84rem;
-        }
-        .candidate-score {
-            color: var(--color-text-muted);
-            font-size: 0.8rem;
-            white-space: nowrap;
-        }
-        .candidate-actions {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-            margin-top: 10px;
-        }
-        .suggestion-actions {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-            margin-top: 14px;
-            padding-top: 14px;
-            border-top: 1px solid var(--color-border-light);
-        }
-        .empty-state {
-            text-align: center;
-            padding: 56px 18px;
-            color: var(--color-text-muted);
-            border: 1px dashed var(--color-border-light);
-            border-radius: 18px;
-            background: var(--color-surface);
-        }
-        .help-note {
-            color: var(--color-text-muted);
-            font-size: 0.85rem;
-        }
-        @media (max-width: 768px) {
-            .suggestions-shell {
-                padding: 16px;
-            }
-            .suggestion-grid {
-                grid-template-columns: 1fr;
-            }
-            .candidate-top {
-                flex-direction: column;
-            }
-        }
-    </style>
+    <link rel="stylesheet" href="/static/css/suggestions.css">
 </head>
 
 <body>
@@ -234,25 +44,50 @@
         </div>
 
         <div class="stats-strip">
-            <div class="stat-pill"><strong id="visible-count">{{ suggestions|length }}</strong> visible suggestions</div>
-            <div class="stat-pill"><strong>{{ suggestions|length }}</strong> total pending</div>
+            <div class="stat-pill"><strong id="visible-count">{{ visible_count }}</strong> visible suggestions</div>
+            <div class="stat-pill"><strong id="hidden-count">{{ hidden_count }}</strong> hidden suggestions</div>
+            <div class="stat-pill"><strong id="total-count">{{ suggestions|length }}</strong> total actionable</div>
             <div class="stat-pill"><strong>{{ bookfusion_catalog_count }}</strong> BookFusion catalog items cached</div>
             <div class="stat-pill"><strong>{{ 'enabled' if suggestions_enabled else 'disabled' }}</strong> suggestions status</div>
         </div>
 
         <div id="suggestion-grid" class="suggestion-grid"></div>
 
-        <div id="empty-state" class="empty-state" style="display:none;">
-            <h3>No Suggestions</h3>
+        <div id="empty-state" class="empty-state hidden">
+            <h3>No Visible Suggestions</h3>
             {% if not suggestions_enabled %}
             <p>Suggestions are disabled. Enable them in <a href="/settings?tab=general">Settings</a>.</p>
             {% elif bookfusion_enabled and bookfusion_catalog_count == 0 %}
             <p>No pairings are ready yet. BookFusion is enabled, but its local catalog has not been synced into PageKeeper yet. Sync BookFusion highlights/library first, then run a rescan.</p>
             {% elif bookfusion_enabled %}
-            <p>No pairings matched the current filters. Clear filters or run a fresh rescan after syncing BookFusion, Booklore, or your local ebook library.</p>
+            <p>No visible pairings matched the current filters. Clear filters or expand Hidden below to manage hidden suggestions.</p>
             {% else %}
-            <p>No pairing candidates were found. Run a library rescan after syncing Booklore or your local ebook library.</p>
+            <p>No visible pairing candidates were found. Clear filters or expand Hidden below to manage hidden suggestions.</p>
             {% endif %}
+        </div>
+
+        <div id="hidden-section" class="suggestions-hidden-section hidden">
+            <div id="hidden-header" class="suggestions-hidden-header collapsed" tabindex="0" role="button" onclick="toggleHiddenSection(this)" onkeydown="if(event.key==='Enter'||event.key===' ') { event.preventDefault(); toggleHiddenSection(this); }">
+                <span class="chevron">&#9660;</span>
+                Hidden
+                <span id="hidden-section-count" class="suggestions-hidden-count">(0)</span>
+            </div>
+            <div id="hidden-body" class="suggestions-hidden-body hidden">
+                <div id="hidden-grid" class="suggestion-grid"></div>
+            </div>
+        </div>
+
+        <div id="suggestion-confirm-modal" class="confirm-modal" style="display:none;">
+            <div class="confirm-modal-overlay" onclick="closeSuggestionConfirm()"></div>
+            <div class="confirm-modal-box">
+                <div class="confirm-modal-icon confirm-icon-warning">&#9888;</div>
+                <h3 class="confirm-modal-title" id="suggestion-confirm-title"></h3>
+                <p class="confirm-modal-message" id="suggestion-confirm-message"></p>
+                <div class="confirm-modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeSuggestionConfirm()">Cancel</button>
+                    <button type="button" class="btn" id="suggestion-confirm-submit">Confirm</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -260,6 +95,7 @@
         let suggestionData = {{ suggestions_json|safe }};
         const selectedSourceId = {{ selected_source_id|tojson }};
         let rescanPollTimer = null;
+        let suggestionConfirmCleanup = null;
 
         function escapeHtml(value) {
             return String(value || '')
@@ -282,14 +118,12 @@
             return 1;
         }
 
-        function renderSuggestions() {
-            const grid = document.getElementById('suggestion-grid');
-            const empty = document.getElementById('empty-state');
+        function filterSuggestions() {
             const query = (document.getElementById('suggestion-search').value || '').toLowerCase().trim();
             const confidenceFilter = document.getElementById('confidence-filter').value;
             const bookfusionFilter = document.getElementById('bookfusion-filter').value;
 
-            const visible = suggestionData.filter(function(suggestion) {
+            return suggestionData.filter(function(suggestion) {
                 if (selectedSourceId && suggestion.source_id !== selectedSourceId) return false;
                 if (bookfusionFilter === 'bookfusion' && !suggestion.has_bookfusion_evidence) return false;
 
@@ -307,103 +141,209 @@
                 ].join(' ').toLowerCase();
                 return haystack.indexOf(query) !== -1;
             });
-
-            document.getElementById('visible-count').textContent = visible.length;
-            if (!visible.length) {
-                grid.innerHTML = '';
-                empty.style.display = '';
-                return;
-            }
-
-            empty.style.display = 'none';
-            grid.innerHTML = visible.map(function(suggestion) {
-                const matches = (suggestion.matches || []).map(function(match, index) {
-                    const confidenceClass = 'chip--confidence-' + (match.confidence || 'low');
-                    const actions = [];
-
-                    if (match.source_family === 'bookfusion') {
-                        actions.push('<button type="button" class="btn btn-sm" onclick="linkBookFusion(' + JSON.stringify(suggestion.source_id) + ', ' + index + ')">Link BookFusion</button>');
-                        if (match.bookfusion_ids && match.bookfusion_ids.length) {
-                            actions.push('<button type="button" class="btn btn-sm btn-purple" onclick=\'addBookFusionToDashboard(' + JSON.stringify(JSON.stringify(match.bookfusion_ids)) + ')\'>Add BF Book</button>');
-                        }
-                    } else {
-                        actions.push('<a class="btn btn-sm" href="/match?abs_id=' + encodeURIComponent(suggestion.source_id) + '&search=' + encodeURIComponent(suggestion.title || '') + '">Create Mapping</a>');
-                    }
-
-                    return '' +
-                        '<div class="candidate">' +
-                            '<div class="candidate-top">' +
-                                '<div>' +
-                                    '<div class="candidate-title">' + escapeHtml(match.title || match.filename || 'Untitled') + '</div>' +
-                                    '<div class="candidate-author">' + escapeHtml(match.author || match.source_family || '') + '</div>' +
-                                '</div>' +
-                                '<div class="candidate-score">' +
-                                    '<span class="chip ' + confidenceClass + '">' + escapeHtml(match.confidence || 'low') + '</span>' +
-                                    '<span>' + Math.round((match.score || 0) * 100) + '%</span>' +
-                                '</div>' +
-                            '</div>' +
-                            '<div class="badge-row">' +
-                                '<span class="chip">' + escapeHtml(match.source_family || 'unknown') + '</span>' +
-                                formatEvidence(match.evidence) +
-                            '</div>' +
-                            (match.highlight_count ? '<div class="help-note" style="margin-top:8px;">BookFusion highlights: ' + escapeHtml(match.highlight_count) + '</div>' : '') +
-                            '<div class="candidate-actions">' + actions.join('') + '</div>' +
-                        '</div>';
-                }).join('');
-
-                return '' +
-                    '<article class="suggestion-card" data-has-bookfusion="' + (suggestion.has_bookfusion_evidence ? 'true' : 'false') + '">' +
-                        '<div class="suggestion-source">' +
-                            (suggestion.cover_url
-                                ? '<img src="' + escapeHtml(suggestion.cover_url) + '" alt="" class="suggestion-cover" loading="lazy">'
-                                : '<div class="suggestion-cover"></div>') +
-                            '<div class="suggestion-meta">' +
-                                '<h3>' + escapeHtml(suggestion.title) + '</h3>' +
-                                '<p>' + escapeHtml(suggestion.author || 'Unknown author') + '</p>' +
-                                '<div class="badge-row">' +
-                                    '<span class="chip">' + escapeHtml((suggestion.matches || []).length) + ' candidates</span>' +
-                                    (suggestion.has_bookfusion_evidence ? '<span class="chip chip--bookfusion">BookFusion evidence</span>' : '') +
-                                '</div>' +
-                            '</div>' +
-                        '</div>' +
-                        '<div class="candidate-list">' + matches + '</div>' +
-                        '<div class="suggestion-actions">' +
-                            '<button type="button" class="btn btn-sm" onclick="dismissSuggestion(' + JSON.stringify(suggestion.source_id) + ', this)">Dismiss</button>' +
-                            '<button type="button" class="btn btn-sm btn-danger" onclick="ignoreSuggestion(' + JSON.stringify(suggestion.source_id) + ', this)">Never Ask</button>' +
-                        '</div>' +
-                    '</article>';
-            }).join('');
         }
 
-        function dismissSuggestion(sourceId, btn) {
-            if (!confirm('Dismiss this suggestion? It can appear again after a future rescan.')) return;
-            actOnSuggestion('/api/suggestions/' + encodeURIComponent(sourceId) + '/dismiss', btn, sourceId);
+        function renderCandidate(match, suggestion, index) {
+            const confidenceClass = 'chip--confidence-' + (match.confidence || 'low');
+            const actions = [];
+
+            if (!suggestion.hidden) {
+                if (match.source_family === 'bookfusion') {
+                    actions.push('<button type="button" class="btn btn-sm" onclick=\'linkBookFusion(' + JSON.stringify(suggestion.source_id) + ', ' + index + ')\'>Link BookFusion</button>');
+                    if (match.bookfusion_ids && match.bookfusion_ids.length) {
+                        actions.push('<button type="button" class="btn btn-sm btn-purple" onclick=\'addBookFusionToDashboard(' + JSON.stringify(JSON.stringify(match.bookfusion_ids)) + ')\'>Add BF Book</button>');
+                    }
+                } else {
+                    actions.push('<a class="btn btn-sm" href="/match?abs_id=' + encodeURIComponent(suggestion.source_id) + '&search=' + encodeURIComponent(suggestion.title || '') + '">Create Mapping</a>');
+                }
+            }
+
+            return '' +
+                '<div class="candidate">' +
+                    '<div class="candidate-top">' +
+                        '<div>' +
+                            '<div class="candidate-title">' + escapeHtml(match.title || match.filename || 'Untitled') + '</div>' +
+                            '<div class="candidate-author">' + escapeHtml(match.author || match.source_family || '') + '</div>' +
+                        '</div>' +
+                        '<div class="candidate-score">' +
+                            '<span class="chip ' + confidenceClass + '">' + escapeHtml(match.confidence || 'low') + '</span>' +
+                            '<span>' + Math.round((match.score || 0) * 100) + '%</span>' +
+                        '</div>' +
+                    '</div>' +
+                    '<div class="badge-row">' +
+                        '<span class="chip">' + escapeHtml(match.source_family || 'unknown') + '</span>' +
+                        formatEvidence(match.evidence) +
+                    '</div>' +
+                    (match.highlight_count ? '<div class="help-note" style="margin-top:8px;">BookFusion highlights: ' + escapeHtml(match.highlight_count) + '</div>' : '') +
+                    (actions.length ? '<div class="candidate-actions">' + actions.join('') + '</div>' : '') +
+                '</div>';
+        }
+
+        function renderSuggestionCard(suggestion) {
+            const matches = (suggestion.matches || []).map(function(match, index) {
+                return renderCandidate(match, suggestion, index);
+            }).join('');
+
+            const actionButtons = suggestion.hidden
+                ? '<button type="button" class="btn btn-sm" onclick=\'unhideSuggestion(' + JSON.stringify(suggestion.source_id) + ', this)\'>Unhide</button>'
+                : '<button type="button" class="btn btn-sm" onclick=\'hideSuggestion(' + JSON.stringify(suggestion.source_id) + ', this)\'>Hide</button>';
+
+            return '' +
+                '<article class="suggestion-card' + (suggestion.hidden ? ' suggestion-card--hidden' : '') + '" data-has-bookfusion="' + (suggestion.has_bookfusion_evidence ? 'true' : 'false') + '">' +
+                    '<div class="suggestion-source">' +
+                        (suggestion.cover_url
+                            ? '<img src="' + escapeHtml(suggestion.cover_url) + '" alt="" class="suggestion-cover" loading="lazy">'
+                            : '<div class="suggestion-cover"></div>') +
+                        '<div class="suggestion-meta">' +
+                            '<h3>' + escapeHtml(suggestion.title) + '</h3>' +
+                            '<p>' + escapeHtml(suggestion.author || 'Unknown author') + '</p>' +
+                            '<div class="badge-row">' +
+                                '<span class="chip">' + escapeHtml((suggestion.matches || []).length) + ' candidates</span>' +
+                                (suggestion.hidden ? '<span class="chip">Hidden</span>' : '') +
+                                (suggestion.has_bookfusion_evidence ? '<span class="chip chip--bookfusion">BookFusion evidence</span>' : '') +
+                            '</div>' +
+                        '</div>' +
+                    '</div>' +
+                    '<div class="candidate-list">' + matches + '</div>' +
+                    '<div class="suggestion-actions">' +
+                        actionButtons +
+                        '<button type="button" class="btn btn-sm btn-danger" onclick=\'ignoreSuggestion(' + JSON.stringify(suggestion.source_id) + ', this)\'>Never Ask</button>' +
+                    '</div>' +
+                '</article>';
+        }
+
+        function renderSuggestions() {
+            const filtered = filterSuggestions();
+            const visible = filtered.filter(function(item) { return !item.hidden; });
+            const hidden = filtered.filter(function(item) { return item.hidden; });
+            const grid = document.getElementById('suggestion-grid');
+            const hiddenSection = document.getElementById('hidden-section');
+            const hiddenGrid = document.getElementById('hidden-grid');
+            const hiddenCount = document.getElementById('hidden-section-count');
+            const empty = document.getElementById('empty-state');
+
+            document.getElementById('visible-count').textContent = visible.length;
+            document.getElementById('hidden-count').textContent = hidden.length;
+            document.getElementById('total-count').textContent = filtered.length;
+
+            grid.innerHTML = visible.map(renderSuggestionCard).join('');
+
+            if (hidden.length) {
+                hiddenSection.classList.remove('hidden');
+                hiddenGrid.innerHTML = hidden.map(renderSuggestionCard).join('');
+                hiddenCount.textContent = '(' + hidden.length + ')';
+            } else {
+                hiddenSection.classList.add('hidden');
+                hiddenGrid.innerHTML = '';
+                hiddenCount.textContent = '(0)';
+            }
+
+            if (!visible.length) {
+                empty.classList.remove('hidden');
+            } else {
+                empty.classList.add('hidden');
+            }
+        }
+
+        function updateSuggestionState(sourceId, updater) {
+            suggestionData = suggestionData.map(function(item) {
+                if (item.source_id !== sourceId) return item;
+                return updater(Object.assign({}, item));
+            }).filter(Boolean);
+            renderSuggestions();
+        }
+
+        function showSuggestionConfirm(options) {
+            const modal = document.getElementById('suggestion-confirm-modal');
+            const title = document.getElementById('suggestion-confirm-title');
+            const message = document.getElementById('suggestion-confirm-message');
+            const submit = document.getElementById('suggestion-confirm-submit');
+
+            title.textContent = options.title || 'Confirm';
+            message.textContent = options.message || '';
+            submit.textContent = options.confirmLabel || 'Confirm';
+            submit.className = options.confirmClass || 'btn';
+            modal.style.display = 'flex';
+
+            suggestionConfirmCleanup = function() {
+                submit.onclick = null;
+            };
+
+            submit.onclick = function() {
+                if (suggestionConfirmCleanup) suggestionConfirmCleanup();
+                modal.style.display = 'none';
+                options.onConfirm();
+            };
+        }
+
+        function closeSuggestionConfirm() {
+            const modal = document.getElementById('suggestion-confirm-modal');
+            if (suggestionConfirmCleanup) suggestionConfirmCleanup();
+            suggestionConfirmCleanup = null;
+            modal.style.display = 'none';
+        }
+
+        function hideSuggestion(sourceId, btn) {
+            showSuggestionConfirm({
+                title: 'Hide Suggestion?',
+                message: 'This suggestion will move to the Hidden section. You can restore it later.',
+                confirmLabel: 'Hide',
+                confirmClass: 'btn',
+                onConfirm: function() {
+                    actOnSuggestion('/api/suggestions/' + encodeURIComponent(sourceId) + '/hide', btn, function() {
+                        updateSuggestionState(sourceId, function(item) {
+                            item.status = 'hidden';
+                            item.hidden = true;
+                            return item;
+                        });
+                    });
+                }
+            });
         }
 
         function ignoreSuggestion(sourceId, btn) {
-            if (!confirm('Ignore this suggestion permanently?')) return;
-            actOnSuggestion('/api/suggestions/' + encodeURIComponent(sourceId) + '/ignore', btn, sourceId);
+            showSuggestionConfirm({
+                title: 'Never Ask Again?',
+                message: 'This suggestion will be permanently ignored and will not return on future rescans.',
+                confirmLabel: 'Never Ask',
+                confirmClass: 'btn btn-danger',
+                onConfirm: function() {
+                    actOnSuggestion('/api/suggestions/' + encodeURIComponent(sourceId) + '/ignore', btn, function() {
+                        updateSuggestionState(sourceId, function() {
+                            return null;
+                        });
+                    });
+                }
+            });
         }
 
-        function actOnSuggestion(url, btn, sourceId) {
+        function unhideSuggestion(sourceId, btn) {
+            actOnSuggestion('/api/suggestions/' + encodeURIComponent(sourceId) + '/unhide', btn, function() {
+                updateSuggestionState(sourceId, function(item) {
+                    item.status = 'pending';
+                    item.hidden = false;
+                    return item;
+                });
+            });
+        }
+
+        function actOnSuggestion(url, btn, onSuccess) {
             if (btn) btn.disabled = true;
             fetch(url, { method: 'POST' })
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
                     if (!data.success) throw new Error(data.error || 'Request failed');
-                    suggestionData = suggestionData.filter(function(item) {
-                        return item.source_id !== sourceId;
-                    });
-                    if (selectedSourceId) {
-                        window.location.href = '/suggestions';
-                        return;
-                    }
-                    renderSuggestions();
+                    onSuccess();
                 })
                 .catch(function(err) {
                     if (btn) btn.disabled = false;
                     alert(err.message || err);
                 });
+        }
+
+        function toggleHiddenSection(headerEl) {
+            headerEl.classList.toggle('collapsed');
+            headerEl.nextElementSibling.classList.toggle('hidden');
         }
 
         function linkBookFusion(sourceId, matchIndex) {

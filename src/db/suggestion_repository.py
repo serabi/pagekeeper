@@ -5,6 +5,8 @@ from .models import Book, KosyncDocument, PendingSuggestion
 
 
 class SuggestionRepository(BaseRepository):
+    ACTIONABLE_STATUSES = ('pending', 'hidden', 'dismissed')
+
     def get_suggestion(self, source_id):
         return self._get_one(
             PendingSuggestion,
@@ -32,6 +34,13 @@ class SuggestionRepository(BaseRepository):
             ).first() is not None
 
     def save_pending_suggestion(self, suggestion):
+        with self.get_session() as session:
+            existing = session.query(PendingSuggestion).filter(
+                PendingSuggestion.source_id == suggestion.source_id
+            ).first()
+            if existing and existing.status in ('hidden', 'dismissed') and suggestion.status == 'pending':
+                suggestion.status = 'hidden'
+
         return self._upsert(
             PendingSuggestion,
             [PendingSuggestion.source_id == suggestion.source_id],
@@ -46,6 +55,20 @@ class SuggestionRepository(BaseRepository):
             order_by=PendingSuggestion.created_at.desc(),
         )
 
+    def get_all_actionable_suggestions(self):
+        return self._get_all(
+            PendingSuggestion,
+            PendingSuggestion.status.in_(self.ACTIONABLE_STATUSES),
+            order_by=PendingSuggestion.created_at.desc(),
+        )
+
+    def get_hidden_suggestions(self):
+        return self._get_all(
+            PendingSuggestion,
+            PendingSuggestion.status.in_(('hidden', 'dismissed')),
+            order_by=PendingSuggestion.created_at.desc(),
+        )
+
     def delete_pending_suggestion(self, source_id):
         return self._delete_one(
             PendingSuggestion,
@@ -53,13 +76,29 @@ class SuggestionRepository(BaseRepository):
             PendingSuggestion.status == 'pending',
         )
 
-    def dismiss_suggestion(self, source_id):
+    def resolve_suggestion(self, source_id):
+        return self._delete_one(
+            PendingSuggestion,
+            PendingSuggestion.source_id == source_id,
+        )
+
+    def hide_suggestion(self, source_id):
         with self.get_session() as session:
             suggestion = session.query(PendingSuggestion).filter(
                 PendingSuggestion.source_id == source_id
             ).first()
-            if suggestion:
-                suggestion.status = 'dismissed'
+            if suggestion and suggestion.status != 'ignored':
+                suggestion.status = 'hidden'
+                return True
+            return False
+
+    def unhide_suggestion(self, source_id):
+        with self.get_session() as session:
+            suggestion = session.query(PendingSuggestion).filter(
+                PendingSuggestion.source_id == source_id
+            ).first()
+            if suggestion and suggestion.status in ('hidden', 'dismissed'):
+                suggestion.status = 'pending'
                 return True
             return False
 
@@ -79,9 +118,17 @@ class SuggestionRepository(BaseRepository):
         with self.get_session() as session:
             count = session.query(PendingSuggestion).filter(
                 PendingSuggestion.source == 'abs',
+                PendingSuggestion.status.in_(self.ACTIONABLE_STATUSES),
                 not_(PendingSuggestion.source_id.in_(session.query(Book.abs_id)))
             ).delete(synchronize_session=False)
             return count
+
+    def normalize_dismissed_suggestions(self):
+        with self.get_session() as session:
+            updated = session.query(PendingSuggestion).filter(
+                PendingSuggestion.status == 'dismissed'
+            ).update({'status': 'hidden'}, synchronize_session=False)
+            return updated
 
     def is_hash_linked_to_device(self, doc_hash):
         if not doc_hash:

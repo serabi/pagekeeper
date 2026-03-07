@@ -68,6 +68,8 @@ def _serialize_suggestion(s):
         'created_at': s.created_at.isoformat() if s.created_at else None,
         'has_bookfusion_evidence': has_bookfusion_evidence,
         'top_match': matches[0] if matches else None,
+        'status': 'hidden' if s.status == 'dismissed' else s.status,
+        'hidden': s.status in ('hidden', 'dismissed'),
     }
 
 
@@ -113,8 +115,10 @@ def suggestions():
     """Dedicated page for browsing and acting on pairing suggestions."""
     container = get_container()
     database_service = get_database_service()
-    raw_suggestions = database_service.get_all_pending_suggestions()
+    raw_suggestions = database_service.get_all_actionable_suggestions()
     suggestions_list = [_serialize_suggestion(s) for s in raw_suggestions if s.matches]
+    visible_count = sum(1 for s in suggestions_list if not s.get('hidden'))
+    hidden_count = sum(1 for s in suggestions_list if s.get('hidden'))
     suggestions_enabled = current_app.config.get('SUGGESTIONS_ENABLED', False)
     bookfusion_enabled = container.bookfusion_client().is_configured()
     bookfusion_catalog_count = len(database_service.get_bookfusion_books()) if bookfusion_enabled else 0
@@ -123,6 +127,8 @@ def suggestions():
     return render_template(
         'suggestions.html',
         suggestions=suggestions_list,
+        visible_count=visible_count,
+        hidden_count=hidden_count,
         suggestions_enabled=suggestions_enabled,
         bookfusion_enabled=bookfusion_enabled,
         bookfusion_catalog_count=bookfusion_catalog_count,
@@ -165,7 +171,7 @@ def match():
             hardcover_sync_client = container.sync_clients().get('Hardcover')
             if hardcover_sync_client and hardcover_sync_client.is_configured():
                 hardcover_sync_client.automatch_hardcover(book)
-            database_service.dismiss_suggestion(abs_id)
+            database_service.resolve_suggestion(abs_id)
             return redirect(url_for('dashboard.index'))
 
         # --- Ebook-only import (no audiobook required) ---
@@ -208,7 +214,7 @@ def match():
             )
             database_service.save_book(book)
             if kosync_doc_id:
-                database_service.dismiss_suggestion(kosync_doc_id)
+                database_service.resolve_suggestion(kosync_doc_id)
             return redirect(url_for('dashboard.index'))
 
         # --- Attach ebook to audio-only book ---
@@ -236,7 +242,7 @@ def match():
                     bl_client.add_to_shelf(ebook_filename)
                 except Exception as e:
                     logger.warning(f"Booklore add_to_shelf failed for '{sanitize_log_data(ebook_filename)}': {e}")
-            database_service.dismiss_suggestion(kosync_doc_id)
+            database_service.resolve_suggestion(kosync_doc_id)
             return redirect(url_for('dashboard.index'))
 
         # --- Attach audiobook to ebook-only book ---
@@ -280,9 +286,9 @@ def match():
             hardcover_sync_client = container.sync_clients().get('Hardcover')
             if hardcover_sync_client and hardcover_sync_client.is_configured():
                 hardcover_sync_client.automatch_hardcover(new_book)
-            database_service.dismiss_suggestion(abs_id)
+            database_service.resolve_suggestion(abs_id)
             if new_book.kosync_doc_id:
-                database_service.dismiss_suggestion(new_book.kosync_doc_id)
+                database_service.resolve_suggestion(new_book.kosync_doc_id)
             return redirect(url_for('dashboard.index'))
 
         # --- Standard flow (requires audiobook) ---
@@ -376,17 +382,17 @@ def match():
                 bl_match_client.add_to_shelf(shelf_filename)
             except Exception as e:
                 logger.warning(f"Booklore add_to_shelf failed for '{sanitize_log_data(shelf_filename)}': {e}")
-        # Auto-dismiss pending suggestions
-        database_service.dismiss_suggestion(abs_id)
-        database_service.dismiss_suggestion(kosync_doc_id)
+        # Remove resolved suggestions once the mapping is created
+        database_service.resolve_suggestion(abs_id)
+        database_service.resolve_suggestion(kosync_doc_id)
 
         try:
             device_doc = database_service.get_kosync_doc_by_filename(ebook_filename)
             if device_doc and device_doc.document_hash != kosync_doc_id:
-                logger.info(f"Dismissing additional suggestion/hash for '{ebook_filename}': '{device_doc.document_hash}'")
-                database_service.dismiss_suggestion(device_doc.document_hash)
+                logger.info(f"Resolving additional suggestion/hash for '{ebook_filename}': '{device_doc.document_hash}'")
+                database_service.resolve_suggestion(device_doc.document_hash)
         except Exception as e:
-            logger.warning(f"Failed to check/dismiss device hash: {e}")
+            logger.warning(f"Failed to check/resolve device hash: {e}")
 
         return redirect(url_for('dashboard.index'))
 
@@ -506,7 +512,7 @@ def batch_match():
                     hardcover_sync_client = container.sync_clients().get('Hardcover')
                     if hardcover_sync_client and hardcover_sync_client.is_configured():
                         hardcover_sync_client.automatch_hardcover(book)
-                    database_service.dismiss_suggestion(item['abs_id'])
+                    database_service.resolve_suggestion(item['abs_id'])
                     continue
 
                 ebook_filename = item['ebook_filename']
@@ -593,15 +599,15 @@ def batch_match():
                         bl_match_client.add_to_shelf(shelf_filename)
                     except Exception as e:
                         logger.warning(f"Booklore add_to_shelf failed for '{sanitize_log_data(shelf_filename)}': {e}")
-                database_service.dismiss_suggestion(item['abs_id'])
-                database_service.dismiss_suggestion(kosync_doc_id)
+                database_service.resolve_suggestion(item['abs_id'])
+                database_service.resolve_suggestion(kosync_doc_id)
 
                 try:
                     device_doc = database_service.get_kosync_doc_by_filename(ebook_filename)
                     if device_doc and device_doc.document_hash != kosync_doc_id:
-                        database_service.dismiss_suggestion(device_doc.document_hash)
+                        database_service.resolve_suggestion(device_doc.document_hash)
                 except Exception as e:
-                    logger.warning(f"Failed to check/dismiss device hash: {e}")
+                    logger.warning(f"Failed to check/resolve device hash: {e}")
 
             if failed_items:
                 names = ', '.join(failed_items)

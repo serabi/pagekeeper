@@ -47,9 +47,6 @@ class DatabaseService:
         # Safety net: add any model columns missing from existing tables
         self._ensure_model_columns()
 
-        # One-time data cleanup
-        self._cleanup_bookfusion_md_titles()
-
         # Initialize domain repositories
         self._settings = SettingsRepository(self.db_manager)
         self._books = BookRepository(self.db_manager)
@@ -57,6 +54,10 @@ class DatabaseService:
         self._reading = ReadingRepository(self.db_manager)
         self._suggestions = SuggestionRepository(self.db_manager)
         self._integrations = IntegrationRepository(self.db_manager)
+
+        # One-time data cleanup
+        self._cleanup_bookfusion_md_titles()
+        self._normalize_dismissed_suggestions()
 
     def _run_alembic_migrations(self):
         """Run Alembic migrations to bring the database schema up to date."""
@@ -326,17 +327,37 @@ class DatabaseService:
     def get_all_pending_suggestions(self):
         return self._suggestions.get_all_pending_suggestions()
 
+    def get_all_actionable_suggestions(self):
+        return self._suggestions.get_all_actionable_suggestions()
+
+    def get_hidden_suggestions(self):
+        return self._suggestions.get_hidden_suggestions()
+
     def delete_pending_suggestion(self, source_id):
         return self._suggestions.delete_pending_suggestion(source_id)
 
-    def dismiss_suggestion(self, source_id):
-        return self._suggestions.dismiss_suggestion(source_id)
+    def resolve_suggestion(self, source_id):
+        return self._suggestions.resolve_suggestion(source_id)
+
+    def hide_suggestion(self, source_id):
+        return self._suggestions.hide_suggestion(source_id)
+
+    def unhide_suggestion(self, source_id):
+        return self._suggestions.unhide_suggestion(source_id)
 
     def ignore_suggestion(self, source_id):
         return self._suggestions.ignore_suggestion(source_id)
 
     def clear_stale_suggestions(self):
         return self._suggestions.clear_stale_suggestions()
+
+    def _normalize_dismissed_suggestions(self):
+        try:
+            updated = self._suggestions.normalize_dismissed_suggestions()
+            if updated:
+                logger.info(f"Normalized {updated} dismissed suggestions to hidden")
+        except Exception as e:
+            logger.debug(f"Suggestion status normalization skipped: {e}")
 
     # ── Reading Tracker (delegates to ReadingRepository) ──
 

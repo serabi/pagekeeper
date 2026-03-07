@@ -38,7 +38,9 @@ def _serialize_suggestion(s):
         "cover_url": s.cover_url,
         "matches": matches,
         "has_bookfusion_evidence": any(m.get('has_bookfusion') for m in matches),
-        "created_at": s.created_at.isoformat()
+        "created_at": s.created_at.isoformat(),
+        "status": 'hidden' if s.status == 'dismissed' else s.status,
+        "hidden": s.status in ('hidden', 'dismissed'),
     }
 
 
@@ -126,7 +128,7 @@ def api_processing_status():
 @api_bp.route('/api/suggestions', methods=['GET'])
 def get_suggestions():
     database_service = get_database_service()
-    suggestions = database_service.get_all_pending_suggestions()
+    suggestions = database_service.get_all_actionable_suggestions()
     return jsonify([_serialize_suggestion(s) for s in suggestions if s.matches])
 
 
@@ -146,10 +148,18 @@ def rescan_suggestions_status():
     return jsonify({"success": True, **status})
 
 
-@api_bp.route('/api/suggestions/<source_id>/dismiss', methods=['POST'])
-def dismiss_suggestion(source_id):
+@api_bp.route('/api/suggestions/<source_id>/hide', methods=['POST'])
+def hide_suggestion(source_id):
     database_service = get_database_service()
-    if database_service.dismiss_suggestion(source_id):
+    if database_service.hide_suggestion(source_id):
+        return jsonify({"success": True})
+    return jsonify({"success": False, "error": "Not found"}), 404
+
+
+@api_bp.route('/api/suggestions/<source_id>/unhide', methods=['POST'])
+def unhide_suggestion(source_id):
+    database_service = get_database_service()
+    if database_service.unhide_suggestion(source_id):
         return jsonify({"success": True})
     return jsonify({"success": False, "error": "Not found"}), 404
 
@@ -213,7 +223,7 @@ def link_suggestion_bookfusion(source_id):
         database_service.set_bookfusion_book_match(bid, source_id)
         database_service.link_bookfusion_book(bid, source_id)
 
-    database_service.dismiss_suggestion(source_id)
+    database_service.resolve_suggestion(source_id)
     return jsonify({"success": True, "abs_id": source_id})
 
 
@@ -264,7 +274,7 @@ def api_storyteller_link(abs_id):
     book.storyteller_uuid = storyteller_uuid
     book.status = 'pending'
     database_service.save_book(book)
-    database_service.dismiss_suggestion(abs_id)
+    database_service.resolve_suggestion(abs_id)
     return jsonify({"message": "Linked successfully"}), 200
 
 
