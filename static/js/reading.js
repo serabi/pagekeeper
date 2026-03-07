@@ -393,14 +393,28 @@ function initReadingDetail() {
     const absId = form.dataset.absId;
     const textarea = document.getElementById('journal-entry');
     const timeline = document.getElementById('journal-timeline');
+    const submitBtn = document.getElementById('journal-submit');
+    const cancelBtn = document.getElementById('journal-cancel');
+
+    function resetJournalForm() {
+      form.dataset.editJournalId = '';
+      if (submitBtn) submitBtn.textContent = 'Add Note';
+      if (cancelBtn) cancelBtn.classList.add('hidden');
+      if (textarea) textarea.value = '';
+    }
 
     form.addEventListener('submit', e => {
       e.preventDefault();
       const entry = textarea.value.trim();
       if (!entry) return;
+      const editJournalId = form.dataset.editJournalId;
+      const method = editJournalId ? 'PATCH' : 'POST';
+      const url = editJournalId
+        ? `/api/reading/journal/${editJournalId}`
+        : `/api/reading/book/${absId}/journal`;
 
-      fetch(`/api/reading/book/${absId}/journal`, {
-        method: 'POST',
+      fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ entry }),
       })
@@ -410,35 +424,83 @@ function initReadingDetail() {
         })
         .then(data => {
           if (!data.success) return;
-          textarea.value = '';
-
           if (timeline) {
-            const empty = timeline.querySelector('.r-journal-empty');
-            if (empty) empty.remove();
-            timeline.prepend(buildJournalNode(data.journal));
+            if (editJournalId) {
+              const item = timeline.querySelector(`.r-tl-item[data-journal-id="${editJournalId}"]`);
+              const text = item?.querySelector('.r-tl-text');
+              if (text) text.textContent = data.journal.entry;
+              if (item) item.dataset.entry = data.journal.entry;
+            } else {
+              const empty = timeline.querySelector('.r-journal-empty');
+              if (empty) empty.remove();
+              timeline.prepend(buildJournalNode(data.journal));
+            }
           }
+          resetJournalForm();
         })
         .catch(() => {
           // Show error feedback to user
         });
     });
 
+    if (cancelBtn) cancelBtn.addEventListener('click', () => {
+      resetJournalForm();
+    });
+
     // Delete (event delegation)
     if (timeline) timeline.addEventListener('click', e => {
-      const btn = e.target.closest('.r-tl-delete');
-      if (!btn) return;
-      function flashError() {
-        btn.style.outline = '2px solid var(--color-danger, red)';
-        setTimeout(() => { btn.style.outline = ''; }, 2000);
+      const trigger = e.target.closest('.r-tl-menu-trigger');
+      if (trigger) {
+        const menu = trigger.closest('.r-tl-menu');
+        const isOpen = menu.classList.contains('open');
+        timeline.querySelectorAll('.r-tl-menu.open').forEach(item => {
+          item.classList.remove('open');
+          const btn = item.querySelector('.r-tl-menu-trigger');
+          if (btn) btn.setAttribute('aria-expanded', 'false');
+        });
+        if (!isOpen) {
+          menu.classList.add('open');
+          trigger.setAttribute('aria-expanded', 'true');
+        }
+        return;
       }
-      fetch(`/api/reading/journal/${btn.dataset.journalId}`, { method: 'DELETE' })
+
+      const actionBtn = e.target.closest('.r-tl-menu-item');
+      if (!actionBtn) return;
+      const menu = actionBtn.closest('.r-tl-menu');
+      if (!menu) return;
+      const journalId = menu.dataset.journalId;
+      const eventType = menu.dataset.journalEvent;
+      const item = menu.closest('.r-tl-item');
+
+      if (actionBtn.dataset.action === 'edit') {
+        if (eventType !== 'note') return;
+        const text = item?.querySelector('.r-tl-text')?.textContent || '';
+        form.dataset.editJournalId = journalId;
+        textarea.value = text;
+        if (submitBtn) submitBtn.textContent = 'Save Note';
+        if (cancelBtn) cancelBtn.classList.remove('hidden');
+        textarea.focus();
+        menu.classList.remove('open');
+        const triggerBtn = menu.querySelector('.r-tl-menu-trigger');
+        if (triggerBtn) triggerBtn.setAttribute('aria-expanded', 'false');
+        form.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+
+      if (actionBtn.dataset.action !== 'delete') return;
+      if (!confirm('Delete this journal entry?')) return;
+      function flashError() {
+        menu.style.outline = '2px solid var(--color-danger, red)';
+        setTimeout(() => { menu.style.outline = ''; }, 2000);
+      }
+      fetch(`/api/reading/journal/${journalId}`, { method: 'DELETE' })
         .then(r => {
           if (!r.ok) throw new Error('Delete failed');
           return r.json();
         })
         .then(data => {
           if (!data.success) { flashError(); return; }
-          const item = btn.closest('.r-tl-item');
           if (item) {
             item.style.transition = 'opacity 0.3s';
             item.style.opacity = '0';
@@ -446,6 +508,16 @@ function initReadingDetail() {
           }
         })
         .catch(() => flashError());
+    });
+
+    document.addEventListener('click', e => {
+      if (!e.target.closest('.r-tl-menu')) {
+        timeline.querySelectorAll('.r-tl-menu.open').forEach(item => {
+          item.classList.remove('open');
+          const btn = item.querySelector('.r-tl-menu-trigger');
+          if (btn) btn.setAttribute('aria-expanded', 'false');
+        });
+      }
     });
   }
 }
@@ -456,13 +528,14 @@ function buildJournalNode(j) {
   const item = document.createElement('div');
   item.className = 'r-tl-item';
   item.dataset.journalId = j.id;
+  item.dataset.entry = j.entry || '';
 
   const line = document.createElement('div');
   line.className = 'r-tl-line';
   item.appendChild(line);
 
   const dot = document.createElement('div');
-  dot.className = 'r-tl-dot r-tl-dot-note';
+  dot.className = `r-tl-dot r-tl-dot-${j.event || 'note'}`;
   item.appendChild(dot);
 
   const body = document.createElement('div');
@@ -472,8 +545,9 @@ function buildJournalNode(j) {
   head.className = 'r-tl-head';
 
   const evtSpan = document.createElement('span');
-  evtSpan.className = 'r-tl-event r-tl-event-note';
-  evtSpan.textContent = 'Note';
+  const eventName = j.event || 'note';
+  evtSpan.className = `r-tl-event r-tl-event-${eventName}`;
+  evtSpan.textContent = eventName.charAt(0).toUpperCase() + eventName.slice(1);
   head.appendChild(evtSpan);
 
   if (j.created_at) {
@@ -501,12 +575,43 @@ function buildJournalNode(j) {
     body.appendChild(text);
   }
 
-  const del = document.createElement('button');
-  del.className = 'r-tl-delete';
-  del.dataset.journalId = j.id;
-  del.title = 'Delete';
-  del.textContent = '\u00D7';
-  body.appendChild(del);
+  if (eventName === 'note' || eventName === 'highlight') {
+    const menu = document.createElement('div');
+    menu.className = 'r-tl-menu';
+    menu.dataset.journalId = j.id;
+    menu.dataset.journalEvent = eventName;
+
+    const trigger = document.createElement('button');
+    trigger.className = 'r-tl-menu-trigger';
+    trigger.type = 'button';
+    trigger.title = 'More actions';
+    trigger.setAttribute('aria-label', 'More actions');
+    trigger.setAttribute('aria-expanded', 'false');
+    trigger.textContent = '\u22ef';
+    menu.appendChild(trigger);
+
+    const dropdown = document.createElement('div');
+    dropdown.className = 'r-tl-menu-dropdown';
+
+    if (eventName === 'note') {
+      const edit = document.createElement('button');
+      edit.className = 'r-tl-menu-item';
+      edit.type = 'button';
+      edit.dataset.action = 'edit';
+      edit.textContent = 'Edit';
+      dropdown.appendChild(edit);
+    }
+
+    const del = document.createElement('button');
+    del.className = 'r-tl-menu-item r-tl-menu-item--danger';
+    del.type = 'button';
+    del.dataset.action = 'delete';
+    del.textContent = 'Delete';
+    dropdown.appendChild(del);
+
+    menu.appendChild(dropdown);
+    body.appendChild(menu);
+  }
 
   item.appendChild(body);
   return item;

@@ -25,16 +25,16 @@
             </div>
         </div>
 
-        <div class="bf-tabs">
-            <button class="bf-tab active" data-tab="library" onclick="switchBFTab('library')">Library</button>
-            <button class="bf-tab" data-tab="highlights" onclick="switchBFTab('highlights')">Highlights</button>
-            <button class="bf-tab" data-tab="upload" onclick="switchBFTab('upload')">Upload to BookFusion</button>
+        <div class="bf-tabs" role="tablist" aria-label="BookFusion sections">
+            <button class="bf-tab active" data-tab="library" type="button" onclick="switchBFTab('library')">Library</button>
+            <button class="bf-tab" data-tab="highlights" type="button" onclick="switchBFTab('highlights')">Highlights</button>
+            <button class="bf-tab" data-tab="upload" type="button" onclick="switchBFTab('upload')">Upload to BookFusion</button>
         </div>
 
         <!-- Library Panel -->
         <div class="bf-panel active" id="bf-panel-library">
             <div class="bf-search">
-                <input type="text" id="bf-library-search" class="input-compact" placeholder="Filter library..." oninput="filterLibrary()">
+                <input type="text" id="bf-library-search" class="input-compact" placeholder="Filter library..." oninput="filterLibrary()" enterkeyhint="search" autocapitalize="none" spellcheck="false">
             </div>
             <div id="bf-library-list" class="bf-book-list">
                 <div class="bf-empty">
@@ -63,7 +63,7 @@
         <!-- Upload Panel -->
         <div class="bf-panel" id="bf-panel-upload">
             <div class="bf-search">
-                <input type="text" id="bf-search-input" class="input-compact" placeholder="Search Booklore books..." oninput="debounceSearch()">
+                <input type="text" id="bf-search-input" class="input-compact" placeholder="Search Booklore books..." oninput="debounceSearch()" enterkeyhint="search" autocapitalize="none" spellcheck="false">
             </div>
             <div id="bf-book-list" class="bf-book-list">
                 <div class="bf-empty">
@@ -92,6 +92,35 @@
 
     function getSpinnerHtml() {
         return `<svg class="btn-spinner" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 14px; height: 14px; animation: spin 1s linear infinite; margin-right: 6px; display: inline-block; vertical-align: middle;"><circle cx="12" cy="12" r="10" stroke-opacity="0.25"></circle><path d="M12 2a10 10 0 0 1 10 10"></path></svg>`;
+    }
+
+    function isMobileViewport() {
+        return window.matchMedia('(max-width: 768px)').matches;
+    }
+
+    function keepElementVisible(el, block) {
+        if (!el || !isMobileViewport()) return;
+        window.setTimeout(function() {
+            try {
+                el.scrollIntoView({ behavior: 'smooth', block: block || 'center', inline: 'nearest' });
+            } catch (e) {
+                el.scrollIntoView();
+            }
+        }, 180);
+    }
+
+    function revealFirstMobileResult(listId) {
+        if (!isMobileViewport()) return;
+        var active = document.activeElement;
+        if (!active || (active.id !== 'bf-search-input' && active.id !== 'bf-library-search')) return;
+        var first = document.querySelector('#' + listId + ' .bf-book-item, #' + listId + ' .bf-highlight-group, #' + listId + ' .bf-empty');
+        if (first) keepElementVisible(first, 'nearest');
+    }
+
+    function scrollActiveTabIntoView(tab) {
+        var activeTab = document.querySelector('.bf-tab[data-tab="' + tab + '"]');
+        if (!activeTab || !isMobileViewport()) return;
+        activeTab.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
     }
 
     function createComboboxHtml(options, placeholder, onChangeFnName, extraAttrs = '') {
@@ -150,6 +179,7 @@
         document.querySelectorAll('.bf-tab').forEach(t => {
             if (t.dataset.tab === tab) t.classList.add('active');
         });
+        scrollActiveTabIntoView(tab);
 
         if (tab === 'highlights') loadHighlights();
         if (tab === 'library') loadLibrary();
@@ -198,6 +228,7 @@
                             onclick="handleUploadClick(this)">Upload</button>
                     </div>
                 `).join('');
+                revealFirstMobileResult('bf-book-list');
             })
             .catch(function() {
                 list.innerHTML = '<div class="bf-empty"><div class="bf-empty-icon">\u26A0\uFE0F</div><div class="bf-empty-heading">Search failed</div><div class="bf-empty-desc">Please try again</div></div>';
@@ -351,7 +382,7 @@
                         <div class="bf-highlight-group">
                             <div class="bf-group-header" tabindex="0" role="button" onclick="toggleGroup(event, this)" onkeydown="if(event.key==='Enter'||event.key===' ') { event.preventDefault(); toggleGroup(event, this); }">
                                 <span class="chevron">\u25BC</span>
-                                 ${escapeHtml(book)}
+                                <span class="bf-group-title">${escapeHtml(book)}</span>
                                 <span class="bf-count">(${hls.length})</span>
                                 ${matchedAbsId ? `<span class="bf-match-badge">\u2714 Linked</span>` : ''}
 
@@ -366,6 +397,7 @@
                         </div>
                     `;
                 }).join('');
+                revealFirstMobileResult('bf-highlights-container');
             })
             .catch(function() {
                 var container = document.getElementById('bf-highlights-container');
@@ -411,7 +443,8 @@
         var payload = highlights.map(function(h) {
             return {
                 quote: h.quote || '',
-                chapter: (h.chapter_heading || '').replace(/^#{1,6}\s*/, '')
+                chapter: (h.chapter_heading || '').replace(/^#{1,6}\s*/, ''),
+                highlighted_at: h.date || ''
             };
         });
 
@@ -631,6 +664,7 @@
         }
 
         list.innerHTML = html;
+        revealFirstMobileResult('bf-library-list');
     }
 
     function toggleHiddenSection(headerEl) {
@@ -830,6 +864,19 @@
     }
 
     // Check URL for tab parameter, default to library
+    document.addEventListener('focusin', function(e) {
+        if (e.target.matches('#bf-search-input, #bf-library-search, .bf-combobox-input')) {
+            keepElementVisible(e.target, 'center');
+        }
+    });
+
+    window.addEventListener('resize', function() {
+        var active = document.activeElement;
+        if (active && active.matches && active.matches('#bf-search-input, #bf-library-search, .bf-combobox-input')) {
+            keepElementVisible(active, 'center');
+        }
+    });
+
     var urlTab = new URLSearchParams(window.location.search).get('tab');
     if (urlTab && document.getElementById('bf-panel-' + urlTab)) {
         switchBFTab(urlTab);

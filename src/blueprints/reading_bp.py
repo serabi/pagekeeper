@@ -53,10 +53,14 @@ def _build_book_reading_data(book, database_service, abs_service, states_by_book
         if state.percentage:
             max_progress = max(max_progress, round(state.percentage * 100, 1))
 
-    # Cover URL — try ABS proxy first, then KOSync cover, then Booklore cover
-    cover_url = None
+    custom_cover_url = book.custom_cover_url or None
+    abs_cover_url = None
     if book.abs_id and book_type != 'ebook-only':
-        cover_url = abs_service.get_cover_proxy_url(book.abs_id)
+        abs_cover_url = abs_service.get_cover_proxy_url(book.abs_id)
+
+    # Cover URL — preserve custom override, otherwise prefer ABS/audiobook cover on linked books.
+    cover_url = custom_cover_url
+    fallback_cover_url = None
     if not cover_url and book.kosync_doc_id:
         cover_url = f'/covers/{book.kosync_doc_id}.jpg'
 
@@ -97,15 +101,18 @@ def _build_book_reading_data(book, database_service, abs_service, states_by_book
         if bl_id:
             cover_url = f"/api/cover-proxy/booklore/{bl_meta.source or 'booklore'}/{bl_id}"
 
-    # Custom cover URL fallback (user-pasted)
-    if not cover_url and book.custom_cover_url:
-        cover_url = book.custom_cover_url
-
     # Hardcover cover fallback
     if not cover_url:
         hc_details = database_service.get_hardcover_details(book.abs_id)
         if hc_details and hc_details.hardcover_cover_url:
             cover_url = hc_details.hardcover_cover_url
+
+    non_abs_cover_url = cover_url
+    if not custom_cover_url and abs_cover_url:
+        fallback_cover_url = non_abs_cover_url if non_abs_cover_url != abs_cover_url else None
+        cover_url = abs_cover_url
+    elif custom_cover_url:
+        fallback_cover_url = None
 
     return {
         'abs_id': book.abs_id,
@@ -117,6 +124,9 @@ def _build_book_reading_data(book, database_service, abs_service, states_by_book
         'book_type': book_type,
         'unified_progress': min(max_progress, 100.0),
         'cover_url': cover_url,
+        'custom_cover_url': custom_cover_url,
+        'abs_cover_url': abs_cover_url,
+        'fallback_cover_url': fallback_cover_url,
         'started_at': book.started_at,
         'finished_at': book.finished_at,
         'rating': book.rating,
@@ -630,6 +640,34 @@ def delete_journal(journal_id):
     if not deleted:
         return jsonify({"success": False, "error": "Journal entry not found"}), 404
     return jsonify({"success": True})
+
+
+@reading_bp.route('/api/reading/journal/<int:journal_id>', methods=['PATCH'])
+def update_journal(journal_id):
+    """Update a journal note entry."""
+    database_service = get_database_service()
+    data = request.json or {}
+    entry = (data.get('entry') or '').strip()
+    if not entry:
+        return jsonify({"success": False, "error": "entry is required"}), 400
+
+    existing = database_service.get_reading_journal(journal_id)
+    if not existing:
+        return jsonify({"success": False, "error": "Journal entry not found"}), 404
+    if existing.event != 'note':
+        return jsonify({"success": False, "error": "Only notes can be edited"}), 400
+    journal = database_service.update_reading_journal(journal_id, entry=entry)
+
+    return jsonify({
+        "success": True,
+        "journal": {
+            "id": journal.id,
+            "event": journal.event,
+            "entry": journal.entry,
+            "percentage": journal.percentage,
+            "created_at": journal.created_at.isoformat() if journal.created_at else None,
+        }
+    })
 
 
 @reading_bp.route('/api/reading/goal/<int:year>', methods=['GET'])

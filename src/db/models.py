@@ -138,12 +138,12 @@ class ReadingJournal(Base):
     book = relationship("Book", back_populates="reading_journals")
 
     def __init__(self, abs_id: str, event: str, entry: str = None,
-                 percentage: float = None):
+                 percentage: float = None, created_at=None):
         self.abs_id = abs_id
         self.event = event
         self.entry = entry
         self.percentage = percentage
-        self.created_at = datetime.utcnow()
+        self.created_at = created_at or datetime.utcnow()
 
     def __repr__(self):
         return f"<ReadingJournal(id={self.id}, abs_id='{self.abs_id}', event='{self.event}')>"

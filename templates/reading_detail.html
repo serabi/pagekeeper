@@ -43,7 +43,7 @@
                 <div class="r-hero-cover">
                     {% if book.cover_url %}
                     <img src="{{ book.cover_url }}" alt=""
-                        onerror="{% if book.kosync_doc_id %}this.onerror=null; this.src='/covers/{{ book.kosync_doc_id }}.jpg';{% else %}this.style.display='none'; this.nextElementSibling.classList.remove('hidden');{% endif %}">
+                        onerror="{% if book.fallback_cover_url and book.fallback_cover_url != book.cover_url %}this.onerror={% if book.kosync_doc_id %}function(){this.onerror=null; this.src='/covers/{{ book.kosync_doc_id }}.jpg';}{% else %}null{% endif %}; this.src='{{ book.fallback_cover_url|e }}';{% elif book.kosync_doc_id %}this.onerror=null; this.src='/covers/{{ book.kosync_doc_id }}.jpg';{% else %}this.style.display='none'; this.nextElementSibling.classList.remove('hidden');{% endif %}">
                     <div class="r-cover-placeholder hidden"></div>
                     {% elif book.kosync_doc_id %}
                     <img src="/covers/{{ book.kosync_doc_id }}.jpg" alt=""
@@ -410,7 +410,7 @@
             <div class="r-journal-shell">
                 <div class="r-journal-panel">
                     <div class="r-journal-panel-head">
-                        <div>
+                        <div class="r-journal-panel-copy">
                             <h3 class="r-section-title r-journal-title">Reading Journal</h3>
                             <p class="r-journal-intro">Track milestones, leave quick notes, and keep the reading timeline in one place.</p>
                         </div>
@@ -432,13 +432,16 @@
                             <label for="journal-entry" class="r-journal-compose-label">Add Note</label>
                             <textarea id="journal-entry" placeholder="What stood out in this session?" rows="3"></textarea>
                         </div>
-                        <button type="submit" class="btn btn-primary btn-sm r-journal-submit">Add Note</button>
+                        <div class="r-journal-form-actions">
+                            <button type="button" class="btn btn-secondary btn-sm r-journal-cancel hidden" id="journal-cancel">Cancel</button>
+                            <button type="submit" class="btn btn-primary btn-sm r-journal-submit" id="journal-submit">Add Note</button>
+                        </div>
                     </form>
                 </div>
 
                 <div class="r-journal-timeline-card">
                     <div class="r-journal-panel-head r-journal-panel-head--timeline">
-                        <div>
+                        <div class="r-journal-panel-copy">
                             <h3 class="r-section-title r-journal-title">Timeline</h3>
                         </div>
                     </div>
@@ -459,8 +462,16 @@
                                 {% if journal.entry %}
                                 <p class="r-tl-text">{{ journal.entry }}</p>
                                 {% endif %}
-                                {% if journal.event == 'note' %}
-                                <button class="r-tl-delete" data-journal-id="{{ journal.id }}" title="Delete">&times;</button>
+                                {% if journal.event in ['note', 'highlight'] %}
+                                <div class="r-tl-menu" data-journal-id="{{ journal.id }}" data-journal-event="{{ journal.event }}">
+                                    <button class="r-tl-menu-trigger" title="More actions" aria-label="More actions" aria-expanded="false" type="button">⋯</button>
+                                    <div class="r-tl-menu-dropdown">
+                                        {% if journal.event == 'note' %}
+                                        <button class="r-tl-menu-item" type="button" data-action="edit">Edit</button>
+                                        {% endif %}
+                                        <button class="r-tl-menu-item r-tl-menu-item--danger" type="button" data-action="delete">Delete</button>
+                                    </div>
+                                </div>
                                 {% endif %}
                             </div>
                         </div>

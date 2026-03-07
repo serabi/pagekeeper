@@ -4,6 +4,7 @@ import difflib
 import logging
 import re
 from collections import defaultdict
+from datetime import datetime
 
 from flask import Blueprint, current_app, jsonify, render_template, request
 
@@ -380,22 +381,30 @@ def save_highlight_to_journal():
     if not book:
         return jsonify({'error': 'Book not found'}), 404
 
+    cleanup_stats = db_service.cleanup_bookfusion_import_notes(abs_id)
     saved = 0
     for hl in highlights:
         quote = hl.get('quote', '').strip()
         chapter = hl.get('chapter', '')
+        highlighted_at_raw = (hl.get('highlighted_at') or '').strip()
         if not quote:
             continue
-        entry = f"📖 {quote}"
+        entry = quote
         if chapter:
             entry += f"\n— {chapter}"
+        created_at = None
+        if highlighted_at_raw:
+            try:
+                created_at = datetime.strptime(highlighted_at_raw, '%Y-%m-%d %H:%M:%S')
+            except ValueError:
+                logger.debug("Could not parse BookFusion highlight timestamp '%s'", highlighted_at_raw)
         try:
-            db_service.add_reading_journal(abs_id, 'note', entry=entry)
+            db_service.add_reading_journal(abs_id, 'highlight', entry=entry, created_at=created_at)
             saved += 1
         except Exception as e:
             logger.warning(f"Failed to save journal entry: {e}")
 
-    return jsonify({'success': True, 'saved': saved})
+    return jsonify({'success': True, 'saved': saved, 'cleanup': cleanup_stats})
 
 
 @bookfusion_bp.route('/api/bookfusion/library')
