@@ -230,7 +230,7 @@ You'll also need to uncomment the `deploy.resources` section in your `docker-com
 The build accepts an `APP_VERSION` arg that controls the version displayed in the dashboard. Defaults to `dev` if not set.
 
 ```bash
-docker build --build-arg APP_VERSION=1.0.0 -t pagekeeper .
+docker build --build-arg APP_VERSION=0.1.8 -t pagekeeper .
 ```
 
 ### Local development

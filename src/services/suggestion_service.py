@@ -126,8 +126,16 @@ class SuggestionService:
         return "low"
 
     def _get_bookfusion_context(self) -> dict:
-        bf_books = self.database_service.get_bookfusion_books()
-        linked_abs_ids = self.database_service.get_bookfusion_linked_abs_ids()
+        try:
+            bf_books = list(self.database_service.get_bookfusion_books() or [])
+        except TypeError:
+            bf_books = []
+
+        try:
+            linked_abs_ids = list(self.database_service.get_bookfusion_linked_abs_ids() or [])
+        except TypeError:
+            linked_abs_ids = []
+
         visible_books = [b for b in bf_books if not getattr(b, 'hidden', False)]
         by_title_author = {}
         by_title = {}
@@ -152,6 +160,10 @@ class SuggestionService:
     def _update_rescan_status(self, **kwargs) -> None:
         with self._rescan_lock:
             self._rescan_status.update(kwargs)
+
+    def _get_booklore_source_tag(self, bl_client) -> str:
+        source_tag = getattr(bl_client, "source_tag", "default")
+        return source_tag if isinstance(source_tag, str) and source_tag else "default"
 
     def get_rescan_status(self) -> dict:
         with self._rescan_lock:
@@ -217,19 +229,20 @@ class SuggestionService:
                     filename = book.get('fileName', '')
                     if not filename or not filename.lower().endswith('.epub'):
                         continue
-                    dedupe_key = ("booklore", bl_client.source_tag, filename.lower())
+                    source_tag = self._get_booklore_source_tag(bl_client)
+                    dedupe_key = ("booklore", source_tag, filename.lower())
                     if dedupe_key in seen:
                         continue
                     seen.add(dedupe_key)
                     candidates.append({
                         "source_family": "booklore",
                         "source": "booklore",
-                        "source_key": f"booklore:{bl_client.source_tag}:{filename}",
+                        "source_key": f"booklore:{source_tag}:{filename}",
                         "title": book.get('title') or Path(filename).stem,
                         "author": book.get('authors') or '',
                         "filename": filename,
                         "id": str(book.get('id') or ''),
-                        "source_tag": bl_client.source_tag,
+                        "source_tag": source_tag,
                         "action_kind": "create_mapping",
                     })
             except Exception as e:
@@ -360,7 +373,7 @@ class SuggestionService:
         if abs_id in mapped_ids:
             return
 
-        if self.database_service.is_suggestion_ignored(abs_id):
+        if self._suggestion_already_recorded(abs_id):
             return
 
         logger.info(f"Socket.IO: Queuing suggestion discovery for '{abs_id[:12]}...'")
@@ -392,7 +405,7 @@ class SuggestionService:
                 if duration > 0:
                     pct = current_time / duration
                     if pct > 0.01:
-                        if self.database_service.is_suggestion_ignored(abs_id):
+                        if self._suggestion_already_recorded(abs_id):
                             logger.debug(f"Skipping {abs_id}: suggestion already exists/dismissed")
                             continue
 
@@ -416,6 +429,10 @@ class SuggestionService:
             self._check_reverse_suggestions()
         except Exception as e:
             logger.warning(f"Reverse suggestions check failed: {e}")
+
+    def _suggestion_already_recorded(self, abs_id: str) -> bool:
+        """Return True when a suggestion should not be recreated for this ABS item."""
+        return bool(self.database_service.suggestion_exists(abs_id))
 
     def _check_reverse_suggestions(self):
         """Check Storyteller and Booklore for books with progress that could match ABS audiobooks."""
@@ -679,11 +696,45 @@ class SuggestionService:
                 bookfusion_context=bookfusion_context,
             )
 
+            query = title
+            if author:
+                query = f"{query} {author}"
+
+            for bl_client in self._booklore_clients:
+                if not (bl_client and bl_client.is_configured()):
+                    continue
+                try:
+                    live_results = bl_client.search_books(query) or []
+                    live_candidates = []
+                    source_tag = self._get_booklore_source_tag(bl_client)
+                    for book in live_results:
+                        filename = book.get("fileName", "")
+                        if not filename or not filename.lower().endswith(".epub"):
+                            continue
+                        live_candidates.append({
+                            "source_family": "booklore",
+                            "source": "booklore",
+                            "source_key": f"booklore:{source_tag}:{filename}",
+                            "title": book.get("title") or Path(filename).stem,
+                            "author": book.get("authors") or "",
+                            "filename": filename,
+                            "id": str(book.get("id") or ""),
+                            "source_tag": source_tag,
+                            "action_kind": "create_mapping",
+                        })
+                    matches.extend(
+                        self._rank_candidates_for_book(
+                            title,
+                            author,
+                            live_candidates,
+                            bookfusion_context=bookfusion_context,
+                        )
+                    )
+                except Exception as e:
+                    logger.warning(f"Booklore live search failed during suggestion: {e}")
+
             if self.library_service and self.library_service.cwa_client and self.library_service.cwa_client.is_configured():
                 try:
-                    query = title
-                    if author:
-                        query = f"{query} {author}"
                     cwa_results = self.library_service.cwa_client.search_ebooks(query)
                     for cr in cwa_results or []:
                         cwa_candidate = {
