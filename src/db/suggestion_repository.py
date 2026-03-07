@@ -5,6 +5,11 @@ from .models import Book, KosyncDocument, PendingSuggestion
 
 
 class SuggestionRepository(BaseRepository):
+    def get_suggestion(self, source_id):
+        return self._get_one(
+            PendingSuggestion,
+            PendingSuggestion.source_id == source_id,
+        )
 
     def get_pending_suggestion(self, source_id):
         return self._get_one(
@@ -17,6 +22,13 @@ class SuggestionRepository(BaseRepository):
         with self.get_session() as session:
             return session.query(PendingSuggestion).filter(
                 PendingSuggestion.source_id == source_id
+            ).first() is not None
+
+    def is_suggestion_ignored(self, source_id):
+        with self.get_session() as session:
+            return session.query(PendingSuggestion).filter(
+                PendingSuggestion.source_id == source_id,
+                PendingSuggestion.status == 'ignored',
             ).first() is not None
 
     def save_pending_suggestion(self, suggestion):
@@ -32,6 +44,13 @@ class SuggestionRepository(BaseRepository):
             PendingSuggestion,
             PendingSuggestion.status == 'pending',
             order_by=PendingSuggestion.created_at.desc(),
+        )
+
+    def delete_pending_suggestion(self, source_id):
+        return self._delete_one(
+            PendingSuggestion,
+            PendingSuggestion.source_id == source_id,
+            PendingSuggestion.status == 'pending',
         )
 
     def dismiss_suggestion(self, source_id):

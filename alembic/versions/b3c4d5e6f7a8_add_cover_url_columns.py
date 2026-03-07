@@ -8,6 +8,7 @@ Create Date: 2026-03-06
 from typing import Sequence
 
 import sqlalchemy as sa
+from sqlalchemy import inspect
 
 from alembic import op
 
@@ -19,10 +20,26 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
-    op.add_column('hardcover_details', sa.Column('hardcover_cover_url', sa.String(500), nullable=True))
-    op.add_column('books', sa.Column('custom_cover_url', sa.String(500), nullable=True))
+    bind = op.get_bind()
+    inspector = inspect(bind)
+
+    hardcover_cols = {col['name'] for col in inspector.get_columns('hardcover_details')}
+    if 'hardcover_cover_url' not in hardcover_cols:
+        op.add_column('hardcover_details', sa.Column('hardcover_cover_url', sa.String(500), nullable=True))
+
+    book_cols = {col['name'] for col in inspector.get_columns('books')}
+    if 'custom_cover_url' not in book_cols:
+        op.add_column('books', sa.Column('custom_cover_url', sa.String(500), nullable=True))
 
 
 def downgrade() -> None:
-    op.drop_column('hardcover_details', 'hardcover_cover_url')
-    op.drop_column('books', 'custom_cover_url')
+    bind = op.get_bind()
+    inspector = inspect(bind)
+
+    hardcover_cols = {col['name'] for col in inspector.get_columns('hardcover_details')}
+    if 'hardcover_cover_url' in hardcover_cols:
+        op.drop_column('hardcover_details', 'hardcover_cover_url')
+
+    book_cols = {col['name'] for col in inspector.get_columns('books')}
+    if 'custom_cover_url' in book_cols:
+        op.drop_column('books', 'custom_cover_url')

@@ -7,13 +7,40 @@ import json
 import logging
 import os
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, current_app, jsonify, request
 
 from src.blueprints.helpers import get_booklore_clients, get_container, get_database_service
+from src.db.models import Book
 
 logger = logging.getLogger(__name__)
 
 api_bp = Blueprint('api', __name__)
+
+
+def _serialize_suggestion(s):
+    try:
+        matches = json.loads(s.matches_json) if s.matches_json else []
+    except Exception as e:
+        logger.debug(f"Failed to parse matches_json for suggestion '{s.source_id}': {e}")
+        matches = []
+
+    for m in matches:
+        evidence = m.get('evidence') or []
+        m['has_bookfusion'] = (
+            m.get('source_family') == 'bookfusion'
+            or any(ev.startswith('bookfusion') for ev in evidence)
+        )
+
+    return {
+        "id": s.id,
+        "source_id": s.source_id,
+        "title": s.title,
+        "author": s.author,
+        "cover_url": s.cover_url,
+        "matches": matches,
+        "has_bookfusion_evidence": any(m.get('has_bookfusion') for m in matches),
+        "created_at": s.created_at.isoformat()
+    }
 
 
 # ---------------- Status ----------------
@@ -101,24 +128,23 @@ def api_processing_status():
 def get_suggestions():
     database_service = get_database_service()
     suggestions = database_service.get_all_pending_suggestions()
-    result = []
-    for s in suggestions:
-        try:
-            matches = json.loads(s.matches_json) if s.matches_json else []
-        except Exception as e:
-            logger.debug(f"Failed to parse matches_json for suggestion '{s.source_id}': {e}")
-            matches = []
+    return jsonify([_serialize_suggestion(s) for s in suggestions if s.matches])
 
-        result.append({
-            "id": s.id,
-            "source_id": s.source_id,
-            "title": s.title,
-            "author": s.author,
-            "cover_url": s.cover_url,
-            "matches": matches,
-            "created_at": s.created_at.isoformat()
-        })
-    return jsonify(result)
+
+@api_bp.route('/api/suggestions/rescan', methods=['POST'])
+def rescan_suggestions():
+    container = get_container()
+    data = request.get_json(silent=True) or {}
+    force = bool(data.get('force'))
+    stats = container.suggestion_service().request_rescan_library_suggestions(force=force)
+    return jsonify({"success": True, **stats})
+
+
+@api_bp.route('/api/suggestions/rescan-status', methods=['GET'])
+def rescan_suggestions_status():
+    container = get_container()
+    status = container.suggestion_service().get_rescan_status()
+    return jsonify({"success": True, **status})
 
 
 @api_bp.route('/api/suggestions/<source_id>/dismiss', methods=['POST'])
@@ -143,6 +169,53 @@ def clear_stale_suggestions():
     count = database_service.clear_stale_suggestions()
     logger.info(f"Cleared {count} stale suggestions from database")
     return jsonify({"success": True, "count": count})
+
+
+@api_bp.route('/api/suggestions/<source_id>/link-bookfusion', methods=['POST'])
+def link_suggestion_bookfusion(source_id):
+    database_service = get_database_service()
+    container = get_container()
+    suggestion = database_service.get_pending_suggestion(source_id)
+    if not suggestion:
+        return jsonify({"error": "Suggestion not found"}), 404
+
+    data = request.get_json(silent=True) or {}
+    match_index = data.get('match_index')
+    matches = suggestion.matches or []
+    if match_index is None or not isinstance(match_index, int) or match_index < 0 or match_index >= len(matches):
+        return jsonify({"error": "Valid match_index required"}), 400
+
+    match = matches[match_index]
+    bookfusion_ids = match.get('bookfusion_ids') or []
+    if match.get('source_family') != 'bookfusion' or not bookfusion_ids:
+        return jsonify({"error": "Selected match is not a BookFusion candidate"}), 400
+
+    abs_book = database_service.get_book(source_id)
+    if not abs_book:
+        abs_client = container.abs_client()
+        item = abs_client.get_item_details(source_id) if abs_client else None
+        metadata = (item or {}).get('media', {}).get('metadata', {})
+        abs_book = Book(
+            abs_id=source_id,
+            abs_title=metadata.get('title') or suggestion.title or source_id,
+            status='active',
+            duration=(item or {}).get('media', {}).get('duration'),
+            sync_mode='audiobook',
+        )
+        database_service.save_book(abs_book)
+        abs_service = container.abs_service()
+        if abs_service and abs_service.is_available():
+            try:
+                abs_service.add_to_collection(source_id, current_app.config['ABS_COLLECTION_NAME'])
+            except Exception as e:
+                logger.warning(f"Failed to add '{source_id}' to ABS collection during BookFusion link: {e}")
+
+    for bid in bookfusion_ids:
+        database_service.set_bookfusion_book_match(bid, source_id)
+        database_service.link_bookfusion_book(bid, source_id)
+
+    database_service.dismiss_suggestion(source_id)
+    return jsonify({"success": True, "abs_id": source_id})
 
 
 @api_bp.route('/api/sync-reading-dates', methods=['POST'])

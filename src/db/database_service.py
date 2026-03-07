@@ -308,8 +308,14 @@ class DatabaseService:
     def get_pending_suggestion(self, source_id):
         return self._suggestions.get_pending_suggestion(source_id)
 
+    def get_suggestion(self, source_id):
+        return self._suggestions.get_suggestion(source_id)
+
     def suggestion_exists(self, source_id):
         return self._suggestions.suggestion_exists(source_id)
+
+    def is_suggestion_ignored(self, source_id):
+        return self._suggestions.is_suggestion_ignored(source_id)
 
     def save_pending_suggestion(self, suggestion):
         return self._suggestions.save_pending_suggestion(suggestion)
@@ -319,6 +325,9 @@ class DatabaseService:
 
     def get_all_pending_suggestions(self):
         return self._suggestions.get_all_pending_suggestions()
+
+    def delete_pending_suggestion(self, source_id):
+        return self._suggestions.delete_pending_suggestion(source_id)
 
     def dismiss_suggestion(self, source_id):
         return self._suggestions.dismiss_suggestion(source_id)

@@ -397,7 +397,6 @@ function updateKoSyncHash(event) {
 }
 
 function syncNow(absId, btn) {
-function syncNow(absId, btn) {
     btn.disabled = true;
     const originalText = btn.textContent;
     btn.textContent = "...";
@@ -694,7 +693,6 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
-function showConfirmModal(title, message, formAction, accentType) {
 function showConfirmModal(title, message, formAction, accentType) {
     closeAllMenus();
     const modal = document.getElementById('confirm-modal');

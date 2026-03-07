@@ -3,6 +3,7 @@
 import logging
 import os
 import time
+from datetime import UTC, datetime
 from pathlib import Path
 
 from flask import Blueprint, render_template
@@ -20,7 +21,7 @@ def index():
     """
     Render the dashboard with enriched book and progress data.
 
-    Loads books, listening states, pending suggestions, hardcover and Booklore metadata, and integration statuses, then renders the dashboard page with per-book mappings, overall progress, suggestions, app version and update information.
+    Loads books, listening states, hardcover and Booklore metadata, and integration statuses, then renders the dashboard page with per-book mappings, overall progress, app version and update information.
 
     Returns:
         Rendered template response for the dashboard page.
@@ -84,10 +85,6 @@ def index():
         if state.abs_id not in states_by_book:
             states_by_book[state.abs_id] = []
         states_by_book[state.abs_id].append(state)
-
-    # Fetch pending suggestions
-    suggestions_raw = database_service.get_all_pending_suggestions()
-    suggestions = [s for s in suggestions_raw if len(s.matches) > 0]
 
     # Fetch all hardcover details at once
     all_hardcover = database_service.get_all_hardcover_details()
@@ -289,6 +286,7 @@ def index():
         mapping['bookfusion_highlight_count'] = bf_highlight_counts.get(book.abs_id, 0)
 
         mapping['unified_progress'] = min(max_progress, 100.0)
+        mapping['latest_activity_at'] = latest_update_time or None
 
         if latest_update_time > 0:
             diff = time.time() - latest_update_time
@@ -341,7 +339,6 @@ def index():
         mappings=mappings,
         integrations=integrations,
         progress=overall_progress,
-        suggestions=suggestions,
         app_version=APP_VERSION,
         booklore_label=booklore_label,
     )

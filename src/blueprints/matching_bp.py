@@ -1,6 +1,7 @@
 """Matching blueprint — suggestions, single match, batch match."""
 
 import hashlib
+import json
 import logging
 from pathlib import Path
 
@@ -24,6 +25,34 @@ from src.utils.path_utils import sanitize_filename
 logger = logging.getLogger(__name__)
 
 matching_bp = Blueprint('matching', __name__)
+
+
+def _serialize_suggestion(s):
+    matches = []
+    for m in s.matches:
+        evidence = m.get('evidence') or []
+        has_bookfusion = (
+            m.get('source_family') == 'bookfusion'
+            or any(ev.startswith('bookfusion') for ev in evidence)
+        )
+        matches.append({
+            **m,
+            'evidence': evidence,
+            'has_bookfusion': has_bookfusion,
+        })
+
+    has_bookfusion_evidence = any(m.get('has_bookfusion') for m in matches)
+    return {
+        'id': s.id,
+        'source_id': s.source_id,
+        'title': s.title,
+        'author': s.author,
+        'cover_url': s.cover_url,
+        'matches': matches,
+        'created_at': s.created_at.isoformat() if s.created_at else None,
+        'has_bookfusion_evidence': has_bookfusion_evidence,
+        'top_match': matches[0] if matches else None,
+    }
 
 
 def _build_batch_queue_item(item):
@@ -66,21 +95,25 @@ def _build_batch_queue_view(queue):
 @matching_bp.route('/suggestions')
 def suggestions():
     """Dedicated page for browsing and acting on pairing suggestions."""
+    container = get_container()
     database_service = get_database_service()
     raw_suggestions = database_service.get_all_pending_suggestions()
-    suggestions_list = []
-    for s in raw_suggestions:
-        suggestions_list.append({
-            'id': s.id,
-            'source_id': s.source_id,
-            'title': s.title,
-            'author': s.author,
-            'cover_url': s.cover_url,
-            'matches': s.matches,
-            'created_at': s.created_at,
-        })
+    suggestions_list = [_serialize_suggestion(s) for s in raw_suggestions if s.matches]
     suggestions_enabled = current_app.config.get('SUGGESTIONS_ENABLED', False)
-    return render_template('suggestions.html', suggestions=suggestions_list, suggestions_enabled=suggestions_enabled)
+    bookfusion_enabled = container.bookfusion_client().is_configured()
+    bookfusion_catalog_count = len(database_service.get_bookfusion_books()) if bookfusion_enabled else 0
+    initial_search = request.args.get('search', '').strip()
+    selected_source_id = request.args.get('source_id', '').strip()
+    return render_template(
+        'suggestions.html',
+        suggestions=suggestions_list,
+        suggestions_enabled=suggestions_enabled,
+        bookfusion_enabled=bookfusion_enabled,
+        bookfusion_catalog_count=bookfusion_catalog_count,
+        suggestions_json=json.dumps(suggestions_list),
+        initial_search=initial_search,
+        selected_source_id=selected_source_id,
+    )
 
 
 @matching_bp.route('/match', methods=['GET', 'POST'])

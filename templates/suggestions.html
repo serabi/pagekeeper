@@ -13,156 +13,194 @@
     <link rel="stylesheet" href="/static/css/layout.css">
     <link rel="stylesheet" href="/static/css/components.css">
     <style>
-        .suggestions-container {
-            max-width: 1200px;
+        .suggestions-shell {
+            max-width: 1280px;
             margin: 0 auto;
             padding: 24px;
         }
-        .suggestions-header {
+        .suggestions-hero {
             display: flex;
             justify-content: space-between;
-            align-items: center;
-            margin-bottom: 24px;
+            gap: 20px;
+            align-items: flex-start;
+            margin-bottom: 20px;
             flex-wrap: wrap;
-            gap: 12px;
         }
-        .suggestions-header h2 {
-            font-family: var(--font-heading);
-            font-size: 1.5rem;
+        .suggestions-hero h2 {
             margin: 0;
+            font-size: 1.7rem;
         }
-        .suggestions-header p {
+        .suggestions-hero p {
+            margin: 8px 0 0;
             color: var(--color-text-muted);
-            margin: 4px 0 0;
-            font-size: 0.9rem;
+            max-width: 760px;
         }
-        .suggestions-controls {
+        .suggestions-toolbar {
             display: flex;
-            gap: 12px;
+            gap: 10px;
+            flex-wrap: wrap;
             align-items: center;
+            margin-bottom: 20px;
         }
-        .search-input {
-            padding: 8px 14px;
+        .suggestions-toolbar input,
+        .suggestions-toolbar select {
+            min-width: 180px;
+            padding: 9px 12px;
             border: 1px solid var(--color-border-light);
             border-radius: var(--radius);
             background: var(--color-surface);
             color: var(--color-text);
-            font-size: 14px;
-            min-width: 220px;
         }
-        .search-input:focus {
-            outline: none;
-            border-color: var(--color-primary);
+        .stats-strip {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 22px;
+        }
+        .stat-pill {
+            border: 1px solid var(--color-border-light);
+            background: var(--color-surface);
+            padding: 10px 14px;
+            border-radius: 999px;
+            font-size: 0.9rem;
+            color: var(--color-text-muted);
+        }
+        .stat-pill strong {
+            color: var(--color-text);
         }
         .suggestion-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-            gap: 20px;
+            grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+            gap: 18px;
         }
         .suggestion-card {
-            background: var(--color-surface);
+            background: linear-gradient(180deg, rgba(255,255,255,0.03), transparent), var(--color-surface);
             border: 1px solid var(--color-border-light);
-            border-radius: var(--radius-lg, 12px);
+            border-radius: 18px;
             padding: 20px;
-            transition: all var(--transition-smooth);
         }
-        .suggestion-card:hover {
-            border-color: var(--color-primary-border);
-            box-shadow: 0 4px 16px rgba(0,0,0,0.1);
+        .suggestion-card[data-has-bookfusion="true"] {
+            border-color: rgba(59, 130, 246, 0.35);
+            box-shadow: 0 12px 32px rgba(59, 130, 246, 0.08);
         }
-        .suggestion-top {
+        .suggestion-source {
             display: flex;
-            gap: 16px;
+            gap: 14px;
             margin-bottom: 16px;
         }
         .suggestion-cover {
-            width: 64px;
-            height: 96px;
-            border-radius: 6px;
+            width: 72px;
+            height: 108px;
+            border-radius: 10px;
             object-fit: cover;
-            background: var(--color-bg);
             flex-shrink: 0;
+            background: var(--color-bg);
         }
-        .suggestion-info {
-            flex: 1;
-            min-width: 0;
-        }
-        .suggestion-title {
-            font-weight: 600;
-            font-size: 1rem;
+        .suggestion-meta h3 {
             margin: 0 0 4px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
+            font-size: 1.05rem;
         }
-        .suggestion-author {
+        .suggestion-meta p {
+            margin: 0;
             color: var(--color-text-muted);
-            font-size: 0.85rem;
-            margin: 0 0 8px;
+            font-size: 0.9rem;
         }
-        .suggestion-badge {
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 0.75rem;
+        .badge-row {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+        .chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 8px;
+            border-radius: 999px;
+            font-size: 0.72rem;
             font-weight: 600;
-            background: var(--color-primary-light);
-            color: var(--color-primary-hover);
+            background: var(--color-bg);
+            color: var(--color-text-muted);
         }
-        .match-list {
-            list-style: none;
-            padding: 0;
-            margin: 0 0 16px;
+        .chip--bookfusion {
+            background: rgba(59, 130, 246, 0.12);
+            color: var(--color-bookfusion);
         }
-        .match-item {
+        .chip--confidence-high {
+            background: rgba(34, 197, 94, 0.14);
+            color: #15803d;
+        }
+        .chip--confidence-medium {
+            background: rgba(245, 158, 11, 0.14);
+            color: #b45309;
+        }
+        .candidate-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .candidate {
+            border: 1px solid var(--color-border-light);
+            border-radius: 14px;
+            padding: 12px;
+            background: var(--color-bg);
+        }
+        .candidate-top {
             display: flex;
             justify-content: space-between;
-            align-items: center;
-            padding: 8px 10px;
-            margin-bottom: 6px;
-            background: var(--color-bg);
-            border-radius: 6px;
-            font-size: 0.85rem;
+            gap: 12px;
+            align-items: flex-start;
+            margin-bottom: 8px;
         }
-        .match-item-info {
-            flex: 1;
-            min-width: 0;
-            overflow: hidden;
-            text-overflow: ellipsis;
+        .candidate-title {
+            font-weight: 600;
+            margin-bottom: 2px;
+        }
+        .candidate-author {
+            color: var(--color-text-muted);
+            font-size: 0.84rem;
+        }
+        .candidate-score {
+            color: var(--color-text-muted);
+            font-size: 0.8rem;
             white-space: nowrap;
         }
-        .match-source {
-            display: inline-block;
-            padding: 1px 6px;
-            border-radius: 3px;
-            font-size: 0.7rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            background: rgba(124, 58, 237, 0.1);
-            color: var(--color-primary);
-            margin-right: 6px;
-            flex-shrink: 0;
+        .candidate-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-top: 10px;
         }
         .suggestion-actions {
             display: flex;
             gap: 8px;
             flex-wrap: wrap;
+            margin-top: 14px;
+            padding-top: 14px;
+            border-top: 1px solid var(--color-border-light);
         }
         .empty-state {
             text-align: center;
-            padding: 60px 20px;
+            padding: 56px 18px;
             color: var(--color-text-muted);
+            border: 1px dashed var(--color-border-light);
+            border-radius: 18px;
+            background: var(--color-surface);
         }
-        .empty-state svg {
-            width: 48px;
-            height: 48px;
-            stroke: var(--color-text-muted);
-            margin-bottom: 16px;
+        .help-note {
+            color: var(--color-text-muted);
+            font-size: 0.85rem;
         }
         @media (max-width: 768px) {
-            .suggestions-container { padding: 16px; }
-            .suggestion-grid { grid-template-columns: 1fr; }
-            .suggestions-header { flex-direction: column; align-items: flex-start; }
+            .suggestions-shell {
+                padding: 16px;
+            }
+            .suggestion-grid {
+                grid-template-columns: 1fr;
+            }
+            .candidate-top {
+                flex-direction: column;
+            }
         }
     </style>
 </head>
@@ -170,132 +208,304 @@
 <body>
     {% include 'partials/navbar.html' %}
 
-    <div class="suggestions-container">
-        <div class="suggestions-header">
+    <div class="suggestions-shell">
+        <div class="suggestions-hero">
             <div>
                 <h2>Pairing Suggestions</h2>
-                <p>Books in your audiobook library that could be linked to ebooks.</p>
+                <p>Review unmapped audiobook pairings across your indexed ebook sources.</p>
             </div>
-            <div class="suggestions-controls">
-                <input type="text" class="search-input" id="suggestion-search" placeholder="Filter suggestions..." oninput="filterSuggestions(this.value)">
-                <span id="suggestion-count" style="color: var(--color-text-muted); font-size: 0.85rem;">{{ suggestions|length }} suggestion{{ 's' if suggestions|length != 1 }}</span>
+            <div class="candidate-actions">
+                <button type="button" class="btn btn-primary" id="rescan-btn" onclick="rescanSuggestions()">Rescan Libraries</button>
             </div>
         </div>
 
-        {% if suggestions %}
-        <div class="suggestion-grid" id="suggestion-grid">
-            {% for s in suggestions %}
-            <div class="suggestion-card" data-source-id="{{ s.source_id }}" data-title="{{ s.title|lower }}" data-author="{{ (s.author or '')|lower }}">
-                <div class="suggestion-top">
-                    {% if s.cover_url %}
-                    <img src="{{ s.cover_url }}" alt="" class="suggestion-cover" loading="lazy">
-                    {% else %}
-                    <div class="suggestion-cover" style="display:flex;align-items:center;justify-content:center;font-size:1.5rem;">&#128214;</div>
-                    {% endif %}
-                    <div class="suggestion-info">
-                        <h3 class="suggestion-title" title="{{ s.title }}">{{ s.title }}</h3>
-                        <p class="suggestion-author">{{ s.author or 'Unknown Author' }}</p>
-                        <span class="suggestion-badge">{{ s.matches|length }} match{{ 'es' if s.matches|length != 1 }}</span>
-                    </div>
-                </div>
-
-                {% if s.matches %}
-                <ul class="match-list">
-                    {% for m in s.matches[:5] %}
-                    <li class="match-item">
-                        <div class="match-item-info">
-                            <span class="match-source">{{ m.source }}</span>
-                            {{ m.title or m.filename or 'Untitled' }}
-                        </div>
-                    </li>
-                    {% endfor %}
-                    {% if s.matches|length > 5 %}
-                    <li class="match-item" style="justify-content: center; color: var(--color-text-muted);">
-                        +{{ s.matches|length - 5 }} more
-                    </li>
-                    {% endif %}
-                </ul>
-                {% endif %}
-
-                <div class="suggestion-actions">
-                    <a href="/match?abs_id={{ s.source_id }}&search={{ s.title|urlencode }}" class="btn btn-sm">Link</a>
-                    <button type="button" class="btn btn-sm" onclick="dismissSuggestion('{{ s.source_id }}', this)">Dismiss</button>
-                    <button type="button" class="btn btn-sm btn-danger" onclick="ignoreSuggestion('{{ s.source_id }}', this)">Never Ask</button>
-                </div>
-            </div>
-            {% endfor %}
+        <div class="suggestions-toolbar">
+            <input type="text" id="suggestion-search" placeholder="Filter by title, author, or candidate..." value="{{ initial_search }}" oninput="renderSuggestions()">
+            <select id="confidence-filter" onchange="renderSuggestions()">
+                <option value="all">All confidence</option>
+                <option value="high">High confidence</option>
+                <option value="medium">High + medium</option>
+            </select>
+            <select id="bookfusion-filter" onchange="renderSuggestions()">
+                <option value="all">All evidence</option>
+                <option value="bookfusion">Has BookFusion evidence</option>
+            </select>
+            <span class="help-note" id="rescan-status"></span>
         </div>
-        {% else %}
-        <div class="empty-state">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5">
-                <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/>
-            </svg>
+
+        <div class="stats-strip">
+            <div class="stat-pill"><strong id="visible-count">{{ suggestions|length }}</strong> visible suggestions</div>
+            <div class="stat-pill"><strong>{{ suggestions|length }}</strong> total pending</div>
+            <div class="stat-pill"><strong>{{ bookfusion_catalog_count }}</strong> BookFusion catalog items cached</div>
+            <div class="stat-pill"><strong>{{ 'enabled' if suggestions_enabled else 'disabled' }}</strong> suggestions status</div>
+        </div>
+
+        <div id="suggestion-grid" class="suggestion-grid"></div>
+
+        <div id="empty-state" class="empty-state" style="display:none;">
             <h3>No Suggestions</h3>
-            {% if suggestions_enabled %}
-            <p>No pairing candidates found yet. Suggestions appear automatically as you listen to audiobooks or read ebooks across your connected services.</p>
+            {% if not suggestions_enabled %}
+            <p>Suggestions are disabled. Enable them in <a href="/settings?tab=general">Settings</a>.</p>
+            {% elif bookfusion_enabled and bookfusion_catalog_count == 0 %}
+            <p>No pairings are ready yet. BookFusion is enabled, but its local catalog has not been synced into PageKeeper yet. Sync BookFusion highlights/library first, then run a rescan.</p>
+            {% elif bookfusion_enabled %}
+            <p>No pairings matched the current filters. Clear filters or run a fresh rescan after syncing BookFusion, Booklore, or your local ebook library.</p>
             {% else %}
-            <p>Suggestions are currently disabled. Enable them in <a href="/settings?tab=general">Settings</a> to discover pairing candidates.</p>
+            <p>No pairing candidates were found. Run a library rescan after syncing Booklore or your local ebook library.</p>
             {% endif %}
         </div>
-        {% endif %}
     </div>
 
     <script>
-        function filterSuggestions(query) {
-            var q = query.toLowerCase();
-            var cards = document.querySelectorAll('.suggestion-card');
-            var visible = 0;
-            cards.forEach(function(card) {
-                var title = card.dataset.title || '';
-                var author = card.dataset.author || '';
-                var show = !q || title.indexOf(q) !== -1 || author.indexOf(q) !== -1;
-                card.style.display = show ? '' : 'none';
-                if (show) visible++;
+        let suggestionData = {{ suggestions_json|safe }};
+        const selectedSourceId = {{ selected_source_id|tojson }};
+        let rescanPollTimer = null;
+
+        function escapeHtml(value) {
+            return String(value || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function formatEvidence(evidence) {
+            return (evidence || []).map(function(item) {
+                return '<span class="chip' + (item.indexOf('bookfusion') === 0 ? ' chip--bookfusion' : '') + '">' + escapeHtml(item.split('_').join(' ')) + '</span>';
+            }).join('');
+        }
+
+        function confidenceRank(confidence) {
+            if (confidence === 'high') return 3;
+            if (confidence === 'medium') return 2;
+            return 1;
+        }
+
+        function renderSuggestions() {
+            const grid = document.getElementById('suggestion-grid');
+            const empty = document.getElementById('empty-state');
+            const query = (document.getElementById('suggestion-search').value || '').toLowerCase().trim();
+            const confidenceFilter = document.getElementById('confidence-filter').value;
+            const bookfusionFilter = document.getElementById('bookfusion-filter').value;
+
+            const visible = suggestionData.filter(function(suggestion) {
+                if (selectedSourceId && suggestion.source_id !== selectedSourceId) return false;
+                if (bookfusionFilter === 'bookfusion' && !suggestion.has_bookfusion_evidence) return false;
+
+                const topConfidence = suggestion.top_match ? suggestion.top_match.confidence : 'low';
+                if (confidenceFilter === 'high' && topConfidence !== 'high') return false;
+                if (confidenceFilter === 'medium' && confidenceRank(topConfidence) < 2) return false;
+
+                if (!query) return true;
+                const haystack = [
+                    suggestion.title,
+                    suggestion.author,
+                    ...(suggestion.matches || []).map(function(match) {
+                        return [match.title, match.author, match.filename, match.source_family, (match.evidence || []).join(' ')].join(' ');
+                    })
+                ].join(' ').toLowerCase();
+                return haystack.indexOf(query) !== -1;
             });
-            var countEl = document.getElementById('suggestion-count');
-            if (countEl) countEl.textContent = visible + ' suggestion' + (visible !== 1 ? 's' : '');
+
+            document.getElementById('visible-count').textContent = visible.length;
+            if (!visible.length) {
+                grid.innerHTML = '';
+                empty.style.display = '';
+                return;
+            }
+
+            empty.style.display = 'none';
+            grid.innerHTML = visible.map(function(suggestion) {
+                const matches = (suggestion.matches || []).map(function(match, index) {
+                    const confidenceClass = 'chip--confidence-' + (match.confidence || 'low');
+                    const actions = [];
+
+                    if (match.source_family === 'bookfusion') {
+                        actions.push('<button type="button" class="btn btn-sm" onclick="linkBookFusion(' + JSON.stringify(suggestion.source_id) + ', ' + index + ')">Link BookFusion</button>');
+                        if (match.bookfusion_ids && match.bookfusion_ids.length) {
+                            actions.push('<button type="button" class="btn btn-sm btn-purple" onclick=\'addBookFusionToDashboard(' + JSON.stringify(JSON.stringify(match.bookfusion_ids)) + ')\'>Add BF Book</button>');
+                        }
+                    } else {
+                        actions.push('<a class="btn btn-sm" href="/match?abs_id=' + encodeURIComponent(suggestion.source_id) + '&search=' + encodeURIComponent(suggestion.title || '') + '">Create Mapping</a>');
+                    }
+
+                    return '' +
+                        '<div class="candidate">' +
+                            '<div class="candidate-top">' +
+                                '<div>' +
+                                    '<div class="candidate-title">' + escapeHtml(match.title || match.filename || 'Untitled') + '</div>' +
+                                    '<div class="candidate-author">' + escapeHtml(match.author || match.source_family || '') + '</div>' +
+                                '</div>' +
+                                '<div class="candidate-score">' +
+                                    '<span class="chip ' + confidenceClass + '">' + escapeHtml(match.confidence || 'low') + '</span>' +
+                                    '<span>' + Math.round((match.score || 0) * 100) + '%</span>' +
+                                '</div>' +
+                            '</div>' +
+                            '<div class="badge-row">' +
+                                '<span class="chip">' + escapeHtml(match.source_family || 'unknown') + '</span>' +
+                                formatEvidence(match.evidence) +
+                            '</div>' +
+                            (match.highlight_count ? '<div class="help-note" style="margin-top:8px;">BookFusion highlights: ' + escapeHtml(match.highlight_count) + '</div>' : '') +
+                            '<div class="candidate-actions">' + actions.join('') + '</div>' +
+                        '</div>';
+                }).join('');
+
+                return '' +
+                    '<article class="suggestion-card" data-has-bookfusion="' + (suggestion.has_bookfusion_evidence ? 'true' : 'false') + '">' +
+                        '<div class="suggestion-source">' +
+                            (suggestion.cover_url
+                                ? '<img src="' + escapeHtml(suggestion.cover_url) + '" alt="" class="suggestion-cover" loading="lazy">'
+                                : '<div class="suggestion-cover"></div>') +
+                            '<div class="suggestion-meta">' +
+                                '<h3>' + escapeHtml(suggestion.title) + '</h3>' +
+                                '<p>' + escapeHtml(suggestion.author || 'Unknown author') + '</p>' +
+                                '<div class="badge-row">' +
+                                    '<span class="chip">' + escapeHtml((suggestion.matches || []).length) + ' candidates</span>' +
+                                    (suggestion.has_bookfusion_evidence ? '<span class="chip chip--bookfusion">BookFusion evidence</span>' : '') +
+                                '</div>' +
+                            '</div>' +
+                        '</div>' +
+                        '<div class="candidate-list">' + matches + '</div>' +
+                        '<div class="suggestion-actions">' +
+                            '<button type="button" class="btn btn-sm" onclick="dismissSuggestion(' + JSON.stringify(suggestion.source_id) + ', this)">Dismiss</button>' +
+                            '<button type="button" class="btn btn-sm btn-danger" onclick="ignoreSuggestion(' + JSON.stringify(suggestion.source_id) + ', this)">Never Ask</button>' +
+                        '</div>' +
+                    '</article>';
+            }).join('');
         }
 
         function dismissSuggestion(sourceId, btn) {
-            if (!confirm('Dismiss this suggestion? It can be re-suggested later.')) return;
-            _actOnSuggestion('/api/suggestions/' + encodeURIComponent(sourceId) + '/dismiss', sourceId, btn);
+            if (!confirm('Dismiss this suggestion? It can appear again after a future rescan.')) return;
+            actOnSuggestion('/api/suggestions/' + encodeURIComponent(sourceId) + '/dismiss', btn, sourceId);
         }
 
         function ignoreSuggestion(sourceId, btn) {
-            if (!confirm('Permanently ignore this book? It will never be suggested again.')) return;
-            _actOnSuggestion('/api/suggestions/' + encodeURIComponent(sourceId) + '/ignore', sourceId, btn);
+            if (!confirm('Ignore this suggestion permanently?')) return;
+            actOnSuggestion('/api/suggestions/' + encodeURIComponent(sourceId) + '/ignore', btn, sourceId);
         }
 
-        function _actOnSuggestion(url, sourceId, btn) {
-            btn.disabled = true;
+        function actOnSuggestion(url, btn, sourceId) {
+            if (btn) btn.disabled = true;
             fetch(url, { method: 'POST' })
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
-                    if (data.success) {
-                        var card = document.querySelector('[data-source-id="' + CSS.escape(sourceId) + '"]');
-                        if (card) {
-                            card.style.transition = 'opacity 0.3s, transform 0.3s';
-                            card.style.opacity = '0';
-                            card.style.transform = 'scale(0.95)';
-                            setTimeout(function() {
-                                card.remove();
-                                // Update count
-                                var remaining = document.querySelectorAll('.suggestion-card');
-                                var countEl = document.getElementById('suggestion-count');
-                                if (countEl) countEl.textContent = remaining.length + ' suggestion' + (remaining.length !== 1 ? 's' : '');
-                                if (remaining.length === 0) location.reload();
-                            }, 300);
-                        }
-                    } else {
-                        btn.disabled = false;
-                        alert('Failed: ' + (data.error || 'Unknown error'));
+                    if (!data.success) throw new Error(data.error || 'Request failed');
+                    suggestionData = suggestionData.filter(function(item) {
+                        return item.source_id !== sourceId;
+                    });
+                    if (selectedSourceId) {
+                        window.location.href = '/suggestions';
+                        return;
                     }
+                    renderSuggestions();
                 })
                 .catch(function(err) {
-                    btn.disabled = false;
-                    alert('Error: ' + err);
+                    if (btn) btn.disabled = false;
+                    alert(err.message || err);
                 });
         }
+
+        function linkBookFusion(sourceId, matchIndex) {
+            fetch('/api/suggestions/' + encodeURIComponent(sourceId) + '/link-bookfusion', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ match_index: matchIndex })
+            })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (!data.success) throw new Error(data.error || 'Link failed');
+                    location.reload();
+                })
+                .catch(function(err) {
+                    alert(err.message || err);
+                });
+        }
+
+        function addBookFusionToDashboard(bookfusionIdsJson) {
+            const bookfusionIds = JSON.parse(bookfusionIdsJson);
+            fetch('/api/bookfusion/add-to-dashboard', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ bookfusion_ids: bookfusionIds })
+            })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (!data.success) throw new Error(data.error || 'Add failed');
+                    window.location.href = '/';
+                })
+                .catch(function(err) {
+                    alert(err.message || err);
+                });
+        }
+
+        function rescanSuggestions() {
+            const btn = document.getElementById('rescan-btn');
+            const status = document.getElementById('rescan-status');
+            btn.disabled = true;
+            status.textContent = 'Queued library rescan...';
+            fetch('/api/suggestions/rescan', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({})
+            })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (!data.success) throw new Error(data.error || 'Rescan failed');
+                    if (data.rate_limited) {
+                        status.textContent = data.message || ('Please wait ' + (data.next_allowed_in || 0) + 's before rescanning again.');
+                        btn.disabled = false;
+                        return;
+                    }
+                    status.textContent = data.message || 'Suggestions rescan started...';
+                    pollRescanStatus();
+                })
+                .catch(function(err) {
+                    status.textContent = err.message || String(err);
+                    btn.disabled = false;
+                });
+        }
+
+        function pollRescanStatus() {
+            if (rescanPollTimer) {
+                clearTimeout(rescanPollTimer);
+                rescanPollTimer = null;
+            }
+            fetch('/api/suggestions/rescan-status')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (!data.success) throw new Error(data.error || 'Status failed');
+                    const status = document.getElementById('rescan-status');
+                    const btn = document.getElementById('rescan-btn');
+
+                    if (data.running) {
+                        status.textContent = data.message || 'Rescan in progress...';
+                        btn.disabled = true;
+                        rescanPollTimer = setTimeout(pollRescanStatus, 1500);
+                        return;
+                    }
+
+                    if (data.phase === 'complete') {
+                        status.textContent = data.message || 'Rescan complete.';
+                        location.reload();
+                        return;
+                    }
+
+                    if (data.rate_limited) {
+                        status.textContent = data.message || ('Please wait ' + (data.next_allowed_in || 0) + 's before rescanning again.');
+                    } else if (data.message) {
+                        status.textContent = data.message;
+                    }
+                    btn.disabled = false;
+                })
+                .catch(function(err) {
+                    document.getElementById('rescan-status').textContent = err.message || String(err);
+                    document.getElementById('rescan-btn').disabled = false;
+                });
+        }
+
+        renderSuggestions();
+        pollRescanStatus();
     </script>
 </body>
 

@@ -3,9 +3,14 @@ import logging
 import os
 import re
 import threading
+import time
 import traceback
+from datetime import UTC
+from difflib import SequenceMatcher
+from pathlib import Path
 
 from src.db.models import PendingSuggestion
+from src.utils.string_utils import clean_book_title
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +36,318 @@ class SuggestionService:
 
         self._suggestion_lock = threading.Lock()
         self._suggestion_in_flight: set[str] = set()
+        self._rescan_lock = threading.Lock()
+        self._rescan_thread: threading.Thread | None = None
+        self._rescan_status = {
+            "running": False,
+            "queued": False,
+            "last_started_at": None,
+            "last_finished_at": None,
+            "phase": "idle",
+            "message": "",
+            "created": 0,
+            "updated": 0,
+            "deleted": 0,
+            "total": 0,
+            "bookfusion_catalog": False,
+            "rate_limited": False,
+            "next_allowed_in": 0,
+        }
+
+    SOURCE_PRIORITY = {
+        "booklore": 0.06,
+        "cwa": 0.03,
+        "filesystem": 0.0,
+        "bookfusion": -0.03,
+    }
+
+    def _normalize_title(self, title: str | None) -> str:
+        if not title:
+            return ""
+        title = clean_book_title(title)
+        title = re.sub(r'\s*[\(\[].*?[\)\]]', '', title)
+        title = re.sub(r'\.(epub|mobi|azw3?|pdf|fb2|cbz|cbr|md)$', '', title, flags=re.IGNORECASE)
+        title = re.sub(r'[^\w\s]', ' ', title.lower())
+        return ' '.join(title.split())
+
+    def _normalize_author(self, author: str | None) -> str:
+        if not author:
+            return ""
+        author = re.sub(r'[^\w\s,]', ' ', author.lower())
+        return ' '.join(author.split())
+
+    def _extract_title_numbers(self, normalized_title: str) -> set[str]:
+        return {token for token in normalized_title.split() if token.isdigit()}
+
+    def _compute_match_score(self, source_title: str, source_author: str, candidate_title: str, candidate_author: str) -> tuple[float, list[str]]:
+        norm_source_title = self._normalize_title(source_title)
+        norm_source_author = self._normalize_author(source_author)
+        norm_candidate_title = self._normalize_title(candidate_title)
+        norm_candidate_author = self._normalize_author(candidate_author)
+
+        if not norm_source_title or not norm_candidate_title:
+            return 0.0, []
+
+        title_score = SequenceMatcher(None, norm_source_title, norm_candidate_title).ratio()
+        evidence = []
+
+        if norm_source_title == norm_candidate_title:
+            title_score = max(title_score, 0.99)
+            evidence.append("title_match")
+        elif norm_source_title in norm_candidate_title or norm_candidate_title in norm_source_title:
+            title_score = max(title_score, 0.92)
+            evidence.append("title_partial")
+
+        author_score = 0.0
+        if norm_source_author and norm_candidate_author:
+            author_score = SequenceMatcher(None, norm_source_author, norm_candidate_author).ratio()
+            if norm_source_author == norm_candidate_author:
+                author_score = max(author_score, 0.98)
+                evidence.append("author_match")
+            elif norm_source_author in norm_candidate_author or norm_candidate_author in norm_source_author:
+                author_score = max(author_score, 0.88)
+                evidence.append("author_partial")
+
+        score = (title_score * 0.8) + (author_score * 0.2 if norm_source_author and norm_candidate_author else 0.0)
+
+        source_numbers = self._extract_title_numbers(norm_source_title)
+        candidate_numbers = self._extract_title_numbers(norm_candidate_title)
+        if source_numbers != candidate_numbers and (source_numbers or candidate_numbers):
+            score -= 0.18
+            evidence.append("series_penalty")
+
+        return max(score, 0.0), evidence
+
+    def _score_to_confidence(self, score: float) -> str:
+        if score >= 0.93:
+            return "high"
+        if score >= 0.82:
+            return "medium"
+        return "low"
+
+    def _get_bookfusion_context(self) -> dict:
+        bf_books = self.database_service.get_bookfusion_books()
+        linked_abs_ids = self.database_service.get_bookfusion_linked_abs_ids()
+        visible_books = [b for b in bf_books if not getattr(b, 'hidden', False)]
+        by_title_author = {}
+        by_title = {}
+        for book in visible_books:
+            if book.matched_abs_id:
+                continue
+            norm_title = self._normalize_title(book.title or book.filename or "")
+            norm_author = self._normalize_author(book.authors or "")
+            if not norm_title:
+                continue
+            if norm_author:
+                by_title_author.setdefault((norm_title, norm_author), []).append(book)
+            by_title.setdefault(norm_title, []).append(book)
+        return {
+            "books": visible_books,
+            "linked_abs_ids": linked_abs_ids,
+            "by_title_author": by_title_author,
+            "by_title": by_title,
+            "has_catalog": bool(visible_books),
+        }
+
+    def _update_rescan_status(self, **kwargs) -> None:
+        with self._rescan_lock:
+            self._rescan_status.update(kwargs)
+
+    def get_rescan_status(self) -> dict:
+        with self._rescan_lock:
+            status = dict(self._rescan_status)
+        min_interval = int(os.environ.get("SUGGESTIONS_RESCAN_MIN_INTERVAL_SECONDS", "300"))
+        last_finished_at = status.get("last_finished_at") or 0
+        if not status.get("running") and last_finished_at:
+            elapsed = max(0, time.time() - last_finished_at)
+            status["next_allowed_in"] = max(0, min_interval - int(elapsed))
+        return status
+
+    def request_rescan_library_suggestions(self, force: bool = False) -> dict:
+        min_interval = int(os.environ.get("SUGGESTIONS_RESCAN_MIN_INTERVAL_SECONDS", "300"))
+        with self._rescan_lock:
+            if self._rescan_thread and self._rescan_thread.is_alive():
+                self._rescan_status["queued"] = False
+                self._rescan_status["rate_limited"] = False
+                return dict(self._rescan_status)
+
+            last_finished_at = self._rescan_status.get("last_finished_at") or 0
+            elapsed = time.time() - last_finished_at if last_finished_at else min_interval
+            if not force and elapsed < min_interval:
+                self._rescan_status.update({
+                    "running": False,
+                    "queued": False,
+                    "rate_limited": True,
+                    "next_allowed_in": max(0, min_interval - int(elapsed)),
+                    "message": "Rescan recently completed. Please wait before running it again.",
+                })
+                return dict(self._rescan_status)
+
+            self._rescan_status.update({
+                "running": True,
+                "queued": True,
+                "rate_limited": False,
+                "next_allowed_in": 0,
+                "last_started_at": time.time(),
+                "phase": "queued",
+                "message": "Queued suggestions rescan.",
+                "created": 0,
+                "updated": 0,
+                "deleted": 0,
+                "total": 0,
+            })
+            self._rescan_thread = threading.Thread(
+                target=self._run_rescan_job,
+                daemon=True,
+                name="suggestions-rescan",
+            )
+            self._rescan_thread.start()
+            return dict(self._rescan_status)
+
+    def _build_library_candidates(self, bookfusion_context: dict | None = None, include_filesystem: bool = True) -> list[dict]:
+        candidates = []
+        seen = set()
+
+        self._update_rescan_status(phase="loading_booklore", message="Loading Booklore candidates...")
+        for bl_client in self._booklore_clients:
+            if not (bl_client and bl_client.is_configured()):
+                continue
+            try:
+                for book in bl_client.get_all_books() or []:
+                    filename = book.get('fileName', '')
+                    if not filename or not filename.lower().endswith('.epub'):
+                        continue
+                    dedupe_key = ("booklore", bl_client.source_tag, filename.lower())
+                    if dedupe_key in seen:
+                        continue
+                    seen.add(dedupe_key)
+                    candidates.append({
+                        "source_family": "booklore",
+                        "source": "booklore",
+                        "source_key": f"booklore:{bl_client.source_tag}:{filename}",
+                        "title": book.get('title') or Path(filename).stem,
+                        "author": book.get('authors') or '',
+                        "filename": filename,
+                        "id": str(book.get('id') or ''),
+                        "source_tag": bl_client.source_tag,
+                        "action_kind": "create_mapping",
+                    })
+            except Exception as e:
+                logger.warning(f"Booklore cache scan failed during suggestions rescan: {e}")
+
+        if include_filesystem and self.books_dir and self.books_dir.exists():
+            try:
+                batch_size = max(1, int(os.environ.get("SUGGESTIONS_RESCAN_FS_BATCH_SIZE", "200")))
+                pause_ms = max(0, int(os.environ.get("SUGGESTIONS_RESCAN_PAUSE_MS", "20")))
+                self._update_rescan_status(phase="loading_filesystem", message="Scanning local EPUB files...")
+                for idx, epub in enumerate(self.books_dir.rglob("*.epub"), start=1):
+                    dedupe_key = ("filesystem", epub.name.lower())
+                    if dedupe_key in seen:
+                        continue
+                    seen.add(dedupe_key)
+                    candidates.append({
+                        "source_family": "filesystem",
+                        "source": "filesystem",
+                        "source_key": f"filesystem:{epub.name}",
+                        "title": epub.stem,
+                        "author": '',
+                        "filename": epub.name,
+                        "path": str(epub),
+                        "action_kind": "create_mapping",
+                    })
+                    if idx % batch_size == 0:
+                        self._update_rescan_status(
+                            phase="loading_filesystem",
+                            message=f"Scanning local EPUB files... {idx} processed",
+                        )
+                        if pause_ms:
+                            time.sleep(pause_ms / 1000.0)
+            except Exception as e:
+                logger.warning(f"Filesystem scan failed during suggestions rescan: {e}")
+
+        if bookfusion_context:
+            self._update_rescan_status(phase="loading_bookfusion", message="Loading BookFusion candidates...")
+            for book in bookfusion_context["books"]:
+                dedupe_key = ("bookfusion", book.bookfusion_id)
+                if dedupe_key in seen:
+                    continue
+                seen.add(dedupe_key)
+                highlight_range = self.database_service.get_bookfusion_highlight_date_range([book.bookfusion_id])
+                last_highlighted_at = None
+                if highlight_range and highlight_range[1]:
+                    try:
+                        last_highlighted_at = highlight_range[1].astimezone(UTC).isoformat()
+                    except Exception:
+                        last_highlighted_at = highlight_range[1].isoformat()
+                candidates.append({
+                    "source_family": "bookfusion",
+                    "source": "bookfusion",
+                    "source_key": f"bookfusion:{book.bookfusion_id}",
+                    "title": book.title or book.filename or '',
+                    "author": book.authors or '',
+                    "bookfusion_ids": [book.bookfusion_id],
+                    "highlight_count": book.highlight_count or 0,
+                    "last_highlighted_at": last_highlighted_at,
+                    "action_kind": "link_existing",
+                })
+
+        return candidates
+
+    def _apply_bookfusion_evidence(self, source_title: str, source_author: str, match: dict, bookfusion_context: dict) -> dict:
+        evidence = list(match.get("evidence") or [])
+        score = float(match.get("score") or 0.0)
+        norm_title = self._normalize_title(source_title)
+        norm_author = self._normalize_author(source_author)
+
+        corroborating_books = []
+        if norm_title and norm_author:
+            corroborating_books.extend(bookfusion_context["by_title_author"].get((norm_title, norm_author), []))
+        if not corroborating_books and norm_title:
+            corroborating_books.extend(bookfusion_context["by_title"].get(norm_title, []))
+
+        if match.get("source_family") == "bookfusion":
+            if match.get("highlight_count", 0) > 0:
+                score += min(0.08, 0.02 + (match.get("highlight_count", 0) * 0.01))
+                evidence.append("bookfusion_highlights")
+            evidence.append("bookfusion_library")
+        elif corroborating_books:
+            score += 0.04
+            evidence.append("bookfusion_library")
+            total_highlights = sum((b.highlight_count or 0) for b in corroborating_books)
+            if total_highlights:
+                score += min(0.06, 0.02 + (total_highlights * 0.01))
+                evidence.append("bookfusion_highlights")
+
+        match["score"] = min(score, 0.995)
+        match["evidence"] = sorted(set(evidence))
+        match["confidence"] = self._score_to_confidence(match["score"])
+        return match
+
+    def _rank_candidates_for_book(self, source_title: str, source_author: str, candidates: list[dict], bookfusion_context: dict | None = None) -> list[dict]:
+        ranked = []
+        for candidate in candidates:
+            score, evidence = self._compute_match_score(
+                source_title,
+                source_author,
+                candidate.get("title") or candidate.get("filename") or "",
+                candidate.get("author") or "",
+            )
+            score += self.SOURCE_PRIORITY.get(candidate.get("source_family", ""), 0.0)
+            if score < 0.72:
+                continue
+
+            match = {
+                **candidate,
+                "score": min(score, 0.995),
+                "confidence": self._score_to_confidence(score),
+                "evidence": sorted(set(evidence)),
+            }
+            if bookfusion_context:
+                match = self._apply_bookfusion_evidence(source_title, source_author, match, bookfusion_context)
+            ranked.append(match)
+
+        ranked.sort(key=lambda m: (m.get("score", 0.0), m.get("source_family") != "booklore", m.get("highlight_count", 0)), reverse=True)
+        return ranked[:6]
 
     def queue_suggestion(self, abs_id: str) -> None:
         """Queue suggestion discovery for an unmapped book (called from socket listener)."""
@@ -43,8 +360,7 @@ class SuggestionService:
         if abs_id in mapped_ids:
             return
 
-        # Already has a suggestion (pending, dismissed, or ignored)?
-        if self.database_service.suggestion_exists(abs_id):
+        if self.database_service.is_suggestion_ignored(abs_id):
             return
 
         logger.info(f"Socket.IO: Queuing suggestion discovery for '{abs_id[:12]}...'")
@@ -76,8 +392,7 @@ class SuggestionService:
                 if duration > 0:
                     pct = current_time / duration
                     if pct > 0.01:
-                        # Check if a suggestion already exists (pending, dismissed, or ignored)
-                        if self.database_service.suggestion_exists(abs_id):
+                        if self.database_service.is_suggestion_ignored(abs_id):
                             logger.debug(f"Skipping {abs_id}: suggestion already exists/dismissed")
                             continue
 
@@ -204,7 +519,7 @@ class SuggestionService:
         best = next((m for m in matches if m.get('confidence') == 'high'), matches[0])
         abs_id = best['abs_id']
 
-        if self.database_service.suggestion_exists(abs_id):
+        if self.database_service.is_suggestion_ignored(abs_id):
             return
 
         cover = f"/api/cover-proxy/{abs_id}"
@@ -219,6 +534,120 @@ class SuggestionService:
         )
         self.database_service.save_pending_suggestion(suggestion)
         logger.info(f"Reverse suggestion: '{title}' has matching audiobook '{best.get('title')}' in ABS")
+
+    def _run_rescan_job(self) -> None:
+        try:
+            self._update_rescan_status(
+                running=True,
+                queued=False,
+                phase="starting",
+                message="Preparing suggestions rescan...",
+                rate_limited=False,
+            )
+            stats = self.rescan_library_suggestions()
+            self._update_rescan_status(
+                running=False,
+                queued=False,
+                phase="complete",
+                message=f"Rescan complete. {stats['total']} suggestion(s) available.",
+                last_finished_at=time.time(),
+                **stats,
+            )
+        except Exception as e:
+            logger.error(f"Suggestions background rescan failed: {e}")
+            logger.debug(traceback.format_exc())
+            self._update_rescan_status(
+                running=False,
+                queued=False,
+                phase="error",
+                message=str(e),
+                last_finished_at=time.time(),
+            )
+
+    def rescan_library_suggestions(self) -> dict:
+        """Rebuild suggestions from cached library metadata without live BookFusion calls."""
+        if os.environ.get("SUGGESTIONS_ENABLED", "true").lower() != "true":
+            return {"created": 0, "updated": 0, "deleted": 0, "total": 0, "bookfusion_catalog": False}
+
+        if not self.abs_client:
+            return {"created": 0, "updated": 0, "deleted": 0, "total": 0, "bookfusion_catalog": False}
+
+        try:
+            self._update_rescan_status(phase="loading_abs", message="Loading ABS audiobooks...")
+            all_abs_books = self.abs_client.get_all_audiobooks() or []
+        except Exception as e:
+            logger.warning(f"Suggestions rescan failed to load ABS audiobooks: {e}")
+            return {"created": 0, "updated": 0, "deleted": 0, "total": 0, "bookfusion_catalog": False}
+
+        mapped_ids = {b.abs_id for b in self.database_service.get_all_books()}
+        existing_pending = {
+            s.source_id: s for s in self.database_service.get_all_pending_suggestions()
+        }
+        bookfusion_context = self._get_bookfusion_context()
+        candidates = self._build_library_candidates(bookfusion_context=bookfusion_context, include_filesystem=True)
+
+        created = 0
+        updated = 0
+        kept_ids = set()
+        total_books = len(all_abs_books)
+
+        self._update_rescan_status(phase="scoring", message=f"Scoring {total_books} ABS books...")
+        for idx, abs_book in enumerate(all_abs_books, start=1):
+            abs_id = abs_book.get('id')
+            if not abs_id or abs_id in mapped_ids or self.database_service.is_suggestion_ignored(abs_id):
+                continue
+
+            meta = abs_book.get('media', {}).get('metadata', {})
+            title = meta.get('title') or ''
+            author = meta.get('authorName') or ''
+            matches = self._rank_candidates_for_book(title, author, candidates, bookfusion_context=bookfusion_context)
+
+            if not matches:
+                continue
+
+            kept_ids.add(abs_id)
+            suggestion = PendingSuggestion(
+                source_id=abs_id,
+                title=title,
+                author=author,
+                cover_url=f"/api/cover-proxy/{abs_id}",
+                matches_json=json.dumps(matches),
+                status='pending',
+            )
+            if abs_id in existing_pending:
+                updated += 1
+            else:
+                created += 1
+            self.database_service.save_pending_suggestion(suggestion)
+
+            if idx % 25 == 0:
+                self._update_rescan_status(
+                    phase="scoring",
+                    message=f"Scoring ABS books... {idx}/{total_books}",
+                    created=created,
+                    updated=updated,
+                )
+                time.sleep(0.01)
+
+        deleted = 0
+        self._update_rescan_status(phase="cleanup", message="Cleaning stale pending suggestions...")
+        for source_id in list(existing_pending.keys()):
+            if source_id not in kept_ids:
+                if self.database_service.delete_pending_suggestion(source_id):
+                    deleted += 1
+
+        total = len(self.database_service.get_all_pending_suggestions())
+        logger.info(
+            "Suggestions rescan completed: created=%s updated=%s deleted=%s total=%s",
+            created, updated, deleted, total
+        )
+        return {
+            "created": created,
+            "updated": updated,
+            "deleted": deleted,
+            "total": total,
+            "bookfusion_catalog": bookfusion_context["has_catalog"],
+        }
 
     def _create_suggestion(self, abs_id, progress_data):
         """Create a new suggestion for an unmapped book."""
@@ -237,148 +666,51 @@ class SuggestionService:
 
             media = item.get('media', {})
             metadata = media.get('metadata', {})
-            title = metadata.get('title')
-            author = metadata.get('authorName')
-            # Use local proxy for cover image to ensure accessibility
+            title = metadata.get('title') or ''
+            author = metadata.get('authorName') or ''
             cover = f"/api/cover-proxy/{abs_id}"
+            logger.debug(f"Checking suggestions for '{title}' (Author: {author})")
 
-            # Clean title for better matching (remove text in parens/brackets)
-            search_title = title
-            if title:
-                # Remove (Unabridged), [Dramatized Adaptation], etc.
-                search_title = re.sub(r'\s*[\(\[].*?[\)\]]', '', title).strip()
-                if search_title != title:
-                    logger.debug(f"cleaned title for search: '{title}' -> '{search_title}'")
+            bookfusion_context = self._get_bookfusion_context()
+            matches = self._rank_candidates_for_book(
+                title,
+                author,
+                self._build_library_candidates(bookfusion_context=bookfusion_context),
+                bookfusion_context=bookfusion_context,
+            )
 
-            logger.debug(f"Checking suggestions for '{title}' (Search: '{search_title}', Author: {author})")
-
-            matches = []
-
-            found_filenames = set()
-
-            # 2a. Search Booklore (all instances)
-            for bl_client in self._booklore_clients:
-                if not (bl_client and bl_client.is_configured()):
-                    continue
-                try:
-                    bl_results = bl_client.search_books(search_title)
-                    logger.debug(f"Booklore ({bl_client.source_tag}) returned {len(bl_results)} results for '{search_title}'")
-                    for b in bl_results:
-                         # Filter for EPUBs
-                         fname = b.get('fileName', '')
-                         if fname.lower().endswith('.epub'):
-                             found_filenames.add(fname)
-                             matches.append({
-                                 "source": "booklore",
-                                 "title": b.get('title'),
-                                 "author": b.get('authors'),
-                                 "filename": fname,
-                                 "id": str(b.get('id')),
-                                 "confidence": "high" if search_title.lower() in b.get('title', '').lower() else "medium"
-                             })
-                except Exception as e:
-                    logger.warning(f"Booklore search failed during suggestion: {e}")
-
-            # 2b. Search Local Filesystem
-            if self.books_dir and self.books_dir.exists():
-                try:
-                    clean_title = search_title.lower()
-                    fs_matches = 0
-                    for epub in self.books_dir.rglob("*.epub"):
-                         if epub.name in found_filenames:
-                             continue
-                         if clean_title in epub.name.lower():
-                             fs_matches += 1
-                             matches.append({
-                                 "source": "filesystem",
-                                 "filename": epub.name,
-                                 "path": str(epub),
-                                 "confidence": "high"
-                             })
-                    logger.debug(f"Filesystem found {fs_matches} matches")
-                except Exception as e:
-                    logger.warning(f"Filesystem search failed during suggestion: {e}")
-
-            # 2c. Search Storyteller
-            if self.storyteller_client and self.storyteller_client.is_configured():
-                try:
-                    st_results = self.storyteller_client.search_books(search_title)
-                    if st_results:
-                        logger.debug(f"Storyteller: Found {len(st_results)} result(s) for '{search_title}'")
-                        for sr in st_results:
-                            matches.append({
-                                "source": "storyteller",
-                                "title": sr.get('title'),
-                                "author": ', '.join(sr.get('authors', [])),
-                                "uuid": sr.get('uuid'),
-                                "confidence": "high" if search_title.lower() in sr.get('title', '').lower() else "medium"
-                            })
-                except Exception as e:
-                    logger.warning(f"Storyteller search failed during suggestion: {e}")
-
-            # 2d. ABS Direct Match (check if audiobook item has ebook files)
-            if self.abs_client:
-                try:
-                    ebook_files = self.abs_client.get_ebook_files(abs_id)
-                    if ebook_files:
-                        logger.debug(f"ABS Direct: Found {len(ebook_files)} ebook file(s) in audiobook item")
-                        for ef in ebook_files:
-                            matches.append({
-                                "source": "abs_direct",
-                                "title": title,
-                                "author": author,
-                                "filename": f"{abs_id}_direct.{ef['ext']}",
-                                "stream_url": ef['stream_url'],
-                                "ext": ef['ext'],
-                                "confidence": "high"
-                            })
-                except Exception as e:
-                    logger.warning(f"ABS Direct search failed during suggestion: {e}")
-
-            # 2e. CWA Search (Calibre-Web Automated via OPDS)
             if self.library_service and self.library_service.cwa_client and self.library_service.cwa_client.is_configured():
                 try:
-                    query = f"{search_title}"
+                    query = title
                     if author:
-                        query += f" {author}"
+                        query = f"{query} {author}"
                     cwa_results = self.library_service.cwa_client.search_ebooks(query)
-                    if cwa_results:
-                        logger.debug(f"CWA: Found {len(cwa_results)} result(s) for '{search_title}'")
-                        for cr in cwa_results:
-                            matches.append({
-                                "source": "cwa",
-                                "title": cr.get('title'),
-                                "author": cr.get('author'),
-                                "filename": f"{abs_id}_cwa.{cr.get('ext', 'epub')}",
-                                "download_url": cr.get('download_url'),
-                                "ext": cr.get('ext', 'epub'),
-                                "confidence": "high" if search_title.lower() in cr.get('title', '').lower() else "medium"
-                            })
+                    for cr in cwa_results or []:
+                        cwa_candidate = {
+                            "source_family": "cwa",
+                            "source": "cwa",
+                            "source_key": f"cwa:{cr.get('id')}",
+                            "title": cr.get('title'),
+                            "author": cr.get('author'),
+                            "filename": f"cwa_{cr.get('id', 'unknown')}.{cr.get('ext', 'epub')}",
+                            "action_kind": "create_mapping",
+                        }
+                        cwa_ranked = self._rank_candidates_for_book(
+                            title, author, [cwa_candidate], bookfusion_context=bookfusion_context
+                        )
+                        matches.extend(cwa_ranked)
                 except Exception as e:
                     logger.warning(f"CWA search failed during suggestion: {e}")
 
-            # 2f. ABS Search (search other libraries for matching ebook)
-            if self.abs_client:
-                try:
-                    abs_results = self.abs_client.search_ebooks(search_title)
-                    if abs_results:
-                        logger.debug(f"ABS Search: Found {len(abs_results)} result(s) for '{search_title}'")
-                        for ar in abs_results:
-                            # Check if this result has ebook files
-                            result_ebooks = self.abs_client.get_ebook_files(ar['id'])
-                            if result_ebooks:
-                                ef = result_ebooks[0]
-                                matches.append({
-                                    "source": "abs_search",
-                                    "title": ar.get('title'),
-                                    "author": ar.get('author'),
-                                    "filename": f"{abs_id}_abs_search.{ef['ext']}",
-                                    "stream_url": ef['stream_url'],
-                                    "ext": ef['ext'],
-                                    "confidence": "medium"
-                                })
-                except Exception as e:
-                    logger.warning(f"ABS Search failed during suggestion: {e}")
+            deduped = {}
+            for match in matches:
+                key = match.get("source_key") or match.get("filename") or match.get("title")
+                if not key:
+                    continue
+                existing = deduped.get(key)
+                if not existing or match.get("score", 0) > existing.get("score", 0):
+                    deduped[key] = match
+            matches = sorted(deduped.values(), key=lambda m: m.get("score", 0.0), reverse=True)[:6]
 
             # 3. Save to DB
             if not matches:
