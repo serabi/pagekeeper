@@ -8,7 +8,13 @@ import logging
 
 from flask import Blueprint, current_app, jsonify, request
 
-from src.blueprints.helpers import find_in_booklore, get_booklore_client, get_container, get_database_service, get_kosync_id_for_ebook
+from src.blueprints.helpers import (
+    find_in_booklore,
+    get_booklore_client,
+    get_container,
+    get_database_service,
+    get_kosync_id_for_ebook,
+)
 from src.db.models import Book
 
 logger = logging.getLogger(__name__)

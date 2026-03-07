@@ -36,7 +36,7 @@ def get_local_epub(ebook_filename, books_dir, epub_cache_dir, booklore_client=No
             logger.info(f"Found EPUB on filesystem: {candidate}")
             return candidate
     if filesystem_matches:
-        logger.warning(f"EPUB matches found but all outside search directory, skipping")
+        logger.warning("EPUB matches found but all outside search directory, skipping")
 
     # Check persistent EPUB cache
     epub_cache_dir.mkdir(parents=True, exist_ok=True)
