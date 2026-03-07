@@ -147,10 +147,27 @@
                                     <input type="text" name="ABS_SERVER" value="{{ get_val('ABS_SERVER') }}">
                                 </div>
                                 <div class="form-group full-width">
-                                    <label>Web URL (Navbar Link)</label>
-                                    <input type="text" name="ABS_WEB_URL" value="{{ get_val('ABS_WEB_URL') }}"
-                                        placeholder="https://abs.example.com">
-                                    <div class="help-text">Browser-reachable URL shown as a shortcut in the top navbar.</div>
+                                    <label>Header Links</label>
+                                    <div class="field-grid">
+                                        <div class="form-group">
+                                            <label>Internal URL</label>
+                                            <input type="text" name="ABS_WEB_URL_INTERNAL" value="{{ get_val('ABS_WEB_URL_INTERNAL') }}"
+                                                placeholder="{{ get_val('ABS_SERVER') or 'http://10.0.0.97:13378' }}">
+                                        </div>
+                                        <div class="form-group">
+                                            <label>External URL</label>
+                                            <input type="text" name="ABS_WEB_URL_EXTERNAL" value="{{ get_val('ABS_WEB_URL_EXTERNAL') or get_val('ABS_WEB_URL') }}"
+                                                placeholder="https://abs.example.com">
+                                        </div>
+                                        <div class="form-group">
+                                            <label>Header Target</label>
+                                            <select name="ABS_HEADER_URL_MODE">
+                                                <option value="internal" {% if get_val('ABS_HEADER_URL_MODE', 'external') == 'internal' %}selected{% endif %}>Use Internal</option>
+                                                <option value="external" {% if get_val('ABS_HEADER_URL_MODE', 'external') != 'internal' %}selected{% endif %}>Use External</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="help-text">Choose whether the navbar shortcut opens the LAN address or your external URL. Legacy Web URL values are preserved as the external fallback.</div>
                                 </div>
                                 <div class="form-group full-width">
                                     <label>API Token</label>
@@ -238,10 +255,27 @@
                                 <input type="text" name="STORYTELLER_API_URL" value="{{ get_val('STORYTELLER_API_URL') }}">
                             </div>
                             <div class="form-group full-width">
-                                <label>Web URL (Navbar Link)</label>
-                                <input type="text" name="STORYTELLER_WEB_URL" value="{{ get_val('STORYTELLER_WEB_URL') }}"
-                                    placeholder="https://storyteller.example.com">
-                                <div class="help-text">Browser-reachable URL shown as a shortcut in the top navbar.</div>
+                                <label>Header Links</label>
+                                <div class="field-grid">
+                                    <div class="form-group">
+                                        <label>Internal URL</label>
+                                        <input type="text" name="STORYTELLER_WEB_URL_INTERNAL" value="{{ get_val('STORYTELLER_WEB_URL_INTERNAL') }}"
+                                            placeholder="{{ get_val('STORYTELLER_API_URL') or 'http://10.0.0.97:8000' }}">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>External URL</label>
+                                        <input type="text" name="STORYTELLER_WEB_URL_EXTERNAL" value="{{ get_val('STORYTELLER_WEB_URL_EXTERNAL') or get_val('STORYTELLER_WEB_URL') }}"
+                                            placeholder="https://storyteller.example.com">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Header Target</label>
+                                        <select name="STORYTELLER_HEADER_URL_MODE">
+                                            <option value="internal" {% if get_val('STORYTELLER_HEADER_URL_MODE', 'external') == 'internal' %}selected{% endif %}>Use Internal</option>
+                                            <option value="external" {% if get_val('STORYTELLER_HEADER_URL_MODE', 'external') != 'internal' %}selected{% endif %}>Use External</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="help-text">Choose whether the navbar shortcut opens the LAN address or your external URL. Legacy Web URL values are preserved as the external fallback.</div>
                             </div>
                             <div class="form-group">
                                 <label>Username</label>
@@ -296,10 +330,27 @@
                                 <input type="text" name="BOOKLORE_SERVER" value="{{ get_val('BOOKLORE_SERVER') }}">
                             </div>
                             <div class="form-group full-width">
-                                <label>Web URL (Navbar Link)</label>
-                                <input type="text" name="BOOKLORE_WEB_URL" value="{{ get_val('BOOKLORE_WEB_URL') }}"
-                                    placeholder="https://booklore.example.com">
-                                <div class="help-text">Browser-reachable URL shown as a shortcut in the top navbar.</div>
+                                <label>Header Links</label>
+                                <div class="field-grid">
+                                    <div class="form-group">
+                                        <label>Internal URL</label>
+                                        <input type="text" name="BOOKLORE_WEB_URL_INTERNAL" value="{{ get_val('BOOKLORE_WEB_URL_INTERNAL') }}"
+                                            placeholder="{{ get_val('BOOKLORE_SERVER') or 'http://10.0.0.97:6060' }}">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>External URL</label>
+                                        <input type="text" name="BOOKLORE_WEB_URL_EXTERNAL" value="{{ get_val('BOOKLORE_WEB_URL_EXTERNAL') or get_val('BOOKLORE_WEB_URL') }}"
+                                            placeholder="https://booklore.example.com">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Header Target</label>
+                                        <select name="BOOKLORE_HEADER_URL_MODE">
+                                            <option value="internal" {% if get_val('BOOKLORE_HEADER_URL_MODE', 'external') == 'internal' %}selected{% endif %}>Use Internal</option>
+                                            <option value="external" {% if get_val('BOOKLORE_HEADER_URL_MODE', 'external') != 'internal' %}selected{% endif %}>Use External</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="help-text">Choose whether the navbar shortcut opens the LAN address or your external URL. Legacy Web URL values are preserved as the external fallback.</div>
                             </div>
                             <div class="form-group">
                                 <label>Username</label>
@@ -348,10 +399,27 @@
                                 <div class="help-text">URL to your Calibre-Web Automated instance (e.g. http://192.168.1.100:8083)</div>
                             </div>
                             <div class="form-group full-width">
-                                <label>Web URL (Navbar Link)</label>
-                                <input type="text" name="CWA_WEB_URL" value="{{ get_val('CWA_WEB_URL') }}"
-                                    placeholder="https://cwa.example.com">
-                                <div class="help-text">Browser-reachable URL shown as a shortcut in the top navbar.</div>
+                                <label>Header Links</label>
+                                <div class="field-grid">
+                                    <div class="form-group">
+                                        <label>Internal URL</label>
+                                        <input type="text" name="CWA_WEB_URL_INTERNAL" value="{{ get_val('CWA_WEB_URL_INTERNAL') }}"
+                                            placeholder="{{ get_val('CWA_SERVER') or 'http://10.0.0.97:8083' }}">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>External URL</label>
+                                        <input type="text" name="CWA_WEB_URL_EXTERNAL" value="{{ get_val('CWA_WEB_URL_EXTERNAL') or get_val('CWA_WEB_URL') }}"
+                                            placeholder="https://cwa.example.com">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Header Target</label>
+                                        <select name="CWA_HEADER_URL_MODE">
+                                            <option value="internal" {% if get_val('CWA_HEADER_URL_MODE', 'external') == 'internal' %}selected{% endif %}>Use Internal</option>
+                                            <option value="external" {% if get_val('CWA_HEADER_URL_MODE', 'external') != 'internal' %}selected{% endif %}>Use External</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="help-text">Choose whether the navbar shortcut opens the LAN address or your external URL. Legacy Web URL values are preserved as the external fallback.</div>
                             </div>
                             <div class="form-group">
                                 <label>Username</label>
@@ -484,7 +552,7 @@
                                         <input type="text" id="kosync_external_url"
                                             value="{{ get_val('KOSYNC_SERVER') }}"
                                             placeholder="http://kosync-server:5000">
-                                        <button type="button" class="btn" id="kosync_test_btn" onclick="testKosyncConnection()">Test Connection</button>
+                                        <button type="button" class="btn" id="kosync_test_btn" onclick="testKosyncConnection(this)">Test Connection</button>
                                     </div>
                                     <span id="kosync_test_result"></span>
                                 </div>
@@ -541,7 +609,7 @@
                                 <div style="display: flex; gap: 0.5rem; align-items: center;">
                                     <input type="password" id="bf_highlights_key" name="BOOKFUSION_API_KEY" placeholder="{{ '(unchanged)' if get_val('BOOKFUSION_API_KEY') else 'Paste obsidian:// link or token' }}" style="flex: 1;"
                                         oninput="extractBfToken(this)">
-                                    <button type="button" class="btn btn-sm" onclick="testBfKey('bookfusion', 'bf_highlights_key', this)">Test Highlights</button>
+                                    <button type="button" class="btn btn-sm" onclick="testConnection('bookfusion', this)">Test Highlights</button>
                                 </div>
                                 <div class="help-text">BookFusion &rarr; Settings &rarr; <strong>Obsidian</strong> &rarr; copy the connect link. The token is extracted automatically.</div>
                             </div>
@@ -549,7 +617,7 @@
                                 <label>Upload API Key</label>
                                 <div style="display: flex; gap: 0.5rem; align-items: center;">
                                     <input type="password" id="bf_upload_key" name="BOOKFUSION_UPLOAD_API_KEY" placeholder="{{ '(unchanged)' if get_val('BOOKFUSION_UPLOAD_API_KEY') else '' }}" style="flex: 1;">
-                                    <button type="button" class="btn btn-sm" onclick="testBfKey('bookfusion_upload', 'bf_upload_key', this)">Test Upload</button>
+                                    <button type="button" class="btn btn-sm" onclick="testConnection('bookfusion_upload', this)">Test Upload</button>
                                 </div>
                                 <div class="help-text">BookFusion &rarr; Settings &rarr; <strong>Calibre</strong> section. Used for book uploads.</div>
                             </div>
@@ -698,10 +766,27 @@
                                 <input type="password" name="HARDCOVER_TOKEN" placeholder="{{ '(unchanged)' if get_val('HARDCOVER_TOKEN') else '' }}">
                             </div>
                             <div class="form-group full-width">
-                                <label>Web URL (Navbar Link)</label>
-                                <input type="text" name="HARDCOVER_WEB_URL" value="{{ get_val('HARDCOVER_WEB_URL') }}"
-                                    placeholder="https://hardcover.app">
-                                <div class="help-text">Browser-reachable URL shown as a shortcut in the top navbar.</div>
+                                <label>Header Links</label>
+                                <div class="field-grid">
+                                    <div class="form-group">
+                                        <label>Internal URL</label>
+                                        <input type="text" name="HARDCOVER_WEB_URL_INTERNAL" value="{{ get_val('HARDCOVER_WEB_URL_INTERNAL') }}"
+                                            placeholder="http://10.0.0.97:3000">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>External URL</label>
+                                        <input type="text" name="HARDCOVER_WEB_URL_EXTERNAL" value="{{ get_val('HARDCOVER_WEB_URL_EXTERNAL') or get_val('HARDCOVER_WEB_URL') }}"
+                                            placeholder="https://hardcover.app">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Header Target</label>
+                                        <select name="HARDCOVER_HEADER_URL_MODE">
+                                            <option value="internal" {% if get_val('HARDCOVER_HEADER_URL_MODE', 'external') == 'internal' %}selected{% endif %}>Use Internal</option>
+                                            <option value="external" {% if get_val('HARDCOVER_HEADER_URL_MODE', 'external') != 'internal' %}selected{% endif %}>Use External</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="help-text">Choose whether the navbar shortcut opens the LAN address or your external URL. If unset, Hardcover falls back to hardcover.app.</div>
                             </div>
                             <div class="help-text" style="margin-top: 0.5rem;">
                                 When enabled, Hardcover is used to populate reading dates and provide cover
@@ -977,35 +1062,100 @@
             }
         }
 
+        function getInputValue(name) {
+            var input = document.querySelector('[name="' + name + '"]') || document.getElementById(name);
+            return input ? input.value.trim() : '';
+        }
+
+        function getServiceTestPayload(service) {
+            if (service === 'abs') {
+                return {
+                    server: getInputValue('ABS_SERVER'),
+                    token: getInputValue('ABS_KEY')
+                };
+            }
+            if (service === 'storyteller') {
+                return {
+                    api_url: getInputValue('STORYTELLER_API_URL'),
+                    user: getInputValue('STORYTELLER_USER'),
+                    password: getInputValue('STORYTELLER_PASSWORD')
+                };
+            }
+            if (service === 'booklore') {
+                return {
+                    server: getInputValue('BOOKLORE_SERVER'),
+                    user: getInputValue('BOOKLORE_USER'),
+                    password: getInputValue('BOOKLORE_PASSWORD')
+                };
+            }
+            if (service === 'cwa') {
+                return {
+                    server: getInputValue('CWA_SERVER'),
+                    user: getInputValue('CWA_USERNAME'),
+                    password: getInputValue('CWA_PASSWORD')
+                };
+            }
+            if (service === 'hardcover') {
+                return {
+                    token: getInputValue('HARDCOVER_TOKEN')
+                };
+            }
+            if (service === 'telegram') {
+                return {
+                    bot_token: getInputValue('TELEGRAM_BOT_TOKEN')
+                };
+            }
+            if (service === 'bookfusion') {
+                return {
+                    api_key: getInputValue('BOOKFUSION_API_KEY')
+                };
+            }
+            if (service === 'bookfusion_upload') {
+                return {
+                    api_key: getInputValue('BOOKFUSION_UPLOAD_API_KEY')
+                };
+            }
+            if (service === 'kosync') {
+                return {
+                    server: getInputValue('kosync_external_url'),
+                    user: getInputValue('KOSYNC_USER'),
+                    key: getInputValue('KOSYNC_KEY')
+                };
+            }
+            return {};
+        }
+
+        function setTestButtonState(btn, success, detail, originalText) {
+            if (success) {
+                btn.textContent = '\u2713 ' + (detail || 'Connected');
+                btn.classList.add('btn-success');
+            } else {
+                btn.textContent = '\u2717 ' + (detail || 'Failed');
+                btn.classList.add('btn-error');
+            }
+            setTimeout(function() {
+                btn.textContent = originalText;
+                btn.disabled = false;
+                btn.classList.remove('btn-success', 'btn-error');
+            }, 3000);
+        }
+
         /* ─── Test Connection ─── */
         function testConnection(service, btn) {
             var originalText = btn.textContent;
             btn.textContent = 'Testing...';
             btn.disabled = true;
-            fetch('/api/test-connection/' + service)
+            fetch('/api/test-connection/' + service, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(getServiceTestPayload(service))
+            })
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
-                    if (data.success) {
-                        btn.textContent = '\u2713 ' + (data.detail || 'Connected');
-                        btn.classList.add('btn-success');
-                    } else {
-                        btn.textContent = '\u2717 ' + (data.detail || 'Failed');
-                        btn.classList.add('btn-error');
-                    }
-                    setTimeout(function() {
-                        btn.textContent = originalText;
-                        btn.disabled = false;
-                        btn.classList.remove('btn-success', 'btn-error');
-                    }, 3000);
+                    setTestButtonState(btn, data.success, data.detail, originalText);
                 })
-                .catch(function(err) {
-                    btn.textContent = '\u2717 Error';
-                    btn.classList.add('btn-error');
-                    setTimeout(function() {
-                        btn.textContent = originalText;
-                        btn.disabled = false;
-                        btn.classList.remove('btn-error');
-                    }, 3000);
+                .catch(function() {
+                    setTestButtonState(btn, false, 'Error', originalText);
                 });
         }
 
@@ -1019,42 +1169,6 @@
                     if (token) input.value = token;
                 } catch(e) {}
             }
-        }
-
-        /* ─── BookFusion Key Test (sends unsaved key value) ─── */
-        function testBfKey(service, inputId, btn) {
-            var keyVal = document.getElementById(inputId).value.trim();
-            var url = '/api/test-connection/' + service;
-            var fetchOptions = { method: 'POST', headers: {'Content-Type': 'application/json'} };
-            fetchOptions.body = JSON.stringify(keyVal ? { api_key: keyVal } : {});
-            var originalText = btn.textContent;
-            btn.textContent = 'Testing...';
-            btn.disabled = true;
-            fetch(url, fetchOptions)
-                .then(function(r) { return r.json(); })
-                .then(function(data) {
-                    if (data.success) {
-                        btn.textContent = '\u2713 ' + (data.detail || 'Connected');
-                        btn.classList.add('btn-success');
-                    } else {
-                        btn.textContent = '\u2717 ' + (data.detail || 'Failed');
-                        btn.classList.add('btn-error');
-                    }
-                    setTimeout(function() {
-                        btn.textContent = originalText;
-                        btn.disabled = false;
-                        btn.classList.remove('btn-success', 'btn-error');
-                    }, 3000);
-                })
-                .catch(function(err) {
-                    btn.textContent = '\u2717 Error';
-                    btn.classList.add('btn-error');
-                    setTimeout(function() {
-                        btn.textContent = originalText;
-                        btn.disabled = false;
-                        btn.classList.remove('btn-error');
-                    }, 3000);
-                });
         }
 
         /* ─── Preserved Functions ─── */
@@ -1136,16 +1250,19 @@
             }
         }
 
-        async function testKosyncConnection() {
-            var btn = document.getElementById('kosync_test_btn');
+        async function testKosyncConnection(btn) {
             var result = document.getElementById('kosync_test_result');
             btn.disabled = true;
             btn.textContent = 'Testing...';
             result.textContent = '';
             try {
-                var r = await fetch('/api/kosync/test', { method: 'POST' });
+                var r = await fetch('/api/kosync/test', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(getServiceTestPayload('kosync'))
+                });
                 var data = await r.json();
-                result.textContent = data.success ? '\u2713 Connected' : '\u2717 Failed';
+                result.textContent = data.success ? '\u2713 ' + (data.detail || 'Connected') : '\u2717 ' + (data.detail || 'Failed');
                 result.className = 'test-result ' + (data.success ? 'success' : 'error');
             } catch (e) {
                 result.textContent = '\u2717 Error';

@@ -14,6 +14,23 @@ logger = logging.getLogger(__name__)
 
 settings_bp = Blueprint('settings_page', __name__)
 
+URL_SETTING_KEYS = {
+    'ABS_SERVER', 'BOOKLORE_SERVER', 'STORYTELLER_API_URL', 'CWA_SERVER', 'KOSYNC_SERVER',
+    'ABS_WEB_URL', 'BOOKLORE_WEB_URL', 'STORYTELLER_WEB_URL', 'CWA_WEB_URL', 'HARDCOVER_WEB_URL',
+    'ABS_WEB_URL_INTERNAL', 'ABS_WEB_URL_EXTERNAL',
+    'STORYTELLER_WEB_URL_INTERNAL', 'STORYTELLER_WEB_URL_EXTERNAL',
+    'BOOKLORE_WEB_URL_INTERNAL', 'BOOKLORE_WEB_URL_EXTERNAL',
+    'CWA_WEB_URL_INTERNAL', 'CWA_WEB_URL_EXTERNAL',
+    'HARDCOVER_WEB_URL_INTERNAL', 'HARDCOVER_WEB_URL_EXTERNAL',
+    'KOSYNC_PUBLIC_URL',
+}
+
+SECRET_SETTING_KEYS = {
+    'ABS_KEY', 'STORYTELLER_PASSWORD', 'BOOKLORE_PASSWORD',
+    'CWA_PASSWORD', 'KOSYNC_KEY', 'TELEGRAM_BOT_TOKEN', 'HARDCOVER_TOKEN',
+    'DEEPGRAM_API_KEY', 'BOOKFUSION_API_KEY', 'BOOKFUSION_UPLOAD_API_KEY',
+}
+
 
 def _is_secret_request_authorized() -> bool:
     """Authorize secret reveal requests.
@@ -45,6 +62,40 @@ def secrets_compare(a: str, b: str) -> bool:
     """Constant-time secret comparison."""
     import hmac
     return hmac.compare_digest(a, b)
+
+
+def _normalize_url_value(value: str) -> str:
+    clean_value = value.strip()
+    if not clean_value:
+        return ''
+    lower_val = clean_value.lower()
+    if not (lower_val.startswith("http://") or lower_val.startswith("https://")):
+        return f"http://{clean_value}"
+    return clean_value
+
+
+def _request_payload() -> dict:
+    if request.method == 'POST' and request.is_json:
+        return request.get_json(silent=True) or {}
+    return {}
+
+
+def _request_value(key: str, env_key: str | None = None, *, secret: bool = False, normalize_url: bool = False) -> str:
+    payload = _request_payload()
+    source_key = env_key or key
+
+    if key in payload:
+        value = str(payload.get(key, '') or '').strip()
+        if secret and value == '':
+            value = os.environ.get(source_key, '')
+        if normalize_url:
+            return _normalize_url_value(value)
+        return value
+
+    value = os.environ.get(source_key, '')
+    if normalize_url:
+        return _normalize_url_value(value)
+    return value.strip()
 
 
 @settings_bp.route('/settings', methods=['GET', 'POST'])
@@ -87,12 +138,6 @@ def settings():
 
         current_settings = database_service.get_all_settings()
 
-        secret_keys = {
-            'ABS_KEY', 'STORYTELLER_PASSWORD', 'BOOKLORE_PASSWORD',
-            'CWA_PASSWORD', 'KOSYNC_KEY', 'TELEGRAM_BOT_TOKEN', 'HARDCOVER_TOKEN',
-            'DEEPGRAM_API_KEY', 'BOOKFUSION_API_KEY', 'BOOKFUSION_UPLOAD_API_KEY',
-        }
-
         # 1. Handle Boolean Toggles
         for key in bool_keys:
             is_checked = (key in request.form)
@@ -107,20 +152,9 @@ def settings():
             if key in bool_keys:
                 continue
 
-            clean_value = value.strip()
+            clean_value = _normalize_url_value(value) if key in URL_SETTING_KEYS else value.strip()
 
-            url_keys = [
-                'ABS_SERVER', 'BOOKLORE_SERVER',
-                'STORYTELLER_API_URL', 'CWA_SERVER', 'KOSYNC_SERVER',
-                'ABS_WEB_URL', 'BOOKLORE_WEB_URL',
-                'STORYTELLER_WEB_URL', 'CWA_WEB_URL', 'HARDCOVER_WEB_URL',
-            ]
-            if key in url_keys and clean_value:
-                lower_val = clean_value.lower()
-                if not (lower_val.startswith("http://") or lower_val.startswith("https://")):
-                    clean_value = f"http://{clean_value}"
-
-            if not clean_value and key in secret_keys:
+            if not clean_value and key in SECRET_SETTING_KEYS:
                 continue  # preserve existing secret
 
             if clean_value:
@@ -204,12 +238,7 @@ def test_connection(service):
 
 def _redact_secrets(msg: str) -> str:
     """Replace any known secret values in a string with a fixed mask."""
-    secret_keys = [
-        'ABS_KEY', 'STORYTELLER_PASSWORD', 'BOOKLORE_PASSWORD',
-        'CWA_PASSWORD', 'KOSYNC_KEY', 'TELEGRAM_BOT_TOKEN', 'HARDCOVER_TOKEN',
-        'DEEPGRAM_API_KEY', 'BOOKFUSION_API_KEY', 'BOOKFUSION_UPLOAD_API_KEY',
-    ]
-    for key in secret_keys:
+    for key in SECRET_SETTING_KEYS:
         val = os.environ.get(key, '')
         if val and val in msg:
             msg = msg.replace(val, '***')
@@ -247,8 +276,8 @@ def _http_error(status_code: int) -> str:
 
 
 def _test_abs() -> tuple[bool, str]:
-    url = os.environ.get('ABS_SERVER', '').rstrip('/')
-    token = os.environ.get('ABS_KEY', '')
+    url = _request_value('server', 'ABS_SERVER', normalize_url=True).rstrip('/')
+    token = _request_value('token', 'ABS_KEY', secret=True)
     if not url or not token:
         return False, 'Server URL or API token not configured'
     resp = http_requests.get(
@@ -263,16 +292,32 @@ def _test_abs() -> tuple[bool, str]:
 
 
 def _test_kosync() -> tuple[bool, str]:
-    container = get_container()
-    kosync_client = container.kosync_client()
-    success = bool(kosync_client.check_connection())
-    return success, 'Connected' if success else 'Healthcheck failed'
+    url = _request_value('server', 'KOSYNC_SERVER', normalize_url=True).rstrip('/')
+    user = _request_value('user', 'KOSYNC_USER')
+    key = _request_value('key', 'KOSYNC_KEY', secret=True)
+    if not url or not user:
+        return False, 'Server URL or credentials not configured'
+
+    headers = {}
+    if key:
+        from src.utils.kosync_headers import hash_kosync_key, kosync_auth_headers
+        headers = kosync_auth_headers(user, hash_kosync_key(key))
+    try:
+        resp = http_requests.get(f"{url}/healthcheck", timeout=5, headers=headers)
+        if resp.status_code == 200:
+            return True, 'Connected'
+        fallback = http_requests.get(f"{url}/syncs/progress/test-connection", timeout=5, headers=headers)
+        if fallback.status_code == 200:
+            return True, 'Connected'
+        return False, _http_error(fallback.status_code)
+    except Exception as e:
+        return False, _test_conn_error(e)
 
 
 def _test_storyteller() -> tuple[bool, str]:
-    url = os.environ.get('STORYTELLER_API_URL', '').rstrip('/')
-    user = os.environ.get('STORYTELLER_USER', '')
-    pw = os.environ.get('STORYTELLER_PASSWORD', '')
+    url = _request_value('api_url', 'STORYTELLER_API_URL', normalize_url=True).rstrip('/')
+    user = _request_value('user', 'STORYTELLER_USER')
+    pw = _request_value('password', 'STORYTELLER_PASSWORD', secret=True)
     if not url or not user:
         return False, 'API URL or credentials not configured'
     resp = http_requests.post(
@@ -291,9 +336,9 @@ def _test_booklore() -> tuple[bool, str]:
 
 
 def _test_booklore_instance(prefix: str) -> tuple[bool, str]:
-    url = os.environ.get(f'{prefix}_SERVER', '').rstrip('/')
-    user = os.environ.get(f'{prefix}_USER', '')
-    pw = os.environ.get(f'{prefix}_PASSWORD', '')
+    url = _request_value('server', f'{prefix}_SERVER', normalize_url=True).rstrip('/')
+    user = _request_value('user', f'{prefix}_USER')
+    pw = _request_value('password', f'{prefix}_PASSWORD', secret=True)
     if not url or not user:
         return False, 'Server URL or credentials not configured'
     resp = http_requests.post(
@@ -307,9 +352,9 @@ def _test_booklore_instance(prefix: str) -> tuple[bool, str]:
 
 
 def _test_cwa() -> tuple[bool, str]:
-    url = os.environ.get('CWA_SERVER', '').rstrip('/')
-    user = os.environ.get('CWA_USERNAME', '')
-    pw = os.environ.get('CWA_PASSWORD', '')
+    url = _request_value('server', 'CWA_SERVER', normalize_url=True).rstrip('/')
+    user = _request_value('user', 'CWA_USERNAME')
+    pw = _request_value('password', 'CWA_PASSWORD', secret=True)
     if not url or not user:
         return False, 'Server URL or credentials not configured'
     resp = http_requests.get(
@@ -327,7 +372,7 @@ def _test_cwa() -> tuple[bool, str]:
 
 
 def _test_hardcover() -> tuple[bool, str]:
-    token = os.environ.get('HARDCOVER_TOKEN', '')
+    token = _request_value('token', 'HARDCOVER_TOKEN', secret=True)
     if not token:
         return False, 'API token not configured'
     resp = http_requests.post(
@@ -357,7 +402,7 @@ def _test_hardcover() -> tuple[bool, str]:
 
 
 def _test_telegram() -> tuple[bool, str]:
-    token = os.environ.get('TELEGRAM_BOT_TOKEN', '')
+    token = _request_value('bot_token', 'TELEGRAM_BOT_TOKEN', secret=True)
     if not token:
         return False, 'Bot token not configured'
     resp = http_requests.get(
@@ -371,22 +416,15 @@ def _test_telegram() -> tuple[bool, str]:
     return False, _http_error(resp.status_code)
 
 
-def _get_api_key_override() -> str | None:
-    """Read api_key from POST JSON body only (not query params, to avoid credential leakage)."""
-    if request.method == 'POST' and request.is_json:
-        key = (request.json or {}).get('api_key', '').strip()
-        if key:
-            return key
-    return None
-
-
 def _test_bookfusion() -> tuple[bool, str]:
     container = get_container()
     client = container.bookfusion_client()
-    return client.check_connection(api_key_override=_get_api_key_override())
+    return client.check_connection(api_key_override=_request_value('api_key', 'BOOKFUSION_API_KEY', secret=True))
 
 
 def _test_bookfusion_upload() -> tuple[bool, str]:
     container = get_container()
     client = container.bookfusion_client()
-    return client.check_upload_connection(api_key_override=_get_api_key_override())
+    return client.check_upload_connection(
+        api_key_override=_request_value('api_key', 'BOOKFUSION_UPLOAD_API_KEY', secret=True)
+    )

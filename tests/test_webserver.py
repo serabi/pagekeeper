@@ -8,10 +8,12 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 # Add project root to Python path
 sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.modules.setdefault('nh3', SimpleNamespace(clean=lambda value, tags=None, attributes=None: value))
 
 
 class MockContainer:
