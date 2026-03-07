@@ -275,7 +275,7 @@
             {# About This Book metadata — tiered display #}
             {% set meta_count = namespace(n=0) %}
             {% for f in [metadata.narrator, metadata.duration, metadata.pages, metadata.isbn,
-                         metadata.genres, metadata.bf_series, metadata.release_year] %}
+                         metadata.genres, metadata.hc_tags, metadata.bf_series, metadata.release_year] %}
                 {% if f %}{% set meta_count.n = meta_count.n + 1 %}{% endif %}
             {% endfor %}
             {% set has_description = metadata.description %}
@@ -283,74 +283,107 @@
 
             {% if rich_meta %}
             {# Full collapsible panel #}
-            <div class="r-detail-section">
-                <div class="r-meta-toggle" id="meta-toggle" role="button" tabindex="0" aria-expanded="true">
-                    <h3 class="r-section-title" style="margin-bottom: 0;">About This Book</h3>
-                    <span class="r-meta-chevron">&#9660;</span>
+            <div class="r-detail-section r-about-book">
+                <div class="r-meta-toggle r-about-book-toggle" id="meta-toggle" role="button" tabindex="0" aria-expanded="true">
+                    <div class="r-about-book-heading">
+                        <h3 class="r-section-title r-about-book-title">About This Book</h3>
+                    </div>
+                    <span class="r-meta-chevron r-about-book-chevron">&#9660;</span>
                 </div>
-                <div class="r-meta-body-inline" id="meta-body">
-                    <div class="r-meta-grid">
-                        {% if metadata.narrator %}
-                        <div class="r-meta-item">
-                            <span class="r-meta-label">Narrator</span>
-                            <span class="r-meta-value">{{ metadata.narrator }}</span>
+                <div class="r-meta-body-inline r-about-book-body" id="meta-body">
+                    <div class="r-about-book-layout {% if not metadata.description %}r-about-book-layout--full{% endif %}">
+                        <div class="r-about-book-primary">
+                            <div class="r-about-book-stats">
+                                {% if metadata.narrator %}
+                                <div class="r-about-book-stat">
+                                    <span class="r-meta-label">Narrator</span>
+                                    <span class="r-about-book-stat-value">{{ metadata.narrator }}</span>
+                                </div>
+                                {% endif %}
+                                {% if metadata.duration %}
+                                <div class="r-about-book-stat">
+                                    <span class="r-meta-label">Duration</span>
+                                    <span class="r-about-book-stat-value">{{ metadata.duration }}</span>
+                                </div>
+                                {% endif %}
+                                {% if metadata.pages %}
+                                <div class="r-about-book-stat">
+                                    <span class="r-meta-label">Pages</span>
+                                    <span class="r-about-book-stat-value">{{ metadata.pages }}</span>
+                                </div>
+                                {% endif %}
+                                {% if metadata.release_year %}
+                                <div class="r-about-book-stat">
+                                    <span class="r-meta-label">Year</span>
+                                    <span class="r-about-book-stat-value">{{ metadata.release_year }}</span>
+                                </div>
+                                {% endif %}
+                                {% if metadata.isbn %}
+                                <div class="r-about-book-stat">
+                                    <span class="r-meta-label">ISBN</span>
+                                    <span class="r-about-book-stat-value r-about-book-stat-value--mono">{{ metadata.isbn }}</span>
+                                </div>
+                                {% endif %}
+                                {% if metadata.asin %}
+                                <div class="r-about-book-stat">
+                                    <span class="r-meta-label">ASIN</span>
+                                    <span class="r-about-book-stat-value r-about-book-stat-value--mono">{{ metadata.asin }}</span>
+                                </div>
+                                {% endif %}
+                            </div>
+
+                            {% if metadata.genres or metadata.hc_tags or metadata.bf_series or metadata.bf_tags %}
+                            <div class="r-about-book-details">
+                                {% if metadata.genres %}
+                                <div class="r-about-book-detail-block">
+                                    <span class="r-meta-label">Genres</span>
+                                    <div class="r-about-book-chips">
+                                        {% for genre in metadata.genres %}
+                                        <span class="r-about-book-chip">{{ genre }}</span>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                                {% endif %}
+                                {% if metadata.hc_tags %}
+                                <div class="r-about-book-detail-block">
+                                    <span class="r-meta-label">Hardcover Tags</span>
+                                    <div class="r-about-book-chips">
+                                        {% for tag in metadata.hc_tags %}
+                                        <span class="r-about-book-chip">{{ tag }}</span>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                                {% endif %}
+                                {% if metadata.bf_series %}
+                                <div class="r-about-book-detail-block">
+                                    <span class="r-meta-label">Series</span>
+                                    <div class="r-about-book-detail-copy">{{ metadata.bf_series }}</div>
+                                </div>
+                                {% endif %}
+                                {% if metadata.bf_tags %}
+                                <div class="r-about-book-detail-block">
+                                    <span class="r-meta-label">Tags</span>
+                                    <div class="r-about-book-detail-copy">{{ metadata.bf_tags }}</div>
+                                </div>
+                                {% endif %}
+                            </div>
+                            {% endif %}
                         </div>
-                        {% endif %}
-                        {% if metadata.duration %}
-                        <div class="r-meta-item">
-                            <span class="r-meta-label">Duration</span>
-                            <span class="r-meta-value">{{ metadata.duration }}</span>
-                        </div>
-                        {% endif %}
-                        {% if metadata.pages %}
-                        <div class="r-meta-item">
-                            <span class="r-meta-label">Pages</span>
-                            <span class="r-meta-value">{{ metadata.pages }}</span>
-                        </div>
-                        {% endif %}
-                        {% if metadata.release_year %}
-                        <div class="r-meta-item">
-                            <span class="r-meta-label">Year</span>
-                            <span class="r-meta-value">{{ metadata.release_year }}</span>
-                        </div>
-                        {% endif %}
-                        {% if metadata.isbn %}
-                        <div class="r-meta-item">
-                            <span class="r-meta-label">ISBN</span>
-                            <span class="r-meta-value">{{ metadata.isbn }}</span>
-                        </div>
-                        {% endif %}
-                        {% if metadata.asin %}
-                        <div class="r-meta-item">
-                            <span class="r-meta-label">ASIN</span>
-                            <span class="r-meta-value">{{ metadata.asin }}</span>
-                        </div>
-                        {% endif %}
-                        {% if metadata.genres %}
-                        <div class="r-meta-item r-meta-wide">
-                            <span class="r-meta-label">Genres</span>
-                            <span class="r-meta-value">{{ metadata.genres | join(', ') }}</span>
-                        </div>
-                        {% endif %}
-                        {% if metadata.bf_series %}
-                        <div class="r-meta-item">
-                            <span class="r-meta-label">Series</span>
-                            <span class="r-meta-value">{{ metadata.bf_series }}</span>
-                        </div>
-                        {% endif %}
-                        {% if metadata.bf_tags %}
-                        <div class="r-meta-item r-meta-wide">
-                            <span class="r-meta-label">Tags</span>
-                            <span class="r-meta-value">{{ metadata.bf_tags }}</span>
+
+                        {% if metadata.description %}
+                        <div class="r-about-book-description">
+                            <span class="r-meta-label">Description</span>
+                            <div class="r-meta-desc-wrap {% if metadata.description|length > 600 %}is-collapsed{% endif %}" id="about-book-desc-wrap">
+                                <div class="r-meta-desc-text r-about-book-desc-text" id="about-book-desc-text">{{ metadata.description | sanitize_html }}</div>
+                            </div>
+                            {% if metadata.description|length > 600 %}
+                            <button type="button" class="r-about-book-more" id="about-book-more" aria-expanded="false">
+                                Read More
+                            </button>
+                            {% endif %}
                         </div>
                         {% endif %}
                     </div>
-                    {% if metadata.description %}
-                    <div class="r-meta-description">
-                        <span class="r-meta-label">Description</span>
-                        <div class="r-meta-desc-text">{{ metadata.description | sanitize_html | truncate(600) }}</div>
-                    </div>
-                    {% endif %}
                 </div>
             </div>
             {% elif meta_count.n > 0 %}
@@ -365,6 +398,7 @@
                     {% if metadata.release_year %}{% set _ = chips.append(metadata.release_year|string) %}{% endif %}
                     {% if metadata.bf_series %}{% set _ = chips.append(metadata.bf_series) %}{% endif %}
                     {% if metadata.genres %}{% set _ = chips.append(metadata.genres | join(', ')) %}{% endif %}
+                    {% if metadata.hc_tags %}{% set _ = chips.append(metadata.hc_tags | join(', ')) %}{% endif %}
                     {{ chips | join(' · ') }}
                 </div>
             </div>
@@ -373,50 +407,70 @@
 
         {# ── Journal Tab ── #}
         <div class="r-tab-panel" data-tab="journal" style="display: none;">
-            <div class="r-detail-section">
-                <div class="r-detail-dates">
-                    <label class="r-date-field">
-                        <span class="r-date-label">Started</span>
-                        <input type="date" id="started-at" class="input-inline" value="{{ book.started_at or '' }}" data-abs-id="{{ book.abs_id }}">
-                    </label>
-                    <label class="r-date-field">
-                        <span class="r-date-label">Finished</span>
-                        <input type="date" id="finished-at" class="input-inline" value="{{ book.finished_at or '' }}" data-abs-id="{{ book.abs_id }}">
-                    </label>
-                </div>
-            </div>
-
-            <form class="r-journal-form" id="journal-form" data-abs-id="{{ book.abs_id }}">
-                <textarea id="journal-entry" placeholder="Write a note..." rows="2"></textarea>
-                <button type="submit" class="btn btn-primary btn-sm">Add Note</button>
-            </form>
-
-            <div class="r-timeline" id="journal-timeline">
-                {% for journal in journals %}
-                <div class="r-tl-item" data-journal-id="{{ journal.id }}">
-                    <div class="r-tl-line"></div>
-                    <div class="r-tl-dot r-tl-dot-{{ journal.event }}"></div>
-                    <div class="r-tl-body">
-                        <div class="r-tl-head">
-                            <span class="r-tl-event r-tl-event-{{ journal.event }}">{{ journal.event|capitalize }}</span>
-                            <span class="r-tl-date">{{ journal.created_at.strftime('%b %d, %Y') if journal.created_at else '' }}</span>
-                            {% if journal.percentage is not none %}
-                            <span class="r-tl-pct">{{ '%.0f' | format(journal.percentage * 100) }}%</span>
-                            {% endif %}
+            <div class="r-journal-shell">
+                <div class="r-journal-panel">
+                    <div class="r-journal-panel-head">
+                        <div>
+                            <h3 class="r-section-title r-journal-title">Reading Journal</h3>
+                            <p class="r-journal-intro">Track milestones, leave quick notes, and keep the reading timeline in one place.</p>
                         </div>
-                        {% if journal.entry %}
-                        <p class="r-tl-text">{{ journal.entry }}</p>
-                        {% endif %}
-                        {% if journal.event == 'note' %}
-                        <button class="r-tl-delete" data-journal-id="{{ journal.id }}" title="Delete">&times;</button>
+                    </div>
+
+                    <div class="r-journal-meta">
+                        <label class="r-date-field r-journal-date-field">
+                            <span class="r-date-label">Started</span>
+                            <input type="date" id="started-at" class="input-inline" value="{{ book.started_at or '' }}" data-abs-id="{{ book.abs_id }}">
+                        </label>
+                        <label class="r-date-field r-journal-date-field">
+                            <span class="r-date-label">Finished</span>
+                            <input type="date" id="finished-at" class="input-inline" value="{{ book.finished_at or '' }}" data-abs-id="{{ book.abs_id }}">
+                        </label>
+                    </div>
+
+                    <form class="r-journal-form" id="journal-form" data-abs-id="{{ book.abs_id }}">
+                        <div class="r-journal-compose">
+                            <label for="journal-entry" class="r-journal-compose-label">Add Note</label>
+                            <textarea id="journal-entry" placeholder="What stood out in this session?" rows="3"></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-sm r-journal-submit">Add Note</button>
+                    </form>
+                </div>
+
+                <div class="r-journal-timeline-card">
+                    <div class="r-journal-panel-head r-journal-panel-head--timeline">
+                        <div>
+                            <h3 class="r-section-title r-journal-title">Timeline</h3>
+                        </div>
+                    </div>
+
+                    <div class="r-timeline" id="journal-timeline">
+                        {% for journal in journals %}
+                        <div class="r-tl-item" data-journal-id="{{ journal.id }}">
+                            <div class="r-tl-line"></div>
+                            <div class="r-tl-dot r-tl-dot-{{ journal.event }}"></div>
+                            <div class="r-tl-body">
+                                <div class="r-tl-head">
+                                    <span class="r-tl-event r-tl-event-{{ journal.event }}">{{ journal.event|capitalize }}</span>
+                                    <span class="r-tl-date">{{ journal.created_at.strftime('%b %d, %Y') if journal.created_at else '' }}</span>
+                                    {% if journal.percentage is not none %}
+                                    <span class="r-tl-pct">{{ '%.0f' | format(journal.percentage * 100) }}%</span>
+                                    {% endif %}
+                                </div>
+                                {% if journal.entry %}
+                                <p class="r-tl-text">{{ journal.entry }}</p>
+                                {% endif %}
+                                {% if journal.event == 'note' %}
+                                <button class="r-tl-delete" data-journal-id="{{ journal.id }}" title="Delete">&times;</button>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+
+                        {% if not journals %}
+                        <div class="r-journal-empty">No journal entries yet</div>
                         {% endif %}
                     </div>
                 </div>
-                {% endfor %}
-
-                {% if not journals %}
-                <div class="r-journal-empty">No journal entries yet</div>
-                {% endif %}
             </div>
         </div>
 

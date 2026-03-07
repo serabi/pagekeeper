@@ -75,8 +75,11 @@ def _normalize_url_value(value: str) -> str:
 
 
 def _request_payload() -> dict:
-    if request.method == 'POST' and request.is_json:
-        return request.get_json(silent=True) or {}
+    try:
+        if request.method == 'POST' and request.is_json:
+            return request.get_json(silent=True) or {}
+    except RuntimeError:
+        pass
     return {}
 
 

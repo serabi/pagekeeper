@@ -20,230 +20,257 @@ document.addEventListener('error', function (e) {
 }, true);
 
 function initReadingPage(currentYear) {
-  const grid = document.getElementById('book-grid');
-  if (!grid) return;
+  const sectionsRoot = document.getElementById('reading-sections');
+  if (!sectionsRoot) return;
 
-  const cards = () => Array.from(grid.querySelectorAll('.r-book-card'));
+  const cards = () => Array.from(sectionsRoot.querySelectorAll('.r-book-card'));
   const searchInput = document.getElementById('reading-search');
+  const mobileSearchInput = document.getElementById('reading-search-mobile');
   const sortSelect = document.getElementById('reading-sort');
-  const tabs = document.querySelectorAll('.r-tab');
+  const mobileSortSelect = document.getElementById('reading-sort-mobile');
+  const filterChips = document.querySelectorAll('.r-filter-chip');
   const viewBtns = document.querySelectorAll('.r-view-btn');
   const resultsInfo = document.getElementById('results-info');
   const resultsText = document.getElementById('results-text');
   const emptyTab = document.getElementById('empty-tab');
+  const sections = Array.from(sectionsRoot.querySelectorAll('.r-section'));
+  const controlsModal = document.getElementById('reading-controls-modal');
+  const controlsOpen = document.getElementById('reading-controls-open');
+  const controlsClose = document.getElementById('reading-controls-close');
 
   let activeFilter = 'all';
-  let originalOrder = cards().map(c => c.dataset.title + c.dataset.status);
+  let currentView = 'list';
+  const desktopMedia = window.matchMedia('(min-width: 961px)');
 
-  // ── Tab switching ──────────────────────────────────────────
+  function syncSearchInputs(source) {
+    const value = source ? source.value : '';
+    if (searchInput && source !== searchInput) searchInput.value = value;
+    if (mobileSearchInput && source !== mobileSearchInput) mobileSearchInput.value = value;
+  }
 
-  tabs.forEach(tab => {
-    tab.addEventListener('click', () => {
-      tabs.forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-      activeFilter = tab.dataset.filter;
-      applyFilters();
+  function syncSortInputs(source) {
+    const value = source ? source.value : 'activity-desc';
+    if (sortSelect && source !== sortSelect) sortSelect.value = value;
+    if (mobileSortSelect && source !== mobileSortSelect) mobileSortSelect.value = value;
+  }
+
+  function showControlsModal() {
+    if (controlsModal) controlsModal.style.display = 'flex';
+  }
+
+  function hideControlsModal() {
+    if (controlsModal) controlsModal.style.display = 'none';
+  }
+
+  filterChips.forEach(chip => {
+    chip.addEventListener('click', () => {
+      filterChips.forEach(item => item.classList.remove('active'));
+      chip.classList.add('active');
+      activeFilter = chip.dataset.filter;
+      applyFiltersAndSort();
     });
   });
 
-  // ── Search ─────────────────────────────────────────────────
+  [searchInput, mobileSearchInput].forEach(input => {
+    if (!input) return;
+    input.addEventListener('input', () => {
+      syncSearchInputs(input);
+      applyFiltersAndSort();
+    });
+  });
 
-  if (searchInput) {
-    searchInput.addEventListener('input', () => applyFilters());
+  [sortSelect, mobileSortSelect].forEach(select => {
+    if (!select) return;
+    select.addEventListener('change', () => {
+      syncSortInputs(select);
+      applyFiltersAndSort();
+    });
+  });
+
+  if (controlsOpen) controlsOpen.addEventListener('click', showControlsModal);
+  if (controlsClose) controlsClose.addEventListener('click', hideControlsModal);
+  if (controlsModal) {
+    controlsModal.addEventListener('click', e => {
+      if (e.target === controlsModal) hideControlsModal();
+    });
   }
 
-  // ── Sort ───────────────────────────────────────────────────
-
-  if (sortSelect) {
-    sortSelect.addEventListener('change', () => applySort());
+  function setView(view, persist) {
+    const forcedView = desktopMedia.matches ? view : 'list';
+    currentView = forcedView;
+    sectionsRoot.classList.toggle('r-grid-view', forcedView === 'grid');
+    viewBtns.forEach(btn => {
+      btn.classList.toggle('active', btn.dataset.view === forcedView);
+      btn.disabled = !desktopMedia.matches;
+    });
+    if (persist && desktopMedia.matches) {
+      try { localStorage.setItem('pk-reading-view', forcedView); } catch (e) {}
+    }
   }
-
-  // ── View toggle ────────────────────────────────────────────
 
   viewBtns.forEach(btn => {
     btn.addEventListener('click', () => {
-      viewBtns.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      const view = btn.dataset.view;
-      grid.classList.toggle('r-list-view', view === 'list');
-      try { localStorage.setItem('pk-reading-view', view); } catch (e) {}
+      setView(btn.dataset.view, true);
     });
   });
 
-  // Restore saved view preference
   try {
     const savedView = localStorage.getItem('pk-reading-view');
-    if (savedView === 'list') {
-      grid.classList.add('r-list-view');
-      viewBtns.forEach(b => {
-        b.classList.toggle('active', b.dataset.view === 'list');
-      });
-    }
+    setView(savedView === 'grid' ? 'grid' : 'list', false);
   } catch (e) {}
+  if (!currentView) setView('list', false);
 
-  // ── Core filter/display logic ──────────────────────────────
+  const onDesktopChange = () => setView(currentView, false);
+  if (desktopMedia.addEventListener) {
+    desktopMedia.addEventListener('change', onDesktopChange);
+  } else if (desktopMedia.addListener) {
+    desktopMedia.addListener(onDesktopChange);
+  }
 
-  function applyFilters() {
-    const term = (searchInput ? searchInput.value : '').toLowerCase();
+  function compareCards(a, b) {
+    const sortValue = sortSelect ? sortSelect.value : 'activity-desc';
+    switch (sortValue) {
+      case 'title-asc':
+        return (a.dataset.title || '').localeCompare(b.dataset.title || '');
+      case 'progress-desc':
+        return (
+          (parseFloat(b.dataset.progress) || 0) - (parseFloat(a.dataset.progress) || 0)
+          || (a.dataset.title || '').localeCompare(b.dataset.title || '')
+        );
+      case 'finished-desc':
+        return (
+          (b.dataset.finished || '').localeCompare(a.dataset.finished || '')
+          || (b.dataset.activity || '').localeCompare(a.dataset.activity || '')
+          || (a.dataset.title || '').localeCompare(b.dataset.title || '')
+        );
+      case 'activity-desc':
+      default:
+        return (
+          (b.dataset.activity || '').localeCompare(a.dataset.activity || '')
+          || (b.dataset.finished || '').localeCompare(a.dataset.finished || '')
+          || (parseFloat(b.dataset.progress) || 0) - (parseFloat(a.dataset.progress) || 0)
+          || (a.dataset.title || '').localeCompare(b.dataset.title || '')
+        );
+    }
+  }
+
+  function getMatches(card, term) {
+    const haystack = [
+      (card.dataset.title || '').toLowerCase(),
+      (card.dataset.author || '').toLowerCase(),
+    ].join(' ');
+    const matchesSearch = !term || haystack.includes(term);
+    const matchesFilter = activeFilter === 'all' || card.dataset.status === activeFilter;
+    return matchesSearch && matchesFilter;
+  }
+
+  function rebuildFinishedSection(section) {
+    const allCards = Array.from(section.querySelectorAll('.r-book-card'));
+    section.querySelectorAll('.r-year-group').forEach(group => group.remove());
+    const existingStack = section.querySelector('.r-book-stack');
+    if (existingStack) existingStack.remove();
+
+    if (allCards.length === 0) return;
+
+    const byYear = new Map();
+    allCards.forEach(card => {
+      const year = card.dataset.year || 'Unknown';
+      if (!byYear.has(year)) byYear.set(year, []);
+      byYear.get(year).push(card);
+    });
+
+    Array.from(byYear.keys()).sort((a, b) => b.localeCompare(a)).forEach(year => {
+      const group = document.createElement('div');
+      group.className = 'r-year-group';
+      group.dataset.yearGroup = year;
+
+      const heading = document.createElement('div');
+      heading.className = 'r-year-heading';
+      const text = document.createElement('span');
+      text.textContent = year;
+      heading.appendChild(text);
+      group.appendChild(heading);
+
+      const stack = document.createElement('div');
+      stack.className = 'r-book-stack';
+      byYear.get(year).forEach(card => stack.appendChild(card));
+      group.appendChild(stack);
+      section.appendChild(group);
+    });
+  }
+
+  function sortSection(section) {
+    const allCards = Array.from(section.querySelectorAll('.r-book-card'));
+    allCards.sort(compareCards);
+
+    if (section.dataset.section === 'finished') {
+      allCards.forEach(card => section.appendChild(card));
+      rebuildFinishedSection(section);
+      return;
+    }
+
+    let stack = section.querySelector('.r-book-stack');
+    if (!stack) {
+      stack = document.createElement('div');
+      stack.className = 'r-book-stack';
+      section.appendChild(stack);
+    }
+    allCards.forEach(card => stack.appendChild(card));
+  }
+
+  function applyFiltersAndSort() {
+    const term = ((searchInput && searchInput.value) || '').toLowerCase().trim();
     let visibleCount = 0;
-    let totalForTab = 0;
-
-    // Remove existing dividers
-    grid.querySelectorAll('.r-grid-divider').forEach(d => d.remove());
+    let filterTotal = 0;
 
     cards().forEach(card => {
-      const status = card.dataset.status;
-      const title = (card.dataset.title || '').toLowerCase();
-      const matchesTab = activeFilter === 'all' || status === activeFilter;
-      const matchesSearch = !term || title.includes(term);
-      const visible = matchesTab && matchesSearch;
-      card.style.display = visible ? '' : 'none';
-      if (matchesTab) totalForTab++;
-      if (visible) visibleCount++;
+      if (activeFilter === 'all' || card.dataset.status === activeFilter) {
+        filterTotal++;
+      }
     });
 
-    // Show/hide empty state
-    if (emptyTab) {
-      emptyTab.style.display = visibleCount === 0 ? '' : 'none';
-    }
-    grid.style.display = visibleCount === 0 ? 'none' : '';
+    sections.forEach(section => {
+      sortSection(section);
+      const sectionCards = Array.from(section.querySelectorAll('.r-book-card'));
+      let sectionVisibleCount = 0;
 
-    // Show results info when searching
-    if (resultsInfo && resultsText) {
-      if (term) {
-        resultsInfo.style.display = '';
-        resultsText.textContent = `Showing ${visibleCount} of ${totalForTab} books`;
-      } else {
-        resultsInfo.style.display = 'none';
-      }
-    }
-
-    // Insert dividers
-    const sortValue = sortSelect ? sortSelect.value : 'default';
-    if (activeFilter === 'all' && sortValue === 'default') {
-      insertStatusDividers();
-    } else if (activeFilter === 'finished') {
-      insertYearDividers();
-    }
-  }
-
-  // ── Sort logic ─────────────────────────────────────────────
-
-  function applySort() {
-    const sortValue = sortSelect ? sortSelect.value : 'default';
-    const allCards = cards();
-
-    if (sortValue === 'default') {
-      // Restore original order by re-sorting to match originalOrder
-      allCards.sort((a, b) => {
-        const keyA = a.dataset.title + a.dataset.status;
-        const keyB = b.dataset.title + b.dataset.status;
-        return originalOrder.indexOf(keyA) - originalOrder.indexOf(keyB);
-      });
-    } else {
-      allCards.sort((a, b) => {
-        switch (sortValue) {
-          case 'title-asc':
-            return (a.dataset.title || '').localeCompare(b.dataset.title || '');
-          case 'title-desc':
-            return (b.dataset.title || '').localeCompare(a.dataset.title || '');
-          case 'rating':
-            return (parseFloat(b.dataset.rating) || 0) - (parseFloat(a.dataset.rating) || 0);
-          case 'finished-desc':
-            return (b.dataset.finished || '').localeCompare(a.dataset.finished || '');
-          case 'started-desc':
-            return (b.dataset.started || '').localeCompare(a.dataset.started || '');
-          case 'progress-desc':
-            return (parseFloat(b.dataset.progress) || 0) - (parseFloat(a.dataset.progress) || 0);
-          default:
-            return 0;
+      sectionCards.forEach(card => {
+        const visible = getMatches(card, term);
+        card.style.display = visible ? '' : 'none';
+        if (visible) {
+          visibleCount++;
+          sectionVisibleCount++;
         }
       });
+
+      if (section.dataset.section === 'finished') {
+        section.querySelectorAll('.r-year-group').forEach(group => {
+          const hasVisibleCards = Array.from(group.querySelectorAll('.r-book-card')).some(card => card.style.display !== 'none');
+          group.style.display = hasVisibleCards ? '' : 'none';
+        });
+      }
+
+      const emptyState = section.querySelector('.r-section-empty');
+      if (emptyState) emptyState.hidden = sectionVisibleCount !== 0;
+      section.style.display = sectionVisibleCount === 0 ? 'none' : '';
+    });
+
+    if (resultsInfo && resultsText) {
+      if (term || activeFilter !== 'all') {
+        resultsInfo.hidden = false;
+        resultsText.textContent = `Showing ${visibleCount} of ${filterTotal} books`;
+      } else {
+        resultsInfo.hidden = true;
+      }
     }
 
-    // Re-append in sorted order (moves DOM nodes)
-    allCards.forEach(card => grid.appendChild(card));
-
-    // Re-apply filters to update visibility and year dividers
-    applyFilters();
+    if (emptyTab) emptyTab.hidden = visibleCount !== 0;
+    sectionsRoot.style.display = visibleCount === 0 ? 'none' : '';
   }
 
-  // ── Divider helpers ─────────────────────────────────────────
-
-  const statusLabels = {
-    reading: 'Currently Reading',
-    finished: 'Finished',
-    paused: 'Paused',
-    dnf: 'Did Not Finish',
-    not_started: 'Not Started',
-  };
-
-  function makeDivider(text, count) {
-    const div = document.createElement('div');
-    div.className = 'r-grid-divider';
-    const label = document.createElement('span');
-    label.textContent = text;
-    div.appendChild(label);
-    if (count != null) {
-      const badge = document.createElement('span');
-      badge.className = 'r-divider-count';
-      badge.textContent = count;
-      div.appendChild(badge);
-    }
-    return div;
-  }
-
-  function insertStatusDividers() {
-    const visibleCards = cards().filter(c => c.style.display !== 'none');
-    let lastStatus = null;
-
-    visibleCards.forEach(card => {
-      const status = card.dataset.status;
-      if (status !== lastStatus) {
-        lastStatus = status;
-        const group = visibleCards.filter(c => c.dataset.status === status);
-        grid.insertBefore(
-          makeDivider(statusLabels[status] || status, group.length),
-          card
-        );
-      }
-    });
-
-    // Also insert year sub-dividers within the finished group
-    let lastYear = null;
-    visibleCards.filter(c => c.dataset.status === 'finished').forEach(card => {
-      const finished = card.dataset.finished;
-      if (!finished) return;
-      const year = finished.substring(0, 4);
-      if (year !== lastYear) {
-        lastYear = year;
-        const div = makeDivider(year);
-        div.classList.add('r-grid-divider-sub');
-        grid.insertBefore(div, card);
-      }
-    });
-  }
-
-  function insertYearDividers() {
-    const visibleCards = cards().filter(c => c.style.display !== 'none');
-    let lastYear = null;
-
-    visibleCards.forEach(card => {
-      const finished = card.dataset.finished;
-      if (!finished) return;
-      const year = finished.substring(0, 4);
-      if (year !== lastYear) {
-        lastYear = year;
-        const count = visibleCards.filter(c =>
-          c.style.display !== 'none' && (c.dataset.finished || '').startsWith(year)
-        ).length;
-        grid.insertBefore(makeDivider(year, count), card);
-      }
-    });
-  }
-
-  // Run on initial load so All tab gets its dividers
-  applyFilters();
+  syncSortInputs(sortSelect || mobileSortSelect);
+  syncSearchInputs(searchInput || mobileSearchInput);
+  applyFiltersAndSort();
 
   // ── Goal modal ─────────────────────────────────────────────
 
@@ -344,6 +371,17 @@ function initReadingDetail() {
   }
   bindDate('started_at', 'started-at');
   bindDate('finished_at', 'finished-at');
+
+  // ── About This Book description expand/collapse ──
+  const descWrap = document.getElementById('about-book-desc-wrap');
+  const descMoreBtn = document.getElementById('about-book-more');
+  if (descWrap && descMoreBtn) {
+    descMoreBtn.addEventListener('click', () => {
+      const collapsed = descWrap.classList.toggle('is-collapsed');
+      descMoreBtn.textContent = collapsed ? 'Read More' : 'Show Less';
+      descMoreBtn.setAttribute('aria-expanded', String(!collapsed));
+    });
+  }
 
   // ── Journal ──
   const form = document.getElementById('journal-form');

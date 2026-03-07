@@ -788,16 +788,115 @@ class HardcoverClient:
         if not result or not result.get("books_by_pk"):
             return None
         book = result["books_by_pk"]
+
+        def _normalize_tag_name(value):
+            if isinstance(value, str):
+                return value.strip()
+            return ""
+
+        ignored_category_labels = {
+            "genre",
+            "genres",
+            "mood",
+            "moods",
+            "content warning",
+            "content warnings",
+            "tag",
+            "tags",
+        }
+
+        def _normalize_category(raw_tag):
+            if not isinstance(raw_tag, dict):
+                return ""
+
+            category = raw_tag.get("tag_category")
+            if isinstance(category, dict):
+                return (
+                    category.get("slug")
+                    or category.get("category")
+                    or category.get("name")
+                    or ""
+                ).strip().lower()
+
+            if isinstance(category, str):
+                return category.strip().lower()
+
+            return (
+                raw_tag.get("category")
+                or raw_tag.get("tag_category_slug")
+                or raw_tag.get("tag_category_name")
+                or raw_tag.get("type")
+                or ""
+            ).strip().lower()
+
+        genres = []
         tags = []
-        if book.get("cached_tags"):
-            for t in book["cached_tags"]:
+        source_tags = book.get("cached_tags") or []
+
+        def _append_tag(name, category=""):
+            clean_name = _normalize_tag_name(name)
+            if not clean_name:
+                return
+            if clean_name.lower() in ignored_category_labels:
+                return
+            if category == "genre":
+                genres.append(clean_name)
+            else:
+                tags.append(clean_name)
+
+        if isinstance(source_tags, dict):
+            for raw_category, values in source_tags.items():
+                category = _normalize_tag_name(raw_category).lower()
+                if isinstance(values, list):
+                    for value in values:
+                        if isinstance(value, dict):
+                            _append_tag(
+                                value.get("tag")
+                                or value.get("name")
+                                or value.get("label")
+                                or value.get("value"),
+                                category,
+                            )
+                        else:
+                            _append_tag(value, category)
+                elif isinstance(values, dict):
+                    _append_tag(
+                        values.get("tag")
+                        or values.get("name")
+                        or values.get("label")
+                        or values.get("value"),
+                        category,
+                    )
+                else:
+                    _append_tag(values, category)
+        else:
+            for t in source_tags:
                 if isinstance(t, dict):
-                    tags.append(t.get("tag") or t.get("name", ""))
+                    name = _normalize_tag_name(
+                        t.get("tag")
+                        or t.get("name")
+                        or t.get("label")
+                        or t.get("value")
+                    )
+                    category = _normalize_category(t)
+                    if not name:
+                        continue
+                    if name.strip().lower() in ignored_category_labels:
+                        continue
+                    if category == "genre":
+                        genres.append(name)
+                    else:
+                        tags.append(name)
                 elif isinstance(t, str):
-                    tags.append(t)
-            tags = [t for t in tags if t]
+                    name = t.strip()
+                    if name and name.lower() not in ignored_category_labels:
+                        tags.append(name)
+
+        genres = list(dict.fromkeys(t for t in genres if t))
+        tags = list(dict.fromkeys(t for t in tags if t))
         return {
             "description": book.get("description"),
+            "genres": genres,
             "tags": tags,
             "release_year": book.get("release_year"),
             "subtitle": book.get("subtitle"),
@@ -854,5 +953,3 @@ class HardcoverClient:
             })
 
         return results
-
-

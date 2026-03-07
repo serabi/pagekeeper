@@ -108,6 +108,8 @@
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.03);
+  margin-left: 20px;
+  margin-right: auto;
 }
 
 .nav-icon-link {
@@ -305,14 +307,19 @@
   }
 
   .library-links {
-    padding: 0 0 12px;
-    border: none;
-    border-radius: 0;
-    background: transparent;
-    border-bottom: 1px solid var(--color-border-light);
-    justify-content: center;
-    width: 100%;
-    flex-wrap: wrap;
+    padding: 4px 8px;
+    gap: 6px;
+    margin-right: 0;
+  }
+
+  .library-links .nav-icon-link {
+    width: 30px;
+    height: 30px;
+  }
+
+  .library-links .nav-service-icon {
+    width: 18px;
+    height: 18px;
   }
 
   .nav-actions {

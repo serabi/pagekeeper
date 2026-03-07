@@ -8,7 +8,7 @@ from pathlib import Path
 
 from flask import Blueprint, abort, jsonify, render_template, request
 
-from src.blueprints.helpers import get_abs_service, get_booklore_clients, get_container, get_database_service
+from src.blueprints.helpers import get_abs_service, get_booklore_clients, get_container, get_database_service, get_service_web_url
 from src.db.models import State
 
 logger = logging.getLogger(__name__)
@@ -30,7 +30,7 @@ def _synthetic_journal(abs_id, event, date_str, percentage=None):
 
 
 def _build_book_reading_data(book, database_service, abs_service, states_by_book,
-                             booklore_by_filename=None):
+                             booklore_by_filename=None, abs_metadata_by_id=None):
     """Build a reading-focused data dict for a single book."""
     sync_mode = getattr(book, 'sync_mode', 'audiobook')
     if sync_mode == 'ebook_only':
@@ -54,8 +54,9 @@ def _build_book_reading_data(book, database_service, abs_service, states_by_book
     if not cover_url and book.kosync_doc_id:
         cover_url = f'/covers/{book.kosync_doc_id}.jpg'
 
-    # Enrich title from Booklore if it looks like a filename
+    # Enrich title/author from Booklore or ABS metadata when available
     display_title = book.abs_title or ''
+    display_author = ''
     bl_meta = None
     if booklore_by_filename:
         for fn in (book.ebook_filename, getattr(book, 'original_ebook_filename', None)):
@@ -70,6 +71,19 @@ def _build_book_reading_data(book, database_service, abs_service, states_by_book
                     if display_title in stems or display_title == book.ebook_filename:
                         display_title = bl_meta.title
                     break
+
+    if bl_meta and bl_meta.authors:
+        display_author = bl_meta.authors
+
+    if not display_author and book_type != 'ebook-only':
+        abs_meta = (abs_metadata_by_id or {}).get(book.abs_id, {})
+        display_author = abs_meta.get('author') or ''
+
+    if not display_author and getattr(book, 'author', None):
+        display_author = book.author
+
+    if not display_author:
+        display_author = book.ebook_filename or ''
 
     # Booklore cover fallback
     if not cover_url and bl_meta:
@@ -90,6 +104,7 @@ def _build_book_reading_data(book, database_service, abs_service, states_by_book
     return {
         'abs_id': book.abs_id,
         'abs_title': display_title,
+        'abs_author': display_author,
         'ebook_filename': book.ebook_filename,
         'kosync_doc_id': book.kosync_doc_id,
         'status': book.status,
@@ -129,6 +144,20 @@ def reading_index():
     reading_statuses = {'active', 'completed', 'paused', 'dnf', 'not_started'}
     books = [b for b in books if b.status in reading_statuses]
 
+    abs_metadata_by_id = {}
+    try:
+        all_abs_books = abs_service.get_audiobooks()
+        for ab in all_abs_books:
+            ab_id = ab.get('id')
+            if not ab_id:
+                continue
+            metadata = ab.get('media', {}).get('metadata', {})
+            abs_metadata_by_id[ab_id] = {
+                'author': metadata.get('authorName') or '',
+            }
+    except Exception as e:
+        logger.warning(f"Could not fetch ABS metadata for reading log enrichment: {e}")
+
     # Fetch all states at once to avoid N+1
     all_states = database_service.get_all_states()
     states_by_book = {}
@@ -143,7 +172,14 @@ def reading_index():
             booklore_by_filename.setdefault(bl_book.filename.lower(), []).append(bl_book)
 
     all_book_data = [
-        _build_book_reading_data(b, database_service, abs_service, states_by_book, booklore_by_filename)
+        _build_book_reading_data(
+            b,
+            database_service,
+            abs_service,
+            states_by_book,
+            booklore_by_filename,
+            abs_metadata_by_id,
+        )
         for b in books
     ]
 
@@ -181,9 +217,6 @@ def reading_index():
     dnf.sort(key=lambda b: (b['abs_title'] or '').lower())
     not_started.sort(key=lambda b: (b['abs_title'] or '').lower())
 
-    # Build flat list in default display order
-    all_books = currently_reading + finished + paused + dnf + not_started
-
     section_counts = {
         'reading': len(currently_reading),
         'finished': len(finished),
@@ -201,10 +234,38 @@ def reading_index():
     current_year = date.today().year
     stats = database_service.get_reading_stats(current_year)
     goal = database_service.get_reading_goal(current_year)
+    reading_sections = [
+        {
+            'id': 'continue',
+            'title': 'Continue Reading',
+            'description': 'Books with active progress and quick resume context.',
+            'books': currently_reading,
+        },
+        {
+            'id': 'finished',
+            'title': 'Recently Finished',
+            'description': 'Completed books grouped by finish year.',
+            'books': finished,
+            'group_by_year': True,
+        },
+        {
+            'id': 'stalled',
+            'title': 'Paused and DNF',
+            'description': 'Books you may revisit or archive.',
+            'books': paused + dnf,
+        },
+        {
+            'id': 'backlog',
+            'title': 'Backlog',
+            'description': 'Tracked books that have not started yet.',
+            'books': not_started,
+        },
+    ]
 
     return render_template(
         'reading.html',
-        all_books=all_books,
+        all_books=currently_reading + finished + paused + dnf + not_started,
+        reading_sections=reading_sections,
         section_counts=section_counts,
         finished_years=finished_years,
         stats=stats,
@@ -315,8 +376,10 @@ def reading_detail(abs_id):
                     if hc_verified:
                         if not metadata.get('description') and hc_meta.get('description'):
                             metadata['description'] = hc_meta['description']
-                        if not metadata.get('genres') and hc_meta.get('tags'):
-                            metadata['genres'] = hc_meta['tags']
+                        if not metadata.get('genres') and hc_meta.get('genres'):
+                            metadata['genres'] = hc_meta['genres']
+                        if hc_meta.get('tags'):
+                            metadata['hc_tags'] = hc_meta['tags']
                         if not metadata.get('subtitle') and hc_meta.get('subtitle'):
                             metadata['subtitle'] = hc_meta['subtitle']
                     if hc_meta.get('release_year'):
@@ -336,7 +399,8 @@ def reading_detail(abs_id):
                 if bl_book:
                     if not metadata.get('description') and bl_book.get('description'):
                         metadata['description'] = bl_book['description']
-                    bl_url = f"{bl_client.base_url}/book/{bl_book.get('id')}?tab=view"
+                    bl_base = get_service_web_url('BOOKLORE') or bl_client.base_url
+                    bl_url = f"{bl_base}/book/{bl_book.get('id')}?tab=view"
                     metadata['booklore_url'] = bl_url
                     break
             except Exception as e:
@@ -353,7 +417,8 @@ def reading_detail(abs_id):
 
     # ABS item URL
     if sync_mode != 'ebook_only':
-        metadata['abs_url'] = abs_service.get_abs_item_url(abs_id)
+        abs_base = get_service_web_url('ABS') or (abs_service.abs_client.base_url if abs_service.is_available() else '')
+        metadata['abs_url'] = f"{abs_base}/item/{abs_id}" if abs_base else None
 
     # Build per-service state data for the Services tab
     service_states = {}

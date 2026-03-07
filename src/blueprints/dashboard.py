@@ -7,7 +7,7 @@ from pathlib import Path
 
 from flask import Blueprint, render_template
 
-from src.blueprints.helpers import get_abs_service, get_booklore_clients, get_container, get_database_service
+from src.blueprints.helpers import get_abs_service, get_booklore_clients, get_container, get_database_service, get_service_web_url
 from src.version import APP_VERSION
 
 logger = logging.getLogger(__name__)
@@ -248,7 +248,8 @@ def index():
 
         # Platform deep links
         if book_type != 'ebook-only':
-            mapping['abs_url'] = abs_service.get_abs_item_url(book.abs_id)
+            abs_base = get_service_web_url('ABS') or (abs_service.abs_client.base_url if abs_service.is_available() else '')
+            mapping['abs_url'] = f"{abs_base}/item/{book.abs_id}" if abs_base else None
         else:
             mapping['abs_url'] = None
 
@@ -265,7 +266,8 @@ def index():
                     if not bl_book and book.original_ebook_filename:
                         bl_book = bl_client.find_book_by_filename(book.original_ebook_filename, allow_refresh=False)
                     if bl_book:
-                        url = f"{bl_client.base_url}/book/{bl_book.get('id')}?tab=view"
+                        bl_base = get_service_web_url('BOOKLORE') or bl_client.base_url
+                        url = f"{bl_base}/book/{bl_book.get('id')}?tab=view"
                         mapping['booklore_id'] = bl_book.get('id')
                         mapping['booklore_source_tag'] = bl_client.source_tag
                         mapping['booklore_url'] = url

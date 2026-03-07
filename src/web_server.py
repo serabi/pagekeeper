@@ -370,26 +370,11 @@ def inject_global_vars():
         return val.lower() in ('true', '1', 'yes', 'on')
 
     def get_header_service_url(service_name):
+        from src.blueprints.helpers import get_service_web_url
         prefix = service_name.upper()
         if not get_bool(f'{prefix}_ENABLED'):
             return ''
-
-        mode = get_val(f'{prefix}_HEADER_URL_MODE', 'external').lower()
-        legacy_internal_fallbacks = {
-            'ABS': get_val('ABS_SERVER'),
-            'BOOKLORE': get_val('BOOKLORE_SERVER'),
-            'STORYTELLER': get_val('STORYTELLER_API_URL'),
-            'CWA': get_val('CWA_SERVER'),
-        }
-        internal_url = get_val(f'{prefix}_WEB_URL_INTERNAL') or legacy_internal_fallbacks.get(prefix, '')
-        external_url = get_val(f'{prefix}_WEB_URL_EXTERNAL') or get_val(f'{prefix}_WEB_URL')
-
-        if prefix == 'HARDCOVER' and not external_url:
-            external_url = 'https://hardcover.app'
-
-        if mode == 'internal':
-            return internal_url or external_url
-        return external_url or internal_url
+        return get_service_web_url(prefix)
 
     def is_active_path(path):
         req_path = request.path.rstrip('/') or '/'
