@@ -26,6 +26,43 @@ logger = logging.getLogger(__name__)
 matching_bp = Blueprint('matching', __name__)
 
 
+def _build_batch_queue_item(item):
+    """Annotate queue entries with display-oriented fields without mutating session data."""
+    ebook_label = item.get('ebook_display_name') or item.get('ebook_filename') or 'Not selected'
+    storyteller_selected = bool(item.get('storyteller_uuid'))
+    storyteller_label = 'Selected' if storyteller_selected else 'None / Skip'
+
+    if item.get('audio_only'):
+        status_label = 'Audio Only'
+        status_kind = 'audio-only'
+    elif item.get('abs_id') and (item.get('ebook_filename') or storyteller_selected):
+        status_label = 'Ready'
+        status_kind = 'ready'
+    else:
+        status_label = 'Incomplete'
+        status_kind = 'incomplete'
+
+    return {
+        **item,
+        'ebook_label': ebook_label,
+        'storyteller_label': storyteller_label,
+        'storyteller_selected': storyteller_selected,
+        'status_label': status_label,
+        'status_kind': status_kind,
+    }
+
+
+def _build_batch_queue_view(queue):
+    queue_items = [_build_batch_queue_item(item) for item in queue]
+    return {
+        'items': queue_items,
+        'total_count': len(queue_items),
+        'ready_count': sum(1 for item in queue_items if item['status_kind'] in {'ready', 'audio-only'}),
+        'audio_only_count': sum(1 for item in queue_items if item['status_kind'] == 'audio-only'),
+        'incomplete_count': sum(1 for item in queue_items if item['status_kind'] == 'incomplete'),
+    }
+
+
 @matching_bp.route('/suggestions')
 def suggestions():
     """Dedicated page for browsing and acting on pairing suggestions."""
@@ -516,5 +553,6 @@ def batch_match():
             except Exception as e:
                 logger.warning(f"Storyteller search failed in batch_match route: {e}")
 
+    queue_view = _build_batch_queue_view(session.get('queue', []))
     return render_template('batch_match.html', audiobooks=audiobooks, ebooks=ebooks, storyteller_books=storyteller_books,
-                           queue=session.get('queue', []), search=search, get_title=manager.get_abs_title)
+                           queue=queue_view['items'], queue_summary=queue_view, search=search, get_title=manager.get_abs_title)
