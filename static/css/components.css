@@ -861,19 +861,70 @@ select:focus {
   padding: 4px 0;
 }
 
+/* Larger touch targets inside action panel */
+.action-panel-sheet .service-item {
+  min-height: 44px;
+  padding: 10px 8px;
+  gap: 10px;
+}
+
+.action-panel-sheet .service-icon {
+  width: 22px;
+  height: 22px;
+}
+
+.action-panel-sheet .service-name {
+  font-size: 13px;
+}
+
+.action-panel-sheet .service-value {
+  font-size: 13px;
+}
+
+/* Submenu trigger */
+.card-menu-submenu-trigger {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.card-menu-chevron {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  line-height: 1;
+}
+
+/* Submenu back button */
+.card-menu-back {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.card-menu-back-arrow {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--color-text-muted);
+}
+
 .card-menu-item {
-  display: block;
+  display: flex;
+  align-items: center;
   width: 100%;
-  padding: 7px 12px;
+  padding: 12px 14px;
   background: transparent;
   border: none;
   border-radius: var(--radius-sm);
   color: var(--color-text);
-  font-size: 12px;
+  font-size: 14px;
   font-family: var(--font-body);
   text-align: left;
   cursor: pointer;
   transition: background var(--transition-bounce);
+  min-height: 44px;
 }
 
 .card-menu-item:hover {

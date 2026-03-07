@@ -8,7 +8,7 @@ from pathlib import Path
 
 from flask import Blueprint, abort, jsonify, render_template, request
 
-from src.blueprints.helpers import get_abs_service, get_booklore_clients, get_database_service
+from src.blueprints.helpers import get_abs_service, get_booklore_clients, get_container, get_database_service
 from src.db.models import State
 
 logger = logging.getLogger(__name__)
@@ -303,6 +303,27 @@ def reading_detail(abs_id):
             else None
         )
 
+    # Hardcover metadata enrichment (description, tags, subtitle, release_year)
+    # Only use description/tags from user-verified matches to avoid wrong-book data
+    if hardcover and hardcover.hardcover_book_id:
+        hc_verified = hardcover.matched_by in ('manual', 'cover_picker')
+        try:
+            hc_client = get_container().hardcover_client()
+            if hc_client and hc_client.is_configured():
+                hc_meta = hc_client.get_book_metadata(int(hardcover.hardcover_book_id))
+                if hc_meta:
+                    if hc_verified:
+                        if not metadata.get('description') and hc_meta.get('description'):
+                            metadata['description'] = hc_meta['description']
+                        if not metadata.get('genres') and hc_meta.get('tags'):
+                            metadata['genres'] = hc_meta['tags']
+                        if not metadata.get('subtitle') and hc_meta.get('subtitle'):
+                            metadata['subtitle'] = hc_meta['subtitle']
+                    if hc_meta.get('release_year'):
+                        metadata['release_year'] = hc_meta['release_year']
+        except Exception as e:
+            logger.debug("Hardcover metadata fetch failed: %s", e)
+
     # Booklore metadata (description, publisher, language)
     if book.ebook_filename:
         for bl_client in get_booklore_clients():
@@ -334,6 +355,32 @@ def reading_detail(abs_id):
     if sync_mode != 'ebook_only':
         metadata['abs_url'] = abs_service.get_abs_item_url(abs_id)
 
+    # Build per-service state data for the Services tab
+    service_states = {}
+    for state in states_by_book.get(abs_id, []):
+        pct = round(state.percentage * 100, 1) if state.percentage else 0
+        service_states[state.client_name] = {'percentage': pct, 'timestamp': state.timestamp}
+
+    integrations = {
+        'abs': sync_mode != 'ebook_only',
+        'kosync': book.kosync_doc_id is not None,
+        'storyteller': book.storyteller_uuid is not None,
+        'hardcover': hardcover is not None,
+        'bookfusion': has_bookfusion_link,
+        'booklore': bool(metadata.get('booklore_url')),
+    }
+
+    # Which services are enabled system-wide (for showing "Link" on unconnected services)
+    container = get_container()
+    services_enabled = {
+        'abs': abs_service.is_available(),
+        'kosync': True,  # KoSync is always available (built-in server)
+        'storyteller': container.storyteller_client().is_configured(),
+        'hardcover': container.hardcover_client().is_configured(),
+        'bookfusion': container.bookfusion_client().is_configured(),
+        'booklore': any(bl.is_configured() for bl in get_booklore_clients()),
+    }
+
     return render_template(
         'reading_detail.html',
         book=book_data,
@@ -341,6 +388,9 @@ def reading_detail(abs_id):
         bf_highlights=bf_highlights,
         has_bookfusion_link=has_bookfusion_link,
         metadata=metadata,
+        services_enabled=services_enabled,
+        service_states=service_states,
+        integrations=integrations,
     )
 
 

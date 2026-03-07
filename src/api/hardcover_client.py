@@ -772,6 +772,37 @@ class HardcoverClient:
                 return True
             return False
 
+    def get_book_metadata(self, book_id: int) -> dict | None:
+        """Fetch enrichment metadata (description, tags, subtitle, release_year) for a book."""
+        query = """
+        query ($bookId: Int!) {
+            books_by_pk(id: $bookId) {
+                description
+                cached_tags
+                release_year
+                subtitle
+            }
+        }
+        """
+        result = self.query(query, {"bookId": book_id})
+        if not result or not result.get("books_by_pk"):
+            return None
+        book = result["books_by_pk"]
+        tags = []
+        if book.get("cached_tags"):
+            for t in book["cached_tags"]:
+                if isinstance(t, dict):
+                    tags.append(t.get("tag") or t.get("name", ""))
+                elif isinstance(t, str):
+                    tags.append(t)
+            tags = [t for t in tags if t]
+        return {
+            "description": book.get("description"),
+            "tags": tags,
+            "release_year": book.get("release_year"),
+            "subtitle": book.get("subtitle"),
+        }
+
     def search_books_with_covers(self, query_str: str, limit: int = 5) -> list[dict]:
         """Search for books and return results with cover images (for cover picker)."""
         search_query = """

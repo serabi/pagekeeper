@@ -644,6 +644,12 @@ function closeActionPanel() {
     panel.classList.remove('open');
     sheet.style.cssText = '';
 
+    // Reset submenu state before returning nodes
+    var mainView = panelBody.querySelector('.card-menu-main');
+    var subView = panelBody.querySelector('.card-menu-status-sub');
+    if (mainView) mainView.style.display = '';
+    if (subView) subView.style.display = 'none';
+
     if (_panelSourceMenu) {
         while (panelBody.firstChild) {
             _panelSourceMenu.appendChild(panelBody.firstChild);
@@ -728,6 +734,28 @@ document.addEventListener('click', function(e) {
         e.stopPropagation();
         closeActionPanel();
         openActionPanel(trigger);
+        return;
+    }
+    // Submenu: open status submenu
+    var subTrigger = e.target.closest('.card-menu-submenu-trigger');
+    if (subTrigger) {
+        e.stopPropagation();
+        var panelBody = document.getElementById('action-panel-body');
+        var mainView = panelBody.querySelector('.card-menu-main');
+        var subView = panelBody.querySelector('.card-menu-status-sub');
+        if (mainView) mainView.style.display = 'none';
+        if (subView) subView.style.display = '';
+        return;
+    }
+    // Submenu: back to main
+    var backBtn = e.target.closest('.card-menu-back');
+    if (backBtn) {
+        e.stopPropagation();
+        var panelBody = document.getElementById('action-panel-body');
+        var mainView = panelBody.querySelector('.card-menu-main');
+        var subView = panelBody.querySelector('.card-menu-status-sub');
+        if (mainView) mainView.style.display = '';
+        if (subView) subView.style.display = 'none';
         return;
     }
     if (e.target.closest('.action-panel-overlay')) {
