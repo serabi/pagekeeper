@@ -32,13 +32,7 @@ This project started as a fork of [abs-kosync-bridge](https://github.com/cporcel
 
 The goal of PageKeeper is to be a full fledged reading tracking and journaling system that includes a BookFusion integration. At this point it's essentially a new application, but  it would not have existed without the original project. If you find PageKeeper useful, contributions and suggestions are always welcome - and if you're only looking to sync your audio and ebooks across platforms, and don't care about tracking your reading, you might find abs-kosync-bridge to be a better fit for you!
 
-
-### App Infrastructure 
-
-This app is built with Python 3.13 and Flask, using SQLAlchemy with SQLite for persistence and Alembic for database migrations. It runs in a Docker container based on `python:3.13-slim`, with ffmpeg for audio processing and faster-whisper installed in-container for speech-to-text transcription. The frontend uses vanilla JavaScript, HTML, and CSS. Dependency injection is handled by dependency-injector, and real-time communication with Audiobookshelf uses python-socketio.
-
-This app does rely heavily on AI coding tools. The tools are directed by a human and I do read the code generated, but I do want to be up front that I am not writing most of the code directly. I run Snyk security to help catch security issues, and CodeRabbit.io's free plan on every PR to help catch bugs in the code. I have made every effort to make this app secure and stable, but there may be issues. Please report any issues that you find! 
-
+---
 
 ### Supported platforms
 
@@ -68,6 +62,13 @@ PageKeeper runs three sync layers simultaneously, from fastest to slowest:
 When a position change is detected, PageKeeper converts it to every other format (timestamp to percentage, percentage to EPUB position, etc.) and pushes updates to all connected clients. A write-tracker prevents feedback loops — if PageKeeper just pushed a position to a client, it ignores the echo that comes back.
 
 ---
+
+## App Infrastructure 
+
+This app is built with Python 3.13 and Flask, using SQLAlchemy with SQLite for persistence and Alembic for database migrations. It runs in a Docker container based on `python:3.13-slim`, with ffmpeg for audio processing and faster-whisper installed in-container for speech-to-text transcription. The frontend uses vanilla JavaScript, HTML, and CSS. Dependency injection is handled by dependency-injector, and real-time communication with Audiobookshelf uses python-socketio.
+
+This app does rely heavily on AI coding tools. The tools are directed by a human and I do read the code generated, but I do want to be up front that I am not writing most of the code directly. I run Snyk security to help catch security issues, and CodeRabbit.io's free plan on every PR to help catch bugs in the code. I have made every effort to make this app secure and stable, but there may be issues. Please report any issues that you find! 
+
 
 ## License
 

@@ -652,6 +652,8 @@ class HardcoverSyncClient(SyncClient):
                 edition_id=edition_id,
                 is_finished=is_finished,
                 current_percentage=percentage,
+                started_at=book.started_at,
+                finished_at=book.finished_at,
             )
 
             actual_pct = 1.0 if is_finished and total_pages > 0 else (
@@ -688,6 +690,8 @@ class HardcoverSyncClient(SyncClient):
                 is_finished=is_finished,
                 current_percentage=percentage,
                 audio_seconds=audio_seconds,
+                started_at=book.started_at,
+                finished_at=book.finished_at,
             )
 
             updated_state = {

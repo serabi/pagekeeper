@@ -133,6 +133,8 @@ class TestHardcoverSyncClient(unittest.TestCase):
             edition_id='456',
             is_finished=False,
             current_percentage=0.25,
+            started_at=None,
+            finished_at=None,
         )
 
         self.assertTrue(result.success)
@@ -167,6 +169,8 @@ class TestHardcoverSyncClient(unittest.TestCase):
             edition_id='456',
             is_finished=True,
             current_percentage=0.995,
+            started_at=None,
+            finished_at=None,
         )
 
     @patch('src.sync_clients.hardcover_sync_client.record_write')
@@ -388,6 +392,39 @@ class TestHardcoverSyncClient(unittest.TestCase):
         saved = self.database_service.get_hardcover_details('test-hardcover-book')
         self.assertEqual(saved.hardcover_user_book_id, 999)
         mock_record_write.assert_called()
+
+    @patch('src.sync_clients.hardcover_sync_client.record_write')
+    def test_completed_book_forwards_historical_dates(self, mock_record_write):
+        """Test that a completed book's started_at/finished_at are forwarded to the API."""
+        hardcover_details = HardcoverDetails(
+            abs_id='test-hardcover-book',
+            hardcover_book_id='123',
+            hardcover_edition_id='456',
+            hardcover_pages=200,
+            matched_by='test',
+            hardcover_user_book_id=789,
+            hardcover_status_id=3,
+        )
+        self.database_service.save_hardcover_details(hardcover_details)
+
+        self.test_book.started_at = '2024-06-01'
+        self.test_book.finished_at = '2024-07-15'
+
+        update_request = UpdateProgressRequest(
+            locator_result=LocatorResult(percentage=1.0)
+        )
+
+        self.hardcover_sync_client.update_progress(self.test_book, update_request)
+
+        self.mock_hardcover_client.update_progress.assert_called_with(
+            789,
+            200,
+            edition_id='456',
+            is_finished=True,
+            current_percentage=1.0,
+            started_at='2024-06-01',
+            finished_at='2024-07-15',
+        )
 
     def test_push_local_rating_returns_local_only_for_unlinked_book(self):
         result = self.hardcover_sync_client.push_local_rating(self.test_book, 4.0)
