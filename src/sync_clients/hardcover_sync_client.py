@@ -545,11 +545,15 @@ class HardcoverSyncClient(SyncClient):
 
         if new_status != current_status:
             edition_id = self._select_edition_id(book, hardcover_details)
-            self.hardcover_client.update_status(
-                int(hardcover_details.hardcover_book_id),
-                new_status,
-                int(edition_id) if edition_id else None,
-            )
+            try:
+                self.hardcover_client.update_status(
+                    int(hardcover_details.hardcover_book_id),
+                    new_status,
+                    int(edition_id) if edition_id else None,
+                )
+            except Exception as e:
+                logger.error(f"Failed to update Hardcover status: {e}")
+                return current_status
             hardcover_details.hardcover_status_id = new_status
             self.database_service.save_hardcover_details(hardcover_details)
             record_write('Hardcover', book.abs_id, {'status': new_status})
@@ -634,6 +638,8 @@ class HardcoverSyncClient(SyncClient):
             page_num = max(1, min(int(total_pages * percentage), total_pages))
 
         is_finished = percentage > 0.99 or (total_pages > 0 and page_num == total_pages)
+        if is_finished and total_pages > 0:
+            page_num = total_pages
         current_status = ub.get('status_id') or hardcover_details.hardcover_status_id or HC_WANT_TO_READ
 
         current_status = self._handle_status_transition(book, hardcover_details, current_status, percentage, is_finished)
@@ -647,7 +653,9 @@ class HardcoverSyncClient(SyncClient):
                 current_percentage=percentage,
             )
 
-            actual_pct = min(page_num / total_pages, 1.0) if total_pages > 0 else percentage
+            actual_pct = 1.0 if is_finished and total_pages > 0 else (
+                min(page_num / total_pages, 1.0) if total_pages > 0 else percentage
+            )
 
             updated_state = {
                 'pct': actual_pct,

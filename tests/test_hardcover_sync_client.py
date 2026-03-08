@@ -159,10 +159,11 @@ class TestHardcoverSyncClient(unittest.TestCase):
         # Status should be promoted to Read (3)
         self.mock_hardcover_client.update_status.assert_called_with(123, 3, 456)
 
-        expected_page = int(100 * 0.995)
+        # When is_finished=True, page_num is clamped to total_pages to prevent
+        # feedback loops from mismatched cached state
         self.mock_hardcover_client.update_progress.assert_called_with(
             789,
-            expected_page,
+            100,
             edition_id='456',
             is_finished=True,
             current_percentage=0.995,

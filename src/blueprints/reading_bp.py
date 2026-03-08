@@ -380,7 +380,8 @@ def reading_detail(abs_id):
         if hardcover.hardcover_pages and hardcover.hardcover_pages > 0:
             metadata['pages'] = hardcover.hardcover_pages
         metadata['hardcover_slug'] = hardcover.hardcover_slug
-        metadata['hardcover_url'] = get_hardcover_book_url(hardcover.hardcover_slug)
+        hardcover_ref = hardcover.hardcover_slug or hardcover.hardcover_book_id
+        metadata['hardcover_url'] = get_hardcover_book_url(hardcover_ref)
         # Map HC status ID to a human-readable label for the detail page
         hc_status_labels = {1: 'Want to Read', 2: 'Currently Reading', 3: 'Read', 4: 'Paused', 5: 'DNF'}
         if hardcover.hardcover_status_id:
@@ -476,7 +477,9 @@ def reading_detail(abs_id):
         services_enabled=services_enabled,
         service_states=service_states,
         integrations=integrations,
-        hardcover_rating_sync_available=services_enabled['hardcover'] and integrations['hardcover'],
+        hardcover_rating_sync_available=services_enabled['hardcover'] and bool(
+            hardcover and hardcover.hardcover_book_id
+        ),
     )
 
 
@@ -837,6 +840,8 @@ def update_status(abs_id):
         return jsonify({"success": True, "status": new_status})
 
     book.status = new_status
+    if new_status == 'active':
+        book.activity_flag = False
     database_service.save_book(book)
 
     # Auto-create journal entries for transitions
