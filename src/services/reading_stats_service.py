@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from src.db.database_service import DatabaseService
 
 READING_STATUSES = {'active', 'completed', 'paused', 'dnf', 'not_started'}
 MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -14,7 +18,7 @@ MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
 class ReadingStatsService:
     """Compute local reading stats from books, states, and yearly goals."""
 
-    database_service: object
+    database_service: DatabaseService
 
     def get_year_stats(self, year: int) -> dict:
         books = [

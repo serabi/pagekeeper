@@ -9,7 +9,6 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.modules.setdefault('nh3', SimpleNamespace(clean=lambda value, tags=None, attributes=None: value))
 
 from src.db.models import Book, State  # noqa: E402
 
@@ -87,14 +86,42 @@ class MockContainer:
 
 class TestReadingRoutes(unittest.TestCase):
     def setUp(self):
+        import shutil
+
+        import src.db.migration_utils
+
+        # Scope nh3 stub to this test class
+        self._nh3_original = sys.modules.get('nh3')
+        sys.modules['nh3'] = SimpleNamespace(clean=lambda value, tags=None, attributes=None: value)
+
         self.temp_dir = tempfile.mkdtemp()
+        original_data_dir = os.environ.get('DATA_DIR')
+        original_books_dir = os.environ.get('BOOKS_DIR')
         os.environ['DATA_DIR'] = self.temp_dir
         os.environ['BOOKS_DIR'] = self.temp_dir
         self.mock_container = MockContainer()
 
-        import src.db.migration_utils
-        self.original_init_db = src.db.migration_utils.initialize_database
+        original_init_db = src.db.migration_utils.initialize_database
         src.db.migration_utils.initialize_database = lambda data_dir: self.mock_container.mock_database_service
+
+        # Register cleanup so it runs even if setUp raises after this point
+        def cleanup():
+            src.db.migration_utils.initialize_database = original_init_db
+            if original_data_dir is None:
+                os.environ.pop('DATA_DIR', None)
+            else:
+                os.environ['DATA_DIR'] = original_data_dir
+            if original_books_dir is None:
+                os.environ.pop('BOOKS_DIR', None)
+            else:
+                os.environ['BOOKS_DIR'] = original_books_dir
+            shutil.rmtree(self.temp_dir, ignore_errors=True)
+            if self._nh3_original is None:
+                sys.modules.pop('nh3', None)
+            else:
+                sys.modules['nh3'] = self._nh3_original
+
+        self.addCleanup(cleanup)
 
         from src.web_server import create_app
         self.app, _ = create_app(test_container=self.mock_container)
@@ -102,14 +129,6 @@ class TestReadingRoutes(unittest.TestCase):
         self.client = self.app.test_client()
         self.db = self.mock_container.mock_database_service
         self.db.get_hardcover_details.return_value = None
-
-    def tearDown(self):
-        import shutil
-
-        import src.db.migration_utils
-
-        src.db.migration_utils.initialize_database = self.original_init_db
-        shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_stats_endpoint_returns_rich_payload(self):
         self.db.get_all_books.return_value = [

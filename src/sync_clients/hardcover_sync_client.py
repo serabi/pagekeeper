@@ -302,9 +302,9 @@ class HardcoverSyncClient(SyncClient):
     # ── Edition Selection (Step 7) ────────────────────────────────────
 
     def _select_edition_id(self, book, hardcover_details):
-        """Select the appropriate edition based on sync mode."""
-        sync_mode = getattr(book, 'sync_mode', 'audiobook')
-        if sync_mode == 'audiobook' and hardcover_details.hardcover_audio_edition_id:
+        """Select the appropriate edition based on sync source."""
+        sync_source = getattr(book, 'sync_source', None)
+        if sync_source == 'audiobook' and hardcover_details.hardcover_audio_edition_id:
             return hardcover_details.hardcover_audio_edition_id
         return hardcover_details.hardcover_edition_id
 
@@ -587,11 +587,12 @@ class HardcoverSyncClient(SyncClient):
             return SyncResult(None, False)
 
         audio_seconds = hardcover_details.hardcover_audio_seconds or 0
+        is_audiobook = getattr(book, 'sync_source', None) == 'audiobook'
 
-        # Edition-aware: select correct edition based on sync mode (Step 7)
+        # Edition-aware: select correct edition based on sync source (Step 7)
         edition_id = self._select_edition_id(book, hardcover_details)
 
-        if audio_seconds > 0:
+        if is_audiobook and audio_seconds > 0:
             return self._update_audiobook_progress(book, hardcover_details, ub, percentage, audio_seconds, edition_id)
 
         # --- PAGE-BASED PATH ---

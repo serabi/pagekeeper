@@ -699,10 +699,10 @@
 
                             <div class="field-grid full-width settings-space-md">
                                 <div class="form-group">
-                                    <label>Journal on Start</label>
+                                    <label for="HARDCOVER_JOURNAL_ON_START">Journal on Start</label>
                                     <div class="toggle-switch-wrapper">
                                         <label class="toggle-switch">
-                                            <input type="checkbox" name="HARDCOVER_JOURNAL_ON_START"
+                                            <input type="checkbox" id="HARDCOVER_JOURNAL_ON_START" name="HARDCOVER_JOURNAL_ON_START"
                                                 {% if get_bool('HARDCOVER_JOURNAL_ON_START') %}checked{% endif %}>
                                             <span class="slider"></span>
                                         </label>
@@ -710,10 +710,10 @@
                                     <div class="help-text">Create a Hardcover reading journal entry when you start a book.</div>
                                 </div>
                                 <div class="form-group">
-                                    <label>Journal on Finish</label>
+                                    <label for="HARDCOVER_JOURNAL_ON_FINISH">Journal on Finish</label>
                                     <div class="toggle-switch-wrapper">
                                         <label class="toggle-switch">
-                                            <input type="checkbox" name="HARDCOVER_JOURNAL_ON_FINISH"
+                                            <input type="checkbox" id="HARDCOVER_JOURNAL_ON_FINISH" name="HARDCOVER_JOURNAL_ON_FINISH"
                                                 {% if get_bool('HARDCOVER_JOURNAL_ON_FINISH') %}checked{% endif %}>
                                             <span class="slider"></span>
                                         </label>

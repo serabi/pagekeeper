@@ -129,11 +129,11 @@
         {% else %}
 
         <div class="r-main-tab-bar" role="tablist" aria-label="Reading sections">
-            <button class="r-main-tab-btn active" type="button" data-main-tab="log" aria-selected="true">Log</button>
-            <button class="r-main-tab-btn" type="button" data-main-tab="stats" aria-selected="false">Stats</button>
+            <button class="r-main-tab-btn active" type="button" id="tab-log" role="tab" data-main-tab="log" aria-selected="true" aria-controls="panel-log">Log</button>
+            <button class="r-main-tab-btn" type="button" id="tab-stats" role="tab" data-main-tab="stats" aria-selected="false" aria-controls="panel-stats">Stats</button>
         </div>
 
-        <div class="r-main-panel" data-main-panel="log">
+        <div class="r-main-panel" id="panel-log" data-main-panel="log" role="tabpanel" aria-labelledby="tab-log">
         <div class="r-toolbar" id="reading-toolbar">
             <div class="r-toolbar-top">
                 <div class="r-filter-bar" role="tablist" aria-label="Reading status filters">
@@ -245,7 +245,7 @@
         </div>
         </div>
 
-        <div class="r-main-panel" data-main-panel="stats" hidden>
+        <div class="r-main-panel" id="panel-stats" data-main-panel="stats" role="tabpanel" aria-labelledby="tab-stats" hidden>
             <section class="r-stats-shell" id="reading-stats-shell"
                      data-current-year="{{ current_year }}"
                      data-goal-default="{{ goal.target_books if goal else 12 }}">

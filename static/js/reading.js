@@ -365,7 +365,7 @@ function initReadingPage(currentYear) {
       .then(data => {
         renderStats(data);
       })
-      .catch(() => {});
+      .catch(err => console.debug('Stats load failed:', err));
   }
 
   if (statsYearSelect) {
