@@ -57,12 +57,14 @@
                         Change Cover
                     </button>
                     {# Rating stars under cover #}
-                    <div class="r-detail-rating" id="rating-stars" data-abs-id="{{ book.abs_id }}" data-rating="{{ book.rating or 0 }}">
-                        {% for i in range(1, 6) %}
-                        <button class="r-star-btn {% if i <= (book.rating or 0) %}filled{% elif i - 0.5 <= (book.rating or 0) %}half{% endif %}" data-value="{{ i }}" type="button">&#9733;</button>
+                    <div class="r-detail-rating" id="rating-stars" data-abs-id="{{ book.abs_id }}" data-rating="{{ book.rating or 0 }}" data-hardcover-sync-available="{{ 'true' if hardcover_rating_sync_available else 'false' }}">
+                        {% for i in range(1, 11) %}
+                        {% set value = i / 2 %}
+                        <button class="r-star-btn {% if value <= (book.rating or 0) %}filled{% endif %}" data-value="{{ value }}" type="button" title="{{ value }}/5">&#9733;</button>
                         {% endfor %}
                         <span class="r-rating-label" id="rating-label">{% if book.rating %}{{ book.rating }}/5{% else %}Rate{% endif %}</span>
                     </div>
+                    <div class="r-rating-sync" id="rating-sync-status" {% if not hardcover_rating_sync_available %}hidden{% endif %}></div>
                 </div>
                 <div class="r-hero-info">
                     <h1 class="r-detail-title">{{ book.abs_title }}{% if metadata.subtitle %}: {{ metadata.subtitle }}{% endif %}</h1>

@@ -2,8 +2,6 @@
 
 import re
 
-from sqlalchemy import extract
-
 from .base_repository import BaseRepository
 from .models import Book, BookfusionHighlight, ReadingGoal, ReadingJournal
 
@@ -176,15 +174,12 @@ class ReadingRepository(BaseRepository):
                 return goal
 
     def get_reading_stats(self, year):
-        """Return reading statistics.
-
-        ``books_finished`` is scoped to the given year.
-        ``currently_reading`` and ``total_tracked`` are intentionally global
-        (not year-scoped) because active/tracked books span across years.
-        """
+        """Backward-compatible lightweight stats summary."""
         with self.get_session() as session:
             books_finished = session.query(Book).filter(
-                extract('year', Book.finished_at) == year
+                Book.status == 'completed',
+                Book.finished_at.is_not(None),
+                Book.finished_at.like(f'{year}-%'),
             ).count()
             currently_reading = session.query(Book).filter(Book.status == 'active').count()
             total_tracked = session.query(Book).filter(

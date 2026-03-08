@@ -266,6 +266,27 @@ class HardcoverSyncClient(SyncClient):
         self.database_service.save_hardcover_details(hardcover_details)
         return ub
 
+    def _ensure_writable_user_book(self, book, hardcover_details):
+        """Ensure a user_book exists so metadata like rating can be updated."""
+        ub = self._ensure_user_book(book, hardcover_details)
+        if ub:
+            return ub
+
+        hc_status_id = LOCAL_TO_HC_STATUS.get(book.status, HC_WANT_TO_READ)
+        edition_id = self._select_edition_id(book, hardcover_details)
+        created = self.hardcover_client.update_status(
+            int(hardcover_details.hardcover_book_id),
+            hc_status_id,
+            int(edition_id) if edition_id else None,
+        )
+        if not created:
+            return None
+
+        hardcover_details.hardcover_user_book_id = created.get('id')
+        hardcover_details.hardcover_status_id = created.get('status_id', hc_status_id)
+        self.database_service.save_hardcover_details(hardcover_details)
+        return created
+
     def _ensure_read_id(self, user_book_id, hardcover_details):
         """Return cached read ID or fetch and cache it.
 
@@ -313,6 +334,33 @@ class HardcoverSyncClient(SyncClient):
             logger.info(f"Hardcover journal mirrored: '{event_name}' for '{sanitize_log_data(book.abs_title)}'")
         except Exception as e:
             logger.debug(f"Could not mirror journal to Hardcover: {e}")
+
+    def push_local_rating(self, book, rating):
+        """Mirror a local rating change to Hardcover when a link exists."""
+        if not self.is_configured() or not self.database_service:
+            return {'hardcover_synced': False, 'hardcover_error': 'Hardcover not configured'}
+
+        hardcover_details = self.database_service.get_hardcover_details(book.abs_id)
+        if not hardcover_details or not hardcover_details.hardcover_book_id:
+            return {'hardcover_synced': False, 'hardcover_error': 'Book is not linked to Hardcover'}
+
+        try:
+            ub = self._ensure_writable_user_book(book, hardcover_details)
+            if not ub or not ub.get('id'):
+                return {'hardcover_synced': False, 'hardcover_error': 'Could not resolve Hardcover user_book'}
+
+            result = self.hardcover_client.update_user_book(
+                int(ub['id']),
+                {'rating': float(rating) if rating is not None else None},
+            )
+            if not result:
+                return {'hardcover_synced': False, 'hardcover_error': 'Hardcover rejected rating update'}
+
+            record_write('Hardcover', book.abs_id, {'rating': rating})
+            return {'hardcover_synced': True, 'hardcover_error': None}
+        except Exception as e:
+            logger.warning(f"Failed to push rating to Hardcover: {e}")
+            return {'hardcover_synced': False, 'hardcover_error': str(e)}
 
     # ── Automatch ─────────────────────────────────────────────────────
 

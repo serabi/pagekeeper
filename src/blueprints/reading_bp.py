@@ -17,10 +17,15 @@ from src.blueprints.helpers import (
     get_service_web_url,
 )
 from src.db.models import State
+from src.services.reading_stats_service import ReadingStatsService
 
 logger = logging.getLogger(__name__)
 
 reading_bp = Blueprint('reading', __name__)
+
+
+def _get_reading_stats_service():
+    return ReadingStatsService(get_database_service())
 
 
 def _synthetic_journal(abs_id, event, date_str, percentage=None):
@@ -249,7 +254,7 @@ def reading_index():
     )
 
     current_year = date.today().year
-    stats = database_service.get_reading_stats(current_year)
+    stats = _get_reading_stats_service().get_year_stats(current_year)
     goal = database_service.get_reading_goal(current_year)
     reading_sections = [
         {
@@ -471,6 +476,7 @@ def reading_detail(abs_id):
         services_enabled=services_enabled,
         service_states=service_states,
         integrations=integrations,
+        hardcover_rating_sync_available=services_enabled['hardcover'] and integrations['hardcover'],
     )
 
 
@@ -491,12 +497,31 @@ def update_rating(abs_id):
             return jsonify({"success": False, "error": "Invalid rating value"}), 400
         if not math.isfinite(rating) or rating < 0 or rating > 5:
             return jsonify({"success": False, "error": "Rating must be between 0 and 5"}), 400
+        if abs((rating * 2) - round(rating * 2)) > 1e-9:
+            return jsonify({"success": False, "error": "Rating must be in 0.5 increments"}), 400
 
     book = database_service.update_book_reading_fields(abs_id, rating=rating)
     if not book:
         return jsonify({"success": False, "error": "Book not found"}), 404
 
-    return jsonify({"success": True, "rating": book.rating})
+    hardcover_synced = False
+    hardcover_error = None
+    try:
+        container = get_container()
+        hc_sync = container.hardcover_sync_client()
+        if hc_sync.is_configured():
+            sync_result = hc_sync.push_local_rating(book, rating)
+            hardcover_synced = bool(sync_result.get('hardcover_synced'))
+            hardcover_error = sync_result.get('hardcover_error')
+    except Exception as e:
+        hardcover_error = str(e)
+
+    return jsonify({
+        "success": True,
+        "rating": book.rating,
+        "hardcover_synced": hardcover_synced,
+        "hardcover_error": hardcover_error,
+    })
 
 
 @reading_bp.route('/api/reading/book/<abs_id>/progress', methods=['POST'])
@@ -681,7 +706,7 @@ def update_journal(journal_id):
 def get_goal(year):
     """Get the reading goal for a given year."""
     database_service = get_database_service()
-    stats = database_service.get_reading_stats(year)
+    stats = _get_reading_stats_service().get_year_stats(year)
     goal = database_service.get_reading_goal(year)
 
     return jsonify({
@@ -856,14 +881,5 @@ def update_status(abs_id):
 @reading_bp.route('/api/reading/stats/<int:year>', methods=['GET'])
 def get_stats(year):
     """Reading stats for a given year."""
-    database_service = get_database_service()
-    stats = database_service.get_reading_stats(year)
-    goal = database_service.get_reading_goal(year)
-
-    return jsonify({
-        "year": year,
-        "books_finished": stats['books_finished'],
-        "currently_reading": stats['currently_reading'],
-        "total_tracked": stats['total_tracked'],
-        "goal_target": goal.target_books if goal else None,
-    })
+    stats = _get_reading_stats_service().get_year_stats(year)
+    return jsonify(stats)

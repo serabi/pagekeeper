@@ -37,10 +37,30 @@ function initReadingPage(currentYear) {
   const controlsModal = document.getElementById('reading-controls-modal');
   const controlsOpen = document.getElementById('reading-controls-open');
   const controlsClose = document.getElementById('reading-controls-close');
+  const mainTabs = Array.from(document.querySelectorAll('.r-main-tab-btn'));
+  const mainPanels = Array.from(document.querySelectorAll('.r-main-panel'));
+  const statsShell = document.getElementById('reading-stats-shell');
+  const statsYearSelect = document.getElementById('reading-stats-year');
 
   let activeFilter = 'all';
   let currentView = 'list';
   const desktopMedia = window.matchMedia('(min-width: 961px)');
+
+  function setMainTab(tabName) {
+    mainTabs.forEach(tab => {
+      const active = tab.dataset.mainTab === tabName;
+      tab.classList.toggle('active', active);
+      tab.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+    mainPanels.forEach(panel => {
+      panel.hidden = panel.dataset.mainPanel !== tabName;
+    });
+  }
+
+  mainTabs.forEach(tab => {
+    tab.addEventListener('click', () => setMainTab(tab.dataset.mainTab));
+  });
+  setMainTab('log');
 
   function syncSearchInputs(source) {
     const value = source ? source.value : '';
@@ -276,6 +296,85 @@ function initReadingPage(currentYear) {
   syncSearchInputs(searchInput || mobileSearchInput);
   applyFiltersAndSort();
 
+  function updateGoalCard(stats, year) {
+    const goalCount = document.getElementById('stats-goal-count');
+    const goalLabel = document.getElementById('stats-goal-label');
+    const goalProgress = document.getElementById('stats-goal-progress');
+    const goalRing = document.querySelector('.r-goal-widget--stats .r-goal-ring circle:last-child');
+    const yearLabel = document.getElementById('stats-year-label');
+    const totalTracked = document.getElementById('stats-total-tracked');
+
+    if (goalCount) {
+      goalCount.textContent = stats.goal_target ? `${stats.goal_completed}/${stats.goal_target}` : '+';
+    }
+    if (goalLabel) {
+      goalLabel.textContent = stats.goal_target ? `${year} goal` : 'Set goal';
+    }
+    if (goalProgress) {
+      goalProgress.textContent = `${Math.round(stats.goal_percent || 0)}%`;
+    }
+    if (yearLabel) {
+      yearLabel.textContent = year;
+    }
+    if (totalTracked) {
+      totalTracked.textContent = `${stats.total_tracked} tracked books total`;
+    }
+    if (goalRing) {
+      const dash = Math.min((stats.goal_percent || 0) * 1.257, 125.7);
+      goalRing.setAttribute('stroke-dasharray', `${dash} 125.7`);
+    }
+  }
+
+  function renderStatsChart(stats) {
+    const chart = document.getElementById('stats-chart');
+    if (!chart) return;
+    const values = stats.monthly_finished || [];
+    const labels = stats.monthly_labels || ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const maxValue = values.reduce((acc, value) => Math.max(acc, value), 0);
+
+    chart.querySelectorAll('.r-stats-bar-group').forEach((group, idx) => {
+      const value = values[idx] || 0;
+      const fill = group.querySelector('.r-stats-bar-fill');
+      const valueEl = group.querySelector('.r-stats-bar-value');
+      const labelEl = group.querySelector('.r-stats-bar-label');
+      if (fill) {
+        fill.style.height = `${maxValue > 0 ? ((value / maxValue) * 100).toFixed(1) : 0}%`;
+      }
+      if (valueEl) valueEl.textContent = value;
+      if (labelEl) labelEl.textContent = labels[idx] || '';
+    });
+  }
+
+  function renderStats(stats) {
+    const finished = document.getElementById('stats-books-finished');
+    const current = document.getElementById('stats-currently-reading');
+    const average = document.getElementById('stats-average-rating');
+    if (finished) finished.textContent = stats.books_finished;
+    if (current) current.textContent = stats.currently_reading;
+    if (average) average.textContent = stats.average_rating == null ? '\u2014' : Number(stats.average_rating).toFixed(2);
+    updateGoalCard(stats, stats.year);
+    renderStatsChart(stats);
+  }
+
+  function loadStats(year) {
+    return fetch(`/api/reading/stats/${year}`)
+      .then(r => {
+        if (!r.ok) throw new Error('Failed to load stats');
+        return r.json();
+      })
+      .then(data => {
+        renderStats(data);
+      })
+      .catch(() => {});
+  }
+
+  if (statsYearSelect) {
+    statsYearSelect.addEventListener('change', () => {
+      const year = parseInt(statsYearSelect.value, 10) || currentYear;
+      loadStats(year);
+    });
+  }
+
   // ── Goal modal ─────────────────────────────────────────────
 
   const goalCard = document.getElementById('goal-card');
@@ -295,10 +394,11 @@ function initReadingPage(currentYear) {
 
   if (goalSave) {
     goalSave.addEventListener('click', () => {
+      const activeYear = parseInt(statsYearSelect?.value, 10) || currentYear;
       const target = parseInt(goalInput?.value, 10);
       if (!target || target < 1) return;
       goalSave.disabled = true;
-      fetch(`/api/reading/goal/${currentYear}`, {
+      fetch(`/api/reading/goal/${activeYear}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ target_books: target }),
@@ -309,13 +409,19 @@ function initReadingPage(currentYear) {
         })
         .then(data => {
           if (data.success) {
-            window.location.reload();
-            return;
+            return loadStats(activeYear).then(() => {
+              hideModal();
+              goalSave.disabled = false;
+            });
           }
           goalSave.disabled = false;
         })
         .catch(() => { goalSave.disabled = false; });
     });
+  }
+
+  if (statsShell && statsYearSelect) {
+    loadStats(parseInt(statsYearSelect.value, 10) || currentYear);
   }
 }
 
@@ -325,12 +431,35 @@ function initReadingDetail() {
   const rc = document.getElementById('rating-stars');
   if (rc) {
     const absId = rc.dataset.absId;
+    const hardcoverSyncAvailable = rc.dataset.hardcoverSyncAvailable === 'true';
     const stars = rc.querySelectorAll('.r-star-btn');
     const label = document.getElementById('rating-label');
+    const syncStatus = document.getElementById('rating-sync-status');
+
+    function formatRating(value) {
+      return Number(value).toFixed(value % 1 === 0 ? 0 : 1) + '/5';
+    }
+
+    function applyRatingState(value) {
+      const numeric = Number(value) || 0;
+      stars.forEach(star => {
+        const starValue = parseFloat(star.dataset.value || '0');
+        star.classList.toggle('filled', starValue <= numeric);
+      });
+      rc.dataset.rating = String(numeric);
+      if (label) label.textContent = numeric > 0 ? formatRating(numeric) : 'Rate';
+    }
+
+    function setSyncStatus(state, message) {
+      if (!syncStatus || !hardcoverSyncAvailable) return;
+      syncStatus.hidden = false;
+      syncStatus.className = `r-rating-sync r-rating-sync--${state}`;
+      syncStatus.textContent = message;
+    }
 
     stars.forEach(star => {
       star.addEventListener('click', () => {
-        const value = parseInt(star.dataset.value, 10);
+        const value = parseFloat(star.dataset.value);
         fetch(`/api/reading/book/${absId}/rating`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -342,18 +471,25 @@ function initReadingDetail() {
           })
           .then(data => {
             if (data.success) {
-              stars.forEach((s, i) => {
-                s.classList.toggle('filled', i + 1 <= data.rating);
-                s.classList.remove('half');
-              });
-              if (label) label.textContent = data.rating + '/5';
+              applyRatingState(data.rating);
+              if (!hardcoverSyncAvailable) {
+                syncStatus.hidden = true;
+              } else if (data.hardcover_synced) {
+                setSyncStatus('success', 'Synced to Hardcover');
+              } else if (data.hardcover_error) {
+                setSyncStatus('warning', 'Saved locally, Hardcover sync failed');
+              } else {
+                syncStatus.hidden = true;
+              }
             }
           })
           .catch(() => {
-            // Optionally show user feedback
+            setSyncStatus('warning', 'Saved locally, Hardcover sync failed');
           });
       });
     });
+
+    applyRatingState(parseFloat(rc.dataset.rating || '0'));
   }
 
   // ── Date fields ──

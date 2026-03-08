@@ -117,26 +117,6 @@
                     <span class="r-qs-item"><strong>{{ stats.total_tracked|default(0) }}</strong> tracked</span>
                 </div>
             </div>
-            <button class="r-goal-widget" id="goal-card" type="button">
-                {% if goal %}
-                {% set goal_pct = (((stats.books_finished|default(0)) / goal.target_books * 100)|round(0))|int if goal.target_books > 0 else 0 %}
-                <svg class="r-goal-ring" viewBox="0 0 48 48" aria-hidden="true">
-                    <circle cx="24" cy="24" r="20" fill="none" stroke="var(--color-border)" stroke-width="3"/>
-                    <circle cx="24" cy="24" r="20" fill="none" stroke="var(--color-success)" stroke-width="3"
-                        stroke-dasharray="{{ [goal_pct * 1.257, 125.7]|min }} 125.7"
-                        stroke-linecap="round" transform="rotate(-90 24 24)"/>
-                </svg>
-                <div class="r-goal-text">
-                    <span class="r-goal-count">{{ stats.books_finished|default(0) }}/{{ goal.target_books }}</span>
-                    <span class="r-goal-label">{{ current_year }} goal</span>
-                </div>
-                {% else %}
-                <div class="r-goal-text r-goal-unset">
-                    <span class="r-goal-count">+</span>
-                    <span class="r-goal-label">Set goal</span>
-                </div>
-                {% endif %}
-            </button>
         </div>
 
         {% if total_books == 0 %}
@@ -148,6 +128,12 @@
         </div>
         {% else %}
 
+        <div class="r-main-tab-bar" role="tablist" aria-label="Reading sections">
+            <button class="r-main-tab-btn active" type="button" data-main-tab="log" aria-selected="true">Log</button>
+            <button class="r-main-tab-btn" type="button" data-main-tab="stats" aria-selected="false">Stats</button>
+        </div>
+
+        <div class="r-main-panel" data-main-panel="log">
         <div class="r-toolbar" id="reading-toolbar">
             <div class="r-toolbar-top">
                 <div class="r-filter-bar" role="tablist" aria-label="Reading status filters">
@@ -256,6 +242,97 @@
 
         <div class="r-empty-tab" id="empty-tab" hidden>
             <p>No books match the current filters.</p>
+        </div>
+        </div>
+
+        <div class="r-main-panel" data-main-panel="stats" hidden>
+            <section class="r-stats-shell" id="reading-stats-shell"
+                     data-current-year="{{ current_year }}"
+                     data-goal-default="{{ goal.target_books if goal else 12 }}">
+                <div class="r-stats-header">
+                    <div>
+                        <p class="r-page-kicker">Yearly Analytics</p>
+                        <h3 class="r-stats-title">Reading Stats</h3>
+                    </div>
+                    <div class="r-stats-controls">
+                        <label class="r-control-field r-stats-year-field">
+                            <span>Year</span>
+                            <select id="reading-stats-year" class="r-sort-select">
+                                {% for year in range(current_year, current_year - 5, -1) %}
+                                <option value="{{ year }}" {% if year == current_year %}selected{% endif %}>{{ year }}</option>
+                                {% endfor %}
+                            </select>
+                        </label>
+                        <button class="r-goal-widget r-goal-widget--stats" id="goal-card" type="button">
+                            {% if goal %}
+                            {% set goal_pct = stats.goal_percent|default(0) %}
+                            <svg class="r-goal-ring" viewBox="0 0 48 48" aria-hidden="true">
+                                <circle cx="24" cy="24" r="20" fill="none" stroke="var(--color-border)" stroke-width="3"/>
+                                <circle cx="24" cy="24" r="20" fill="none" stroke="var(--color-success)" stroke-width="3"
+                                    stroke-dasharray="{{ [goal_pct * 1.257, 125.7]|min }} 125.7"
+                                    stroke-linecap="round" transform="rotate(-90 24 24)"/>
+                            </svg>
+                            <div class="r-goal-text">
+                                <span class="r-goal-count" id="stats-goal-count">{{ stats.goal_completed|default(0) }}/{{ goal.target_books }}</span>
+                                <span class="r-goal-label" id="stats-goal-label">{{ current_year }} goal</span>
+                            </div>
+                            {% else %}
+                            <div class="r-goal-text r-goal-unset">
+                                <span class="r-goal-count">+</span>
+                                <span class="r-goal-label">Set goal</span>
+                            </div>
+                            {% endif %}
+                        </button>
+                    </div>
+                </div>
+
+                <div class="r-stats-grid">
+                    <article class="r-stats-card">
+                        <span class="r-stats-card-label">Books Finished</span>
+                        <strong class="r-stats-card-value" id="stats-books-finished">{{ stats.books_finished|default(0) }}</strong>
+                        <span class="r-stats-card-meta">Completed in <span id="stats-year-label">{{ current_year }}</span></span>
+                    </article>
+                    <article class="r-stats-card">
+                        <span class="r-stats-card-label">Currently Reading</span>
+                        <strong class="r-stats-card-value" id="stats-currently-reading">{{ stats.currently_reading|default(0) }}</strong>
+                        <span class="r-stats-card-meta">Currently active books</span>
+                    </article>
+                    <article class="r-stats-card">
+                        <span class="r-stats-card-label">Average Rating</span>
+                        <strong class="r-stats-card-value" id="stats-average-rating">{{ '%.2f'|format(stats.average_rating) if stats.average_rating is not none else '—' }}</strong>
+                        <span class="r-stats-card-meta">Finished and rated this year</span>
+                    </article>
+                    <article class="r-stats-card">
+                        <span class="r-stats-card-label">Goal Progress</span>
+                        <strong class="r-stats-card-value" id="stats-goal-progress">{{ '%.0f'|format(stats.goal_percent|default(0)) }}%</strong>
+                        <span class="r-stats-card-meta" id="stats-total-tracked">{{ stats.total_tracked|default(0) }} tracked books total</span>
+                    </article>
+                </div>
+
+                <div class="r-stats-chart-card">
+                    <div class="r-stats-chart-head">
+                        <div>
+                            <h4 class="r-section-title">Monthly Completions</h4>
+                            <p class="r-section-description">Local completions by finish date for the selected year.</p>
+                        </div>
+                    </div>
+                    <div class="r-stats-chart" id="stats-chart">
+                        {% set monthly = stats.monthly_finished|default([0,0,0,0,0,0,0,0,0,0,0,0]) %}
+                        {% set max_monthly = (monthly|max) if monthly else 0 %}
+                        {% for idx in range(12) %}
+                        {% set month_value = monthly[idx] %}
+                        {% set month_pct = ((month_value / max_monthly) * 100) if max_monthly > 0 else 0 %}
+                        <div class="r-stats-bar-group" data-month-index="{{ idx }}">
+                            <div class="r-stats-bar-track">
+                                <span class="r-stats-bar-fill" style="height: {{ '%.1f'|format(month_pct) }}%;"></span>
+                            </div>
+                            <span class="r-stats-bar-value">{{ month_value }}</span>
+                            <span class="r-stats-bar-label">{{ stats.monthly_labels[idx] }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </section>
         </div>
 
         {% endif %}

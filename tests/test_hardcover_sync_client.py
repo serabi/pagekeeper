@@ -347,6 +347,52 @@ class TestHardcoverSyncClient(unittest.TestCase):
         self.assertEqual(result, {123: {'id': 789}})
         self.mock_hardcover_client.get_currently_reading.assert_called_once()
 
+    @patch('src.sync_clients.hardcover_sync_client.record_write')
+    def test_push_local_rating_with_cached_user_book(self, mock_record_write):
+        hardcover_details = HardcoverDetails(
+            abs_id='test-hardcover-book',
+            hardcover_book_id='123',
+            hardcover_edition_id='456',
+            matched_by='test',
+            hardcover_user_book_id=789,
+            hardcover_status_id=2,
+        )
+        self.database_service.save_hardcover_details(hardcover_details)
+        self.mock_hardcover_client.update_user_book.return_value = {'id': 789, 'rating': 4.5}
+
+        result = self.hardcover_sync_client.push_local_rating(self.test_book, 4.5)
+
+        self.assertTrue(result['hardcover_synced'])
+        self.mock_hardcover_client.update_user_book.assert_called_once_with(789, {'rating': 4.5})
+        mock_record_write.assert_called()
+
+    @patch('src.sync_clients.hardcover_sync_client.record_write')
+    def test_push_local_rating_creates_user_book_when_missing(self, mock_record_write):
+        hardcover_details = HardcoverDetails(
+            abs_id='test-hardcover-book',
+            hardcover_book_id='123',
+            hardcover_edition_id='456',
+            matched_by='test',
+        )
+        self.database_service.save_hardcover_details(hardcover_details)
+        self.mock_hardcover_client.get_user_book.return_value = None
+        self.mock_hardcover_client.update_status.return_value = {'id': 999, 'status_id': 2}
+        self.mock_hardcover_client.update_user_book.return_value = {'id': 999, 'rating': 3.5}
+
+        result = self.hardcover_sync_client.push_local_rating(self.test_book, 3.5)
+
+        self.assertTrue(result['hardcover_synced'])
+        self.mock_hardcover_client.update_status.assert_called_once_with(123, 2, 456)
+        self.mock_hardcover_client.update_user_book.assert_called_once_with(999, {'rating': 3.5})
+        saved = self.database_service.get_hardcover_details('test-hardcover-book')
+        self.assertEqual(saved.hardcover_user_book_id, 999)
+        mock_record_write.assert_called()
+
+    def test_push_local_rating_returns_local_only_for_unlinked_book(self):
+        result = self.hardcover_sync_client.push_local_rating(self.test_book, 4.0)
+        self.assertFalse(result['hardcover_synced'])
+        self.assertIn('not linked', result['hardcover_error'])
+
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

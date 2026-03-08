@@ -628,6 +628,33 @@ class HardcoverClient:
             return result["insert_user_book"].get("user_book")
         return None
 
+    def update_user_book(self, user_book_id: int, updates: dict) -> dict | None:
+        """Update user_book metadata such as rating or status."""
+        query = """
+        mutation ($id: Int!, $object: UserBookUpdateInput!) {
+            update_user_book(id: $id, object: $object) {
+                error
+                user_book {
+                    id
+                    rating
+                    review
+                    review_has_spoilers
+                    status_id
+                    read_count
+                }
+            }
+        }
+        """
+
+        result = self.query(query, {"id": int(user_book_id), "object": updates})
+        if result and result.get("update_user_book"):
+            error = result["update_user_book"].get("error")
+            if error:
+                logger.error(f"Hardcover update_user_book error: {error}")
+                return None
+            return result["update_user_book"].get("user_book")
+        return None
+
     def _get_today_date(self) -> str:
         """Get today's date in YYYY-MM-DD format for Hardcover API."""
         return date.today().isoformat()

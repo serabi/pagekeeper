@@ -15,6 +15,9 @@ os.environ['BOOKS_DIR'] = 'test_data'
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(message)s')
 
+from src.db.models import State
+from src.services.reading_stats_service import ReadingStatsService
+
 
 class TestReadingTrackerModels(unittest.TestCase):
     """Test ReadingJournal, ReadingGoal models and Book reading fields."""
@@ -160,29 +163,39 @@ class TestReadingTrackerModels(unittest.TestCase):
         from src.db.models import Book
         # Create books with various statuses
         self.db.save_book(Book(abs_id='b1', abs_title='Finished 1', status='completed'))
-        self.db.update_book_reading_fields('b1', finished_at='2026-06-01')
+        self.db.update_book_reading_fields('b1', finished_at='2026-06-01', rating=4.5)
 
         self.db.save_book(Book(abs_id='b2', abs_title='Finished 2', status='completed'))
-        self.db.update_book_reading_fields('b2', finished_at='2026-11-15')
+        self.db.update_book_reading_fields('b2', finished_at='2026-11-15', rating=3.5)
 
         self.db.save_book(Book(abs_id='b3', abs_title='Still Reading', status='active'))
+        self.db.save_state(State(abs_id='b3', client_name='manual', percentage=0.45))
         self.db.save_book(Book(abs_id='b4', abs_title='Paused', status='paused'))
         self.db.save_book(Book(abs_id='b5', abs_title='Last Year', status='completed'))
         self.db.update_book_reading_fields('b5', finished_at='2025-12-31')
+        self.db.save_book(Book(abs_id='b6', abs_title='DNF but dated', status='dnf'))
+        self.db.update_book_reading_fields('b6', finished_at='2026-04-21', rating=1.5)
 
         self.db.save_reading_goal(2026, 12)
 
-        stats = self.db.get_reading_stats(2026)
+        stats = ReadingStatsService(self.db).get_year_stats(2026)
         self.assertEqual(stats['books_finished'], 2)   # b1, b2 (finished in 2026)
         self.assertEqual(stats['currently_reading'], 1)  # b3
-        self.assertEqual(stats['total_tracked'], 5)      # b1-b5 (all have reading statuses)
+        self.assertEqual(stats['total_tracked'], 6)      # b1-b6 (all have reading statuses)
         self.assertEqual(stats['goal_target'], 12)
+        self.assertEqual(stats['goal_completed'], 2)
+        self.assertEqual(stats['monthly_finished'][5], 1)  # June
+        self.assertEqual(stats['monthly_finished'][10], 1)  # November
+        self.assertAlmostEqual(stats['average_rating'], 4.0)
+        self.assertAlmostEqual(stats['goal_percent'], 16.7)
 
     def test_reading_stats_no_goal(self):
         """Stats work fine without a goal set."""
-        stats = self.db.get_reading_stats(2026)
+        stats = ReadingStatsService(self.db).get_year_stats(2026)
         self.assertEqual(stats['books_finished'], 0)
         self.assertIsNone(stats['goal_target'])
+        self.assertEqual(stats['monthly_finished'], [0] * 12)
+        self.assertIsNone(stats['average_rating'])
 
     # -- Journal migration --
 
