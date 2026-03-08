@@ -105,6 +105,7 @@ class TestReadingRoutes(unittest.TestCase):
 
     def tearDown(self):
         import shutil
+
         import src.db.migration_utils
 
         src.db.migration_utils.initialize_database = self.original_init_db
