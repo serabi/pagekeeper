@@ -40,7 +40,7 @@
                         {% endif %}
                     </span>
                     {% if update_available %}
-                    <a href="https://github.com/serabi/pagekeeper/releases/latest" target="_blank" class="settings-update-link">
+                    <a href="https://github.com/serabi/pagekeeper/releases/latest" target="_blank" rel="noopener noreferrer" class="settings-update-link">
                         Update v{{ latest_version }}
                     </a>
                     {% endif %}
@@ -1461,11 +1461,13 @@
                     div.className = 'settings-option-row';
                     var cb = document.createElement('input');
                     cb.type = 'checkbox';
+                    cb.id = 'abs-lib-' + lib.id;
                     cb.value = lib.id;
                     cb.checked = currentIds.includes(lib.id);
                     cb.addEventListener('change', updateAbsLibraryIds);
                     var lbl = document.createElement('label');
                     lbl.className = 'settings-option-label';
+                    lbl.htmlFor = 'abs-lib-' + lib.id;
                     lbl.textContent = lib.name + ' (' + lib.mediaType + ')';
                     div.appendChild(cb);
                     div.appendChild(lbl);

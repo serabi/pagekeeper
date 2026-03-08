@@ -285,6 +285,7 @@ class HardcoverSyncClient(SyncClient):
         hardcover_details.hardcover_user_book_id = created.get('id')
         hardcover_details.hardcover_status_id = created.get('status_id', hc_status_id)
         self.database_service.save_hardcover_details(hardcover_details)
+        record_write('Hardcover', book.abs_id, {'status': hardcover_details.hardcover_status_id})
         return created
 
     def _ensure_read_id(self, user_book_id, hardcover_details):

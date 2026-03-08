@@ -451,7 +451,7 @@ function initReadingDetail() {
     }
 
     function setSyncStatus(state, message) {
-      if (!syncStatus || !hardcoverSyncAvailable) return;
+      if (!syncStatus) return;
       syncStatus.hidden = false;
       syncStatus.className = `r-rating-sync r-rating-sync--${state}`;
       syncStatus.textContent = message;
