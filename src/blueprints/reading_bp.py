@@ -13,6 +13,7 @@ from src.blueprints.helpers import (
     get_booklore_client,
     get_container,
     get_database_service,
+    get_hardcover_book_url,
     get_service_web_url,
 )
 from src.db.models import State
@@ -374,11 +375,12 @@ def reading_detail(abs_id):
         if hardcover.hardcover_pages and hardcover.hardcover_pages > 0:
             metadata['pages'] = hardcover.hardcover_pages
         metadata['hardcover_slug'] = hardcover.hardcover_slug
-        metadata['hardcover_url'] = (
-            f"https://hardcover.app/books/{hardcover.hardcover_slug}"
-            if hardcover.hardcover_slug
-            else None
-        )
+        metadata['hardcover_url'] = get_hardcover_book_url(hardcover.hardcover_slug)
+        # Map HC status ID to a human-readable label for the detail page
+        hc_status_labels = {1: 'Want to Read', 2: 'Currently Reading', 3: 'Read', 4: 'Paused', 5: 'DNF'}
+        if hardcover.hardcover_status_id:
+            metadata['hardcover_status'] = hc_status_labels.get(hardcover.hardcover_status_id)
+            metadata['hardcover_status_id'] = hardcover.hardcover_status_id
 
     # Hardcover metadata enrichment (description, tags, subtitle, release_year)
     # Only use description/tags from user-verified matches to avoid wrong-book data

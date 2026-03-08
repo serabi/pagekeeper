@@ -12,6 +12,7 @@ from src.blueprints.helpers import (
     get_booklore_client,
     get_container,
     get_database_service,
+    get_hardcover_book_url,
     get_service_web_url,
 )
 from src.version import APP_VERSION
@@ -217,6 +218,14 @@ def index():
         # Hardcover details
         hardcover_details = hardcover_by_book.get(book.abs_id)
         if hardcover_details:
+            # Map HC status ID → local equivalent for mismatch detection
+            hc_to_local = {2: 'active', 3: 'completed', 4: 'paused', 5: 'dnf'}
+            hc_local_equiv = hc_to_local.get(hardcover_details.hardcover_status_id)
+            hc_mismatch = (
+                hc_local_equiv is not None
+                and book.status in ('active', 'paused', 'dnf', 'completed')
+                and hc_local_equiv != book.status
+            )
             mapping.update({
                 'hardcover_book_id': hardcover_details.hardcover_book_id,
                 'hardcover_slug': hardcover_details.hardcover_slug,
@@ -228,6 +237,7 @@ def index():
                 'hardcover_linked': True,
                 'hardcover_title': book.abs_title,
                 'hardcover_cover_url': hardcover_details.hardcover_cover_url,
+                'hardcover_status_mismatch': hc_mismatch,
             })
         else:
             mapping.update({
@@ -273,9 +283,9 @@ def index():
                 logger.debug("Booklore lookup failed, skipping")
 
         if mapping.get('hardcover_slug'):
-            mapping['hardcover_url'] = f"https://hardcover.app/books/{mapping['hardcover_slug']}"
+            mapping['hardcover_url'] = get_hardcover_book_url(mapping['hardcover_slug'])
         elif mapping.get('hardcover_book_id'):
-            mapping['hardcover_url'] = f"https://hardcover.app/books/{mapping['hardcover_book_id']}"
+            mapping['hardcover_url'] = get_hardcover_book_url(mapping['hardcover_book_id'])
         else:
             mapping['hardcover_url'] = None
 

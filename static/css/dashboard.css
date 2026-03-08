@@ -40,6 +40,22 @@
   align-items: center !important;
 }
 
+.service-icon-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.hc-mismatch-dot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-warning);
+  border: 1px solid var(--color-bg-card);
+}
+
 /* Storyteller Modal */
 #st-modal {
   position: fixed;

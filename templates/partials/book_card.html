@@ -238,12 +238,17 @@ else 0 %}
                             {# Hardcover #}
                             {% if integrations.hardcover %}
                             <div class="service-item progress-item-hc">
-                                <a href="{{ mapping.hardcover_url|default('https://hardcover.app') }}" target="_blank"
+                                <a href="{{ mapping.hardcover_url or 'https://hardcover.app' }}" target="_blank"
                                     rel="noopener noreferrer"
                                     title="{% if mapping.hardcover_book_id %}Open {{ mapping.hardcover_title }} in Hardcover{% else %}Not linked to Hardcover{% endif %}"
                                     class="hc-link {% if not mapping.hardcover_book_id %}pe-none{% endif %}">
-                                    <img src="/static/hardcover.svg" alt="HC"
-                                        class="service-icon {% if not mapping.hardcover_book_id %}grayscale-muted{% endif %}">
+                                    <span class="service-icon-wrap">
+                                        <img src="/static/hardcover.svg" alt="HC"
+                                            class="service-icon {% if not mapping.hardcover_book_id %}grayscale-muted{% endif %}">
+                                        {% if mapping.hardcover_status_mismatch %}
+                                        <span class="hc-mismatch-dot" title="Hardcover status differs from local"></span>
+                                        {% endif %}
+                                    </span>
                                 </a>
                                 <span class="service-name">Hardcover</span>
                                 <span class="service-value cursor-pointer color-inherit" title="Click to edit Hardcover link"

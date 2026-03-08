@@ -238,6 +238,9 @@
                         {% else %}
                         <span class="r-service-row-name">Hardcover</span>
                         {% endif %}
+                        {% if metadata.hardcover_status %}
+                        <span class="r-service-row-hc-status r-hc-status-{{ metadata.hardcover_status_id }}">{{ metadata.hardcover_status }}</span>
+                        {% endif %}
                         <button type="button" class="r-service-row-action" data-abs-id="{{ book.abs_id }}" onclick="openHcRelink(this)">Edit</button>
                         <span class="r-service-row-value">
                             {% if service_states.hardcover is defined %}{{ '%.1f' | format(service_states.hardcover.percentage) }}%{% else %}--{% endif %}

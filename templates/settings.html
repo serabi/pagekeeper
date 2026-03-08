@@ -18,65 +18,21 @@
 <body>
     {% include 'partials/navbar.html' %}
 
-    {% if message %}
-    <div class="flash-bar {% if is_error %}flash-error{% else %}flash-success{% endif %}">
-        {{ message }}
-    </div>
-    {% endif %}
+    <div class="container settings-page">
+        {% if message %}
+        <div class="flash-bar {% if is_error %}flash-error{% else %}flash-success{% endif %}">
+            {{ message }}
+        </div>
+        {% endif %}
 
-    <form method="POST" action="/settings" id="settingsForm">
-        <div class="settings-shell">
-
-            <!-- ═══ Sidebar ═══ -->
-            <nav class="settings-sidebar" role="tablist">
-                <span class="sidebar-label">Configuration</span>
-
-                <button type="button" class="sidebar-tab active" role="tab" onclick="switchTab('general')" data-tab="general">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                    General
-                </button>
-
-                <button type="button" class="sidebar-tab" role="tab" onclick="switchTab('audiobooks')" data-tab="audiobooks">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-                    Audiobooks
-                </button>
-
-                <button type="button" class="sidebar-tab" role="tab" onclick="switchTab('ebooks')" data-tab="ebooks">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                    Ebooks
-                </button>
-
-                <button type="button" class="sidebar-tab" role="tab" onclick="switchTab('kosync')" data-tab="kosync">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
-                        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-                        <path d="M8 7h8M8 11h6"/>
-                    </svg>
-                    KOSync
-                </button>
-
-                <button type="button" class="sidebar-tab" role="tab" onclick="switchTab('bookfusion')" data-tab="bookfusion">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 10l2 2 4-4"/></svg>
-                    BookFusion
-                </button>
-
-                <button type="button" class="sidebar-tab" role="tab" onclick="switchTab('notifications')" data-tab="notifications">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
-                    Notifications
-                </button>
-
-                <button type="button" class="sidebar-tab" role="tab" onclick="switchTab('tools')" data-tab="tools">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-                    Tools
-                </button>
-
-                <button type="button" class="sidebar-tab" role="tab" onclick="switchTab('advanced')" data-tab="advanced">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-                    Advanced
-                </button>
-
-                <div class="sidebar-version">
-                    <span class="sidebar-version-text">
+        <form method="POST" action="/settings" id="settingsForm">
+            <div class="page-header settings-page-header">
+                <div class="settings-page-header-copy">
+                    <h2>Settings</h2>
+                    <p>Manage service connections, sync behavior, and optional integrations.</p>
+                </div>
+                <div class="settings-page-meta">
+                    <span class="settings-build-chip">
                         {% if app_version.startswith('dev') %}
                         Build {{ app_version }}
                         {% else %}
@@ -84,15 +40,95 @@
                         {% endif %}
                     </span>
                     {% if update_available %}
-                    <a href="https://github.com/serabi/pagekeeper/releases/latest" target="_blank" class="sidebar-update-link">
-                        ↑ v{{ latest_version }} Available
+                    <a href="https://github.com/serabi/pagekeeper/releases/latest" target="_blank" class="settings-update-link">
+                        Update v{{ latest_version }}
                     </a>
                     {% endif %}
                 </div>
-            </nav>
+            </div>
 
-            <!-- ═══ Content ═══ -->
-            <div class="settings-content">
+            <div class="settings-shell">
+
+                <!-- ═══ Sidebar ═══ -->
+                <nav class="settings-sidebar" role="tablist" aria-label="Settings sections">
+                    <div class="settings-sidebar-intro">
+                        <span class="sidebar-kicker">Configuration</span>
+                        <p>Choose a section to update service access, sync rules, and app behavior.</p>
+                    </div>
+
+                    <div class="settings-nav-group">
+                        <span class="sidebar-label">Core</span>
+
+                        <button type="button" class="sidebar-tab active" role="tab" onclick="switchTab('general')" data-tab="general">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    General
+                        </button>
+
+                        <button type="button" class="sidebar-tab" role="tab" onclick="switchTab('notifications')" data-tab="notifications">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                    Notifications
+                        </button>
+
+                        <button type="button" class="sidebar-tab" role="tab" onclick="switchTab('advanced')" data-tab="advanced">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+                    Advanced
+                        </button>
+                    </div>
+
+                    <div class="settings-nav-group">
+                        <span class="sidebar-label">Libraries</span>
+
+                        <button type="button" class="sidebar-tab" role="tab" onclick="switchTab('audiobooks')" data-tab="audiobooks">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                    Audiobooks
+                        </button>
+
+                        <button type="button" class="sidebar-tab" role="tab" onclick="switchTab('ebooks')" data-tab="ebooks">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+                    Ebooks
+                        </button>
+
+                        <button type="button" class="sidebar-tab" role="tab" onclick="switchTab('kosync')" data-tab="kosync">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+                        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+                        <path d="M8 7h8M8 11h6"/>
+                    </svg>
+                    KOSync
+                        </button>
+                    </div>
+
+                    <div class="settings-nav-group">
+                        <span class="sidebar-label">Integrations</span>
+
+                        <button type="button" class="sidebar-tab" role="tab" onclick="switchTab('bookfusion')" data-tab="bookfusion">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 10l2 2 4-4"/></svg>
+                    BookFusion
+                        </button>
+
+                        <button type="button" class="sidebar-tab" role="tab" onclick="switchTab('hardcover')" data-tab="hardcover">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M6 4.5A2.5 2.5 0 0 1 8.5 2H20v18H8.5A2.5 2.5 0 0 0 6 22z"/>
+                        <path d="M6 4.5v17"/>
+                        <path d="M10 7h6"/>
+                        <path d="M10 11h5"/>
+                    </svg>
+                    Hardcover
+                        </button>
+                    </div>
+
+                    <div class="settings-nav-group">
+                        <span class="sidebar-label">Utilities</span>
+
+                        <button type="button" class="sidebar-tab" role="tab" onclick="switchTab('tools')" data-tab="tools">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                    Tools
+                        </button>
+                    </div>
+                </nav>
+
+                <!-- ═══ Content ═══ -->
+                <div class="settings-content">
 
                 <!-- ─── General ─── -->
                 <div class="tab-panel active" id="panel-general">
@@ -104,8 +140,7 @@
                     <div class="field-grid">
                         <div class="form-group">
                             <label>Timezone</label>
-                            <input type="text" value="{{ get_val('TZ') }}" readonly
-                                style="opacity: 0.7; cursor: not-allowed;">
+                            <input type="text" value="{{ get_val('TZ') }}" readonly class="readonly-input">
                             <div class="help-text">Set via <code>TZ</code> environment variable in docker-compose.yml.</div>
                         </div>
                         <div class="form-group">
@@ -129,7 +164,7 @@
                     {% set abs_enabled = get_bool('ABS_ENABLED') %}
                     <div class="sub-section">
                         <div class="sub-section-header">
-                            <h3><span class="accent-dot" style="background: var(--color-abs, #5c6bc0);"></span> Audiobookshelf</h3>
+                            <h3><span class="accent-dot accent-dot-abs"></span> Audiobookshelf</h3>
                             <div class="toggle-switch-wrapper">
                                 <button type="button" class="btn btn-sm" onclick="testConnection('abs', this)">Test</button>
                                 <span class="toggle-label">Enable</span>
@@ -177,7 +212,7 @@
                                 <div class="form-group full-width">
                                     <label>ABS Libraries</label>
                                     <div id="abs_library_picker">
-                                        <button type="button" class="btn" onclick="fetchAbsLibraries()" style="margin-bottom: 8px;">Fetch Libraries</button>
+                                        <button type="button" class="btn settings-stack-action" onclick="fetchAbsLibraries()">Fetch Libraries</button>
                                         <div id="abs_library_list"></div>
                                     </div>
                                     <input type="hidden" name="ABS_LIBRARY_IDS" id="abs_library_ids_input"
@@ -212,23 +247,17 @@
                                 </div>
                             </div>
 
-                            <!-- Sync Settings -->
-                            <div class="sub-section">
-                                <div class="sub-section-header">
-                                    <h3>Sync Settings</h3>
-                                </div>
-                                <div class="sub-section-body">
-                                    <div class="form-group">
-                                        <label>Min ABS Change (Seconds)</label>
-                                        <input type="number" name="SYNC_DELTA_ABS_SECONDS"
-                                            value="{{ get_val('SYNC_DELTA_ABS_SECONDS') }}">
-                                    </div>
-                                    <div class="checkbox-wrapper full-width">
-                                        <input type="checkbox" id="abs_ebook" name="SYNC_ABS_EBOOK" {% if get_bool('SYNC_ABS_EBOOK')
-                                            %}checked{% endif %}>
-                                        <label for="abs_ebook">Enable ABS Ebook Sync (Bi-directional)</label>
-                                    </div>
-                                </div>
+                            <div class="section-divider"></div>
+                            <div class="section-label">Sync Settings</div>
+                            <div class="form-group">
+                                <label>Min ABS Change (Seconds)</label>
+                                <input type="number" name="SYNC_DELTA_ABS_SECONDS"
+                                    value="{{ get_val('SYNC_DELTA_ABS_SECONDS') }}">
+                            </div>
+                            <div class="checkbox-wrapper full-width">
+                                <input type="checkbox" id="abs_ebook" name="SYNC_ABS_EBOOK" {% if get_bool('SYNC_ABS_EBOOK')
+                                    %}checked{% endif %}>
+                                <label for="abs_ebook">Enable ABS Ebook Sync (Bi-directional)</label>
                             </div>
                         </div>
                     </div>
@@ -238,7 +267,7 @@
                     {% set storyteller_enabled = get_bool('STORYTELLER_ENABLED') or (storyteller_configured and get_val('STORYTELLER_ENABLED') == '') %}
                     <div class="sub-section">
                         <div class="sub-section-header">
-                            <h3><span class="accent-dot" style="background: var(--color-storyteller);"></span> Storyteller</h3>
+                            <h3><span class="accent-dot accent-dot-storyteller"></span> Storyteller</h3>
                             <div class="toggle-switch-wrapper">
                                 <button type="button" class="btn btn-sm" onclick="testConnection('storyteller', this)">Test</button>
                                 <span class="toggle-label">Enable</span>
@@ -307,7 +336,7 @@
                     {% set booklore_enabled = get_bool('BOOKLORE_ENABLED') or (booklore_configured and get_val('BOOKLORE_ENABLED') == '') %}
                     <div class="sub-section">
                         <div class="sub-section-header">
-                            <h3><span class="accent-dot" style="background: var(--color-booklore);"></span> Booklore</h3>
+                            <h3><span class="accent-dot accent-dot-booklore"></span> Booklore</h3>
                             <div class="toggle-switch-wrapper">
                                 <button type="button" class="btn btn-sm" onclick="testConnection('booklore', this)">Test</button>
                                 <span class="toggle-label">Enable</span>
@@ -366,9 +395,9 @@
                             </div>
                             <div class="form-group full-width">
                                 <label>Booklore Library ID (Optional)</label>
-                                <div style="display: flex; gap: 10px;">
+                                <div class="input-row">
                                     <input type="text" name="BOOKLORE_LIBRARY_ID" value="{{ get_val('BOOKLORE_LIBRARY_ID') }}"
-                                        placeholder="e.g. 1" style="flex: 1;">
+                                        placeholder="e.g. 1" class="input-flex">
                                     <button class="btn" type="button" onclick="checkBookloreLibs(event)">Find IDs</button>
                                 </div>
                                 <div class="help-text">Restricts sync to a specific library (e.g., 1). Leave empty to sync all.</div>
@@ -381,7 +410,7 @@
                     {% set cwa_enabled = get_bool('CWA_ENABLED') %}
                     <div class="sub-section">
                         <div class="sub-section-header">
-                            <h3><span class="accent-dot" style="background: var(--color-cwa);"></span> Calibre-Web Automated</h3>
+                            <h3><span class="accent-dot accent-dot-cwa"></span> Calibre-Web Automated</h3>
                             <div class="toggle-switch-wrapper">
                                 <button type="button" class="btn btn-sm" onclick="testConnection('cwa', this)">Test</button>
                                 <span class="toggle-label">Enable</span>
@@ -446,7 +475,7 @@
                     <!-- Section A: KOSync Server -->
                     <div class="sub-section">
                         <div class="sub-section-header">
-                            <h3><span class="accent-dot" style="background: var(--color-kosync);"></span> KOSync Server</h3>
+                            <h3><span class="accent-dot accent-dot-kosync"></span> KOSync Server</h3>
                             <div class="toggle-switch-wrapper">
                                 <span class="toggle-label">Enable</span>
                                 <label class="toggle-switch">
@@ -458,9 +487,9 @@
                         </div>
                         <div id="kosync_body" class="sub-section-body {% if not kosync_enabled %}collapsed{% endif %}">
 
-                            <div class="info-box full-width" style="border-left: 3px solid var(--color-kosync); background: rgba(124, 58, 237, 0.06);">
+                            <div class="info-box info-box-kosync full-width">
                                 <strong>Security Note</strong>
-                                <p style="margin: 6px 0 0;">PageKeeper's web dashboard has no built-in authentication. Only expose the KOSync sync endpoint to the internet &mdash; it uses password-based authentication. Use split-port mode or a reverse proxy that restricts access to the <code>/syncs/</code> and <code>/healthcheck</code> paths only.</p>
+                                <p class="info-box-copy">PageKeeper's web dashboard has no built-in authentication. Only expose the KOSync sync endpoint to the internet &mdash; it uses password-based authentication. Use split-port mode or a reverse proxy that restricts access to the <code>/syncs/</code> and <code>/healthcheck</code> paths only.</p>
                             </div>
 
                             <div class="section-divider"></div>
@@ -484,24 +513,24 @@
                             <div class="section-divider"></div>
                             <div class="section-label">Network / Access</div>
 
-                            <div class="form-group full-width" style="margin-bottom: 12px;">
+                            <div class="form-group full-width settings-space-sm">
                                 <label>Sync Port</label>
                                 <input type="text" value="{{ get_val('KOSYNC_PORT', '4477') }}" readonly
-                                    style="opacity: 0.7; cursor: not-allowed; max-width: 120px;">
+                                    class="readonly-input readonly-input-sm">
                                 <div class="help-text">Set via <code>KOSYNC_PORT</code> environment variable in docker-compose.yml. Use a different port than 4477 to enable split-port mode.</div>
                             </div>
-                            <div style="display: flex; gap: 16px; flex-wrap: wrap;">
-                                <div style="flex: 1; min-width: 200px;">
+                            <div class="settings-split-grid">
+                                <div class="settings-split-card">
                                     <h4>LAN Address</h4>
                                     <div class="input-row">
                                         <input type="text" id="kosync_lan_address" aria-label="KOSync LAN Address"
-                                            value="" readonly style="opacity: 0.7; cursor: not-allowed;"
+                                            value="" readonly class="readonly-input"
                                             onclick="this.select()">
                                         <button type="button" class="btn" onclick="copyInputValue('kosync_lan_address')" title="Copy to clipboard">Copy</button>
                                     </div>
-                                    <div class="help-text" style="margin-top: 6px;">For devices on your local network.</div>
+                                    <div class="help-text settings-help-inline">For devices on your local network.</div>
                                 </div>
-                                <div style="flex: 1; min-width: 200px;">
+                                <div class="settings-split-card">
                                     <h4>Public URL</h4>
                                     <div class="input-row">
                                         <input type="text" name="KOSYNC_PUBLIC_URL" id="public_kosync_url"
@@ -511,41 +540,41 @@
                                             onclick="this.select()">
                                         <button type="button" class="btn" onclick="copyInputValue('public_kosync_url')" title="Copy to clipboard">Copy</button>
                                     </div>
-                                    <div class="help-text" style="margin-top: 6px;">For remote access via reverse proxy. Saved to settings.</div>
+                                    <div class="help-text settings-help-inline">For remote access via reverse proxy. Saved to settings.</div>
                                 </div>
                             </div>
-                            <div class="help-text full-width" style="margin-top: 8px;">Use the LAN address for devices on your local network. Set the Public URL if you expose KOSync through a reverse proxy for remote access.</div>
+                            <div class="help-text full-width settings-help-block">Use the LAN address for devices on your local network. Set the Public URL if you expose KOSync through a reverse proxy for remote access.</div>
                         </div>
                     </div>
 
                     <!-- Section B: Sync Engine Source -->
                     <div class="sub-section">
                         <div class="sub-section-header">
-                            <h3><span class="accent-dot" style="background: var(--color-kosync);"></span> Sync Engine Source</h3>
+                            <h3><span class="accent-dot accent-dot-kosync"></span> Sync Engine Source</h3>
                         </div>
                         <div class="sub-section-body">
-                            <p class="help-text full-width" style="margin-bottom: 12px;">Controls where PageKeeper's sync engine reads KoSync data from.</p>
+                            <p class="help-text full-width settings-help-block settings-help-block-topless">Controls where PageKeeper's sync engine reads KoSync data from.</p>
 
-                            <div class="full-width" style="display: flex; flex-direction: column; gap: 12px;">
-                                <label class="radio-card" style="display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer;">
+                            <div class="full-width radio-card-list">
+                                <label class="radio-card">
                                     <input type="radio" name="kosync_source_mode" value="builtin" id="kosync_mode_builtin" onchange="toggleKosyncSourceMode()" checked>
                                     <div>
                                         <strong>Built-in</strong>
-                                        <div class="help-text" style="margin-top: 2px;">Use this server's own KoSync data. The sync engine reads directly from the built-in KoSync bridge.</div>
+                                        <div class="help-text radio-card-copy">Use this server's own KoSync data. The sync engine reads directly from the built-in KoSync bridge.</div>
                                     </div>
                                 </label>
-                                <label class="radio-card" style="display: flex; align-items: flex-start; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer;">
+                                <label class="radio-card">
                                     <input type="radio" name="kosync_source_mode" value="external" id="kosync_mode_external" onchange="toggleKosyncSourceMode()">
                                     <div>
                                         <strong>External Server</strong>
-                                        <div class="help-text" style="margin-top: 2px;">Connect to a separate KoSync-compatible server (e.g. kosync-dotnet).</div>
+                                        <div class="help-text radio-card-copy">Connect to a separate KoSync-compatible server (e.g. kosync-dotnet).</div>
                                     </div>
                                 </label>
                             </div>
 
                             <input type="hidden" name="KOSYNC_SERVER" id="kosync_server_input" value="{{ get_val('KOSYNC_SERVER') }}">
 
-                            <div id="kosync_external_group" class="full-width hidden" style="margin-top: 12px;">
+                            <div id="kosync_external_group" class="full-width hidden settings-space-sm">
                                 <div class="form-group full-width">
                                     <label>Server URL</label>
                                     <div class="input-row">
@@ -563,7 +592,7 @@
                     <!-- Section C: Advanced -->
                     <div class="sub-section">
                         <div class="sub-section-header">
-                            <h3><span class="accent-dot" style="background: var(--color-kosync);"></span> Advanced</h3>
+                            <h3><span class="accent-dot accent-dot-kosync"></span> Advanced</h3>
                         </div>
                         <div class="sub-section-body">
                             <div class="form-group full-width">
@@ -593,7 +622,7 @@
                     {% set bookfusion_enabled = get_bool('BOOKFUSION_ENABLED') or (bookfusion_configured and get_val('BOOKFUSION_ENABLED') == '') %}
                     <div class="sub-section">
                         <div class="sub-section-header">
-                            <h3><span class="accent-dot" style="background: var(--color-bookfusion);"></span> BookFusion</h3>
+                            <h3><span class="accent-dot accent-dot-bookfusion"></span> BookFusion</h3>
                             <div class="toggle-switch-wrapper">
                                 <span class="toggle-label">Enable</span>
                                 <label class="toggle-switch">
@@ -606,8 +635,8 @@
                         <div id="bookfusion_body" class="sub-section-body {% if not bookfusion_enabled %}collapsed{% endif %}">
                             <div class="form-group full-width">
                                 <label>Highlights API Key</label>
-                                <div style="display: flex; gap: 0.5rem; align-items: center;">
-                                    <input type="password" id="bf_highlights_key" name="BOOKFUSION_API_KEY" placeholder="{{ '(unchanged)' if get_val('BOOKFUSION_API_KEY') else 'Paste obsidian:// link or token' }}" style="flex: 1;"
+                                <div class="input-row input-row-compact">
+                                    <input type="password" id="bf_highlights_key" name="BOOKFUSION_API_KEY" placeholder="{{ '(unchanged)' if get_val('BOOKFUSION_API_KEY') else 'Paste obsidian:// link or token' }}" class="input-flex"
                                         oninput="extractBfToken(this)">
                                     <button type="button" class="btn btn-sm" onclick="testConnection('bookfusion', this)">Test Highlights</button>
                                 </div>
@@ -615,16 +644,82 @@
                             </div>
                             <div class="form-group full-width">
                                 <label>Upload API Key</label>
-                                <div style="display: flex; gap: 0.5rem; align-items: center;">
-                                    <input type="password" id="bf_upload_key" name="BOOKFUSION_UPLOAD_API_KEY" placeholder="{{ '(unchanged)' if get_val('BOOKFUSION_UPLOAD_API_KEY') else '' }}" style="flex: 1;">
+                                <div class="input-row input-row-compact">
+                                    <input type="password" id="bf_upload_key" name="BOOKFUSION_UPLOAD_API_KEY" placeholder="{{ '(unchanged)' if get_val('BOOKFUSION_UPLOAD_API_KEY') else '' }}" class="input-flex">
                                     <button type="button" class="btn btn-sm" onclick="testConnection('bookfusion_upload', this)">Test Upload</button>
                                 </div>
                                 <div class="help-text">BookFusion &rarr; Settings &rarr; <strong>Calibre</strong> section. Used for book uploads.</div>
                             </div>
-                            <div class="help-text" style="margin-top: 0.75rem; border-top: 1px solid var(--color-border); padding-top: 0.75rem;">
+                            <div class="help-text settings-callout-note">
                                 When linking BookFusion books, PageKeeper sets reading dates automatically
                                 (from Hardcover if configured, otherwise from highlight timestamps)
                                 and fetches cover images from Hardcover.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ─── Hardcover ─── -->
+                <div class="tab-panel" id="panel-hardcover">
+                    <div class="panel-header">
+                        <h2>Hardcover</h2>
+                        <p>Connect Hardcover.app for reading dates, cover art, and reading journal actions.</p>
+                    </div>
+
+                    {% set hardcover_configured = get_val('HARDCOVER_TOKEN') != '' %}
+                    {% set hardcover_enabled = get_bool('HARDCOVER_ENABLED') or (hardcover_configured and get_val('HARDCOVER_ENABLED') == '') %}
+                    <div class="sub-section">
+                        <div class="sub-section-header">
+                            <h3><span class="accent-dot accent-dot-hardcover"></span> Hardcover.app</h3>
+                            <div class="toggle-switch-wrapper">
+                                <button type="button" class="btn btn-sm" onclick="testConnection('hardcover', this)">Test</button>
+                                <span class="toggle-label">Enable</span>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="toggle_hardcover" name="HARDCOVER_ENABLED"
+                                        onchange="toggleSection('hardcover_body', this.checked)" {% if hardcover_enabled %}checked{% endif %}>
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                        <div id="hardcover_body" class="sub-section-body {% if not hardcover_enabled %}collapsed{% endif %}">
+                            <div class="form-group full-width">
+                                <label>API Token</label>
+                                <input type="password" name="HARDCOVER_TOKEN" placeholder="{{ '(unchanged)' if get_val('HARDCOVER_TOKEN') else '' }}">
+                            </div>
+                            <div class="form-group full-width">
+                                <label>Service URL</label>
+                                <input type="text" name="HARDCOVER_WEB_URL_EXTERNAL" value="{{ get_val('HARDCOVER_WEB_URL_EXTERNAL') or get_val('HARDCOVER_WEB_URL') }}"
+                                    placeholder="https://hardcover.app">
+                                <div class="help-text">URL for the navbar shortcut and book deep links. Defaults to hardcover.app if left blank.</div>
+                            </div>
+                            <div class="help-text full-width settings-help-inline">
+                                When enabled, Hardcover is used to populate reading dates and provide cover
+                                images for ebook-only books without other cover sources.
+                            </div>
+
+                            <div class="field-grid full-width settings-space-md">
+                                <div class="form-group">
+                                    <label>Journal on Start</label>
+                                    <div class="toggle-switch-wrapper">
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" name="HARDCOVER_JOURNAL_ON_START"
+                                                {% if get_bool('HARDCOVER_JOURNAL_ON_START') %}checked{% endif %}>
+                                            <span class="slider"></span>
+                                        </label>
+                                    </div>
+                                    <div class="help-text">Create a Hardcover reading journal entry when you start a book.</div>
+                                </div>
+                                <div class="form-group">
+                                    <label>Journal on Finish</label>
+                                    <div class="toggle-switch-wrapper">
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" name="HARDCOVER_JOURNAL_ON_FINISH"
+                                                {% if get_bool('HARDCOVER_JOURNAL_ON_FINISH') %}checked{% endif %}>
+                                            <span class="slider"></span>
+                                        </label>
+                                    </div>
+                                    <div class="help-text">Create a Hardcover reading journal entry when you finish a book.</div>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -677,7 +772,7 @@
                 <div class="tab-panel" id="panel-tools">
                     <div class="panel-header">
                         <h2>Tools</h2>
-                        <p>Optional features, utilities, and Hardcover.app.</p>
+                        <p>Optional features and maintenance utilities.</p>
                     </div>
 
                     <!-- Suggestions -->
@@ -706,7 +801,7 @@
                     <!-- Suggestion Cleanup -->
                     <div class="sub-section">
                         <div class="sub-section-header">
-                            <h3>Suggestion Cleanup</h3>
+                            <h3>Remove Stale Suggestions</h3>
                         </div>
                         <div class="sub-section-body">
                             <div class="full-width">
@@ -715,8 +810,8 @@
                                         Clear Stale Suggestions
                                     </button>
                                     <p class="help-text flex-1 m-0">
-                                        Deletes all suggestions for books that are not currently in your bridge library.
-                                        This helps clear out junk suggestions and allows the bridge to re-suggest them if needed.
+                                        Deletes suggestions for Audiobookshelf audiobooks that are no longer in your library.
+                                        Useful after removing books from ABS.
                                     </p>
                                 </div>
                             </div>
@@ -744,64 +839,6 @@
                         </div>
                     </div>
 
-                    <!-- Hardcover -->
-                    {% set hardcover_configured = get_val('HARDCOVER_TOKEN') != '' %}
-                    {% set hardcover_enabled = get_bool('HARDCOVER_ENABLED') or (hardcover_configured and get_val('HARDCOVER_ENABLED') == '') %}
-                    <div class="sub-section">
-                        <div class="sub-section-header">
-                            <h3><span class="accent-dot" style="background: var(--color-hardcover);"></span> Hardcover.app</h3>
-                            <div class="toggle-switch-wrapper">
-                                <button type="button" class="btn btn-sm" onclick="testConnection('hardcover', this)">Test</button>
-                                <span class="toggle-label">Enable</span>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="toggle_hardcover" name="HARDCOVER_ENABLED"
-                                        onchange="toggleSection('hardcover_body', this.checked)" {% if hardcover_enabled %}checked{% endif %}>
-                                    <span class="slider"></span>
-                                </label>
-                            </div>
-                        </div>
-                        <div id="hardcover_body" class="sub-section-body {% if not hardcover_enabled %}collapsed{% endif %}">
-                            <div class="form-group full-width">
-                                <label>API Token</label>
-                                <input type="password" name="HARDCOVER_TOKEN" placeholder="{{ '(unchanged)' if get_val('HARDCOVER_TOKEN') else '' }}">
-                            </div>
-                            <div class="form-group full-width">
-                                <label>Service URL</label>
-                                <input type="text" name="HARDCOVER_WEB_URL_EXTERNAL" value="{{ get_val('HARDCOVER_WEB_URL_EXTERNAL') or get_val('HARDCOVER_WEB_URL') }}"
-                                    placeholder="https://hardcover.app">
-                                <div class="help-text">URL for the navbar shortcut and book deep links. Defaults to hardcover.app if left blank.</div>
-                            </div>
-                            <div class="help-text" style="margin-top: 0.5rem;">
-                                When enabled, Hardcover is used to populate reading dates and provide cover
-                                images for ebook-only books without other cover sources.
-                            </div>
-
-                            <div class="field-grid" style="margin-top: 1rem;">
-                                <div class="form-group">
-                                    <label>Journal on Start</label>
-                                    <div class="toggle-switch-wrapper">
-                                        <label class="toggle-switch">
-                                            <input type="checkbox" name="HARDCOVER_JOURNAL_ON_START"
-                                                {% if get_bool('HARDCOVER_JOURNAL_ON_START') %}checked{% endif %}>
-                                            <span class="slider"></span>
-                                        </label>
-                                    </div>
-                                    <div class="help-text">Create a Hardcover reading journal entry when you start a book.</div>
-                                </div>
-                                <div class="form-group">
-                                    <label>Journal on Finish</label>
-                                    <div class="toggle-switch-wrapper">
-                                        <label class="toggle-switch">
-                                            <input type="checkbox" name="HARDCOVER_JOURNAL_ON_FINISH"
-                                                {% if get_bool('HARDCOVER_JOURNAL_ON_FINISH') %}checked{% endif %}>
-                                            <span class="slider"></span>
-                                        </label>
-                                    </div>
-                                    <div class="help-text">Create a Hardcover reading journal entry when you finish a book.</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
                 </div>
 
                 <!-- ─── Advanced ─── -->
@@ -887,14 +924,14 @@
                         </div>
                         <div id="instant_sync_body" class="sub-section-body {% if not get_bool('INSTANT_SYNC_ENABLED') %}collapsed{% endif %}">
                             <div class="full-width">
-                                <div class="help-text" style="margin-bottom: 12px;">
+                                <div class="help-text settings-help-block settings-help-block-topless">
                                     Syncs your reading position as soon as you start or stop listening in Audiobookshelf, or update progress in KOReader. Turn this off if you only want the system to check on a schedule.
                                 </div>
                             </div>
 
                             <div class="section-label">Per-Client Polling</div>
                             <div class="full-width">
-                                <div class="help-text" style="margin-bottom: 8px;">
+                                <div class="help-text settings-help-block settings-help-block-topless">
                                     <em>Global</em> checks each client at the same rate as the main sync period above. <em>Custom</em> lets you set a faster or slower check rate for each client individually.
                                 </div>
                             </div>
@@ -908,8 +945,7 @@
                                     <option value="custom" {% if get_val('STORYTELLER_POLL_MODE') == 'custom' %}selected{% endif %}>Custom</option>
                                 </select>
                             </div>
-                            <div class="form-group" id="storyteller_poll_seconds_row"
-                                 {% if get_val('STORYTELLER_POLL_MODE') != 'custom' %}style="opacity: 0.45; pointer-events: none;"{% endif %}>
+                            <div class="form-group poll-settings-row {% if get_val('STORYTELLER_POLL_MODE') != 'custom' %}is-disabled{% endif %}" id="storyteller_poll_seconds_row">
                                 <label>Storyteller Poll Interval (seconds)</label>
                                 <input type="number" name="STORYTELLER_POLL_SECONDS" min="10"
                                        value="{{ get_val('STORYTELLER_POLL_SECONDS', '45') }}">
@@ -926,8 +962,7 @@
                                     <option value="custom" {% if get_val('BOOKLORE_POLL_MODE') == 'custom' %}selected{% endif %}>Custom</option>
                                 </select>
                             </div>
-                            <div class="form-group" id="booklore_poll_seconds_row"
-                                 {% if get_val('BOOKLORE_POLL_MODE') != 'custom' %}style="opacity: 0.45; pointer-events: none;"{% endif %}>
+                            <div class="form-group poll-settings-row {% if get_val('BOOKLORE_POLL_MODE') != 'custom' %}is-disabled{% endif %}" id="booklore_poll_seconds_row">
                                 <label>{{ get_val('BOOKLORE_LABEL', 'Booklore') or 'Booklore' }} Poll Interval (seconds)</label>
                                 <input type="number" name="BOOKLORE_POLL_SECONDS" min="10"
                                        value="{{ get_val('BOOKLORE_POLL_SECONDS', '300') }}">
@@ -963,7 +998,7 @@
                             </div>
 
                             <!-- Whisper.cpp -->
-                            <div id="group_whispercpp" class="dynamic-group full-width" style="display:contents;">
+                            <div id="group_whispercpp" class="dynamic-group full-width">
                                 <div class="form-group full-width">
                                     <label>Whisper.cpp Server URL</label>
                                     <input type="text" name="WHISPER_CPP_URL" value="{{ get_val('WHISPER_CPP_URL', '') }}"
@@ -973,7 +1008,7 @@
                             </div>
 
                             <!-- Deepgram -->
-                            <div id="group_deepgram" class="dynamic-group full-width" style="display:contents;">
+                            <div id="group_deepgram" class="dynamic-group full-width">
                                 <div class="form-group">
                                     <label>Deepgram API Key</label>
                                     <input type="password" name="DEEPGRAM_API_KEY"
@@ -992,9 +1027,9 @@
                                     <div class="help-text">Nova-2 recommended. See <a
                                             href="https://developers.deepgram.com/docs/models" target="_blank"
                                             rel="noopener noreferrer">Deepgram Models</a></div>
-                                    <div class="alert alert-warning" id="gpu_warning" style="display:none; margin-top:10px;">
+                                    <div class="alert alert-warning hidden settings-alert-gap" id="gpu_warning">
                                         <strong>NVIDIA GPU Selected:</strong>
-                                        <ul style="margin: 5px 0 0 20px; font-size: 0.9em;">
+                                        <ul class="settings-alert-list">
                                             <li>Ensure <code>INSTALL_GPU: "true"</code> is set in docker-compose.yml (this builds the container with CUDA libraries).</li>
                                             <li>Ensure the <strong>NVIDIA Container Toolkit</strong> is installed on your host system (this allows Docker to access your GPU).</li>
                                         </ul>
@@ -1003,7 +1038,7 @@
                             </div>
 
                             <!-- Whisper Model (shared) -->
-                            <div id="group_whisper_model" class="dynamic-group full-width" style="display:contents;">
+                            <div id="group_whisper_model" class="dynamic-group full-width">
                                 <div class="form-group">
                                     <label>Whisper Model</label>
                                     <select name="WHISPER_MODEL">
@@ -1016,7 +1051,7 @@
                             </div>
 
                             <!-- Local Whisper -->
-                            <div id="group_local" class="dynamic-group full-width" style="display:contents;">
+                            <div id="group_local" class="dynamic-group full-width">
                                 <div class="form-group">
                                     <label>Whisper Device</label>
                                     <select name="WHISPER_DEVICE">
@@ -1040,14 +1075,14 @@
                     </div>
                 </div>
 
+                <input type="hidden" name="_active_tab" id="activeTabInput" value="general">
+                <div class="submit-bar">
+                    <button type="submit" class="btn btn-primary">Save Settings</button>
+                </div>
             </div><!-- /settings-content -->
         </div><!-- /settings-shell -->
-
-        <input type="hidden" name="_active_tab" id="activeTabInput" value="general">
-        <div class="submit-bar">
-            <button type="submit" class="btn btn-primary">Save Settings</button>
-        </div>
-    </form>
+        </form>
+    </div>
 
     <script>
         /* ─── Tab Switching ─── */
@@ -1230,11 +1265,9 @@
             var row = document.getElementById(rowId);
             if (!row) return;
             if (mode === 'custom') {
-                row.style.opacity = '';
-                row.style.pointerEvents = '';
+                row.classList.remove('is-disabled');
             } else {
-                row.style.opacity = '0.45';
-                row.style.pointerEvents = 'none';
+                row.classList.add('is-disabled');
             }
         }
 
@@ -1285,9 +1318,8 @@
             copyText.select();
             copyText.setSelectionRange(0, 99999);
             navigator.clipboard.writeText(copyText.value);
-            var originalBg = copyText.style.backgroundColor;
-            copyText.style.backgroundColor = "rgba(124, 58, 237, 0.3)";
-            setTimeout(function() { copyText.style.backgroundColor = originalBg; }, 200);
+            copyText.classList.add('input-copied');
+            setTimeout(function() { copyText.classList.remove('input-copied'); }, 200);
         }
 
         async function clearStaleSuggestions() {
@@ -1407,22 +1439,22 @@
                 var libs = await r.json();
                 if (libs.error) {
                     listEl.textContent = libs.error;
-                    listEl.style.color = 'var(--color-error)';
+                    listEl.className = 'status-text status-text-error';
                     return;
                 }
                 var currentIds = (hiddenInput.value || '').split(',').map(function(s) { return s.trim(); }).filter(Boolean);
                 listEl.textContent = '';
-                listEl.style.color = '';
+                listEl.className = '';
                 libs.forEach(function(lib) {
                     var div = document.createElement('div');
-                    div.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 0;';
+                    div.className = 'settings-option-row';
                     var cb = document.createElement('input');
                     cb.type = 'checkbox';
                     cb.value = lib.id;
                     cb.checked = currentIds.includes(lib.id);
                     cb.addEventListener('change', updateAbsLibraryIds);
                     var lbl = document.createElement('label');
-                    lbl.style.cursor = 'pointer';
+                    lbl.className = 'settings-option-label';
                     lbl.textContent = lib.name + ' (' + lib.mediaType + ')';
                     div.appendChild(cb);
                     div.appendChild(lbl);
@@ -1430,11 +1462,11 @@
                 });
                 if (libs.length === 0) {
                     listEl.textContent = 'No libraries found';
-                    listEl.style.color = 'var(--color-text-muted)';
+                    listEl.className = 'status-text status-text-muted';
                 }
             } catch (e) {
                 listEl.textContent = 'Failed to fetch: ' + e.message;
-                listEl.style.color = 'var(--color-error)';
+                listEl.className = 'status-text status-text-error';
             }
         }
 

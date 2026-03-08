@@ -74,6 +74,14 @@ def get_service_web_url(service_prefix):
     return (external_url or internal_url).rstrip('/')
 
 
+def get_hardcover_book_url(slug_or_id):
+    """Return a Hardcover book URL using the configured service base when available."""
+    if not slug_or_id:
+        return None
+    base_url = get_service_web_url('HARDCOVER') or 'https://hardcover.app'
+    return f"{base_url}/books/{slug_or_id}"
+
+
 # --------------- Booklore helpers ---------------
 
 def get_booklore_client():

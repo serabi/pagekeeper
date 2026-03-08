@@ -1468,6 +1468,23 @@ a.r-service-row-name:hover { text-decoration: underline; }
 }
 .r-service-row-link-action:hover { color: var(--color-primary); }
 
+/* Hardcover status label in service row — sits next to service name */
+.r-service-row:has(.r-service-row-hc-status) .r-service-row-name { flex: none; }
+.r-service-row-hc-status {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-right: auto;
+}
+.r-hc-status-1 { color: var(--color-text-muted); background: rgba(148, 163, 184, 0.12); } /* Want to Read */
+.r-hc-status-2 { color: var(--color-success); background: var(--color-success-light); }    /* Currently Reading */
+.r-hc-status-3 { color: var(--color-info); background: var(--color-info-light); }           /* Read */
+.r-hc-status-4 { color: var(--color-status-paused); background: rgba(148, 163, 184, 0.15); } /* Paused */
+.r-hc-status-5 { color: var(--color-status-dnf); background: var(--color-error-light); }   /* DNF */
+
 
 /* ═══════════════════════════════════════════
    JOURNAL
