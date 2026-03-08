@@ -136,6 +136,7 @@ class SyncManager:
 
         self.startup_checks()
         self.background_job_service.cleanup_stale_jobs()
+        self.background_job_service.prune_hardcover_sync_logs()
 
 
     def _setup_sync_clients(self, clients: dict[str, SyncClient]):

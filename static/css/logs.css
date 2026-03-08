@@ -202,6 +202,146 @@
   border-top: 1px solid var(--color-border);
 }
 
+/* ── Tab bar (copied from reading.css since logs doesn't load it) ── */
+.r-main-tab-bar {
+  display: inline-flex;
+  gap: 8px;
+  padding: 6px;
+  margin-bottom: 18px;
+  border: 1px solid var(--color-border-light);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.r-main-tab-btn {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-muted);
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.r-main-tab-btn.active,
+.r-main-tab-btn:hover {
+  color: var(--color-text);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.r-main-panel[hidden] {
+  display: none !important;
+}
+
+/* ── Hardcover Sync Log Table ── */
+.hc-log-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.hc-log-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.hc-log-table th {
+  text-align: left;
+  padding: 10px 14px;
+  font-weight: 700;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.hc-log-table td {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--color-border-light);
+  vertical-align: top;
+}
+
+.hc-log-table tr:hover td {
+  background: var(--color-surface);
+}
+
+.hc-ts {
+  white-space: nowrap;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.hc-title {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hc-detail {
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.hc-empty {
+  text-align: center;
+  padding: 40px 14px !important;
+  color: var(--color-text-muted);
+}
+
+.hc-direction-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.hc-dir-push {
+  background: var(--color-info-light);
+  color: var(--color-info);
+}
+
+.hc-dir-pull {
+  background: rgba(46, 204, 113, 0.15);
+  color: #2ecc71;
+}
+
+.hc-status-icon {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.hc-status-icon.success {
+  color: #2ecc71;
+}
+
+.hc-status-icon.failure {
+  color: var(--color-error);
+}
+
+.hc-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 16px 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .controls {
@@ -223,5 +363,13 @@
   .btn-sm {
     padding: 6px 12px !important;
     font-size: 12px !important;
+  }
+
+  .r-main-tab-bar {
+    width: 100%;
+  }
+
+  .r-main-tab-btn {
+    flex: 1;
   }
 }

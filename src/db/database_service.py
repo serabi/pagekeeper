@@ -405,6 +405,17 @@ class DatabaseService:
     def get_all_hardcover_details(self):
         return self._integrations.get_all_hardcover_details()
 
+    # ── Integrations: Hardcover Sync Logs ──
+
+    def add_hardcover_sync_log(self, entry):
+        return self._integrations.add_hardcover_sync_log(entry)
+
+    def get_hardcover_sync_logs(self, page=1, per_page=50, direction=None, action=None, search=None):
+        return self._integrations.get_hardcover_sync_logs(page, per_page, direction, action, search)
+
+    def prune_hardcover_sync_logs(self, before_date):
+        return self._integrations.prune_hardcover_sync_logs(before_date)
+
     # ── Integrations: Booklore (delegates to IntegrationRepository) ──
 
     def get_booklore_book(self, filename):

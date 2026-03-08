@@ -1,11 +1,13 @@
-"""Logs blueprint — /logs, /api/logs, /api/logs/live, /view_log."""
+"""Logs blueprint — /logs, /api/logs, /api/logs/live, /api/logs/hardcover, /view_log."""
 
+import json
 import logging
 from datetime import datetime
 from pathlib import Path
 
 from flask import Blueprint, jsonify, redirect, render_template, request, url_for
 
+from src.blueprints.helpers import get_database_service
 from src.utils.logging_utils import LOG_PATH, memory_log_handler
 
 logger = logging.getLogger(__name__)
@@ -166,6 +168,57 @@ def api_logs_live():
     except Exception as e:
         logger.error(f"Error fetching live logs: {e}")
         return jsonify({'error': 'Failed to fetch live logs', 'logs': [], 'timestamp': datetime.now().isoformat()}), 500
+
+
+@logs_bp.route('/api/logs/hardcover')
+def api_logs_hardcover():
+    """API endpoint for fetching Hardcover sync logs with filtering and pagination."""
+    try:
+        page = request.args.get('page', 1, type=int)
+        per_page = min(request.args.get('per_page', 50, type=int), 200)
+        direction = request.args.get('direction') or None
+        action = request.args.get('action') or None
+        search = request.args.get('search') or None
+
+        database_service = get_database_service()
+        items, total = database_service.get_hardcover_sync_logs(
+            page=page, per_page=per_page,
+            direction=direction, action=action, search=search,
+        )
+
+        logs = []
+        for entry in items:
+            detail_parsed = None
+            if entry.detail:
+                try:
+                    detail_parsed = json.loads(entry.detail)
+                except (json.JSONDecodeError, TypeError):
+                    detail_parsed = entry.detail
+
+            logs.append({
+                'id': entry.id,
+                'abs_id': entry.abs_id,
+                'book_title': entry.book_title,
+                'direction': entry.direction,
+                'action': entry.action,
+                'detail': detail_parsed,
+                'success': entry.success,
+                'error_message': entry.error_message,
+                'created_at': entry.created_at.isoformat() if entry.created_at else None,
+            })
+
+        total_pages = (total + per_page - 1) // per_page if total > 0 else 1
+        return jsonify({
+            'logs': logs,
+            'total': total,
+            'page': page,
+            'per_page': per_page,
+            'total_pages': total_pages,
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching Hardcover sync logs: {e}")
+        return jsonify({'error': 'Failed to fetch Hardcover sync logs', 'logs': [], 'total': 0}), 500
 
 
 @logs_bp.route('/view_log')

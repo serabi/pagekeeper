@@ -217,6 +217,37 @@ class HardcoverDetails(Base):
         return f"<HardcoverDetails(abs_id='{self.abs_id}', hardcover_book_id='{self.hardcover_book_id}')>"
 
 
+class HardcoverSyncLog(Base):
+    """Log of Hardcover sync actions for debugging and visibility."""
+    __tablename__ = 'hardcover_sync_logs'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    abs_id = Column(String(255), ForeignKey('books.abs_id', ondelete='SET NULL'), nullable=True, index=True)
+    book_title = Column(String(500), nullable=True)
+    direction = Column(String(4), nullable=False)   # 'push' or 'pull'
+    action = Column(String(30), nullable=False, index=True)
+    detail = Column(Text, nullable=True)             # JSON blob
+    success = Column(Boolean, default=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+    book = relationship("Book", backref="hardcover_sync_logs")
+
+    def __init__(self, abs_id=None, book_title=None, direction='push', action='',
+                 detail=None, success=True, error_message=None, created_at=None):
+        self.abs_id = abs_id
+        self.book_title = book_title
+        self.direction = direction
+        self.action = action
+        self.detail = detail
+        self.success = success
+        self.error_message = error_message
+        self.created_at = created_at or datetime.utcnow()
+
+    def __repr__(self):
+        return f"<HardcoverSyncLog(id={self.id}, action='{self.action}', direction='{self.direction}')>"
+
+
 class State(Base):
     """
     State model storing sync state per book and client.

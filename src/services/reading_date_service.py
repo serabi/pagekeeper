@@ -4,6 +4,8 @@ import logging
 import time
 from datetime import UTC, date, datetime
 
+from src.services.hardcover_log_service import log_hardcover_action
+
 logger = logging.getLogger(__name__)
 
 
@@ -31,6 +33,11 @@ def pull_reading_dates(abs_id, container, database_service):
                         if read.get("finished_at"):
                             dates['finished_at'] = read["finished_at"]
                     if dates:
+                        log_hardcover_action(
+                            database_service, abs_id=abs_id,
+                            direction='pull', action='date_pull',
+                            detail=dates,
+                        )
                         logger.debug(f"Pulled dates from Hardcover for '{abs_id}': {dates}")
                         return dates
     except Exception as e:
@@ -174,6 +181,12 @@ def push_dates_to_hardcover(abs_id, container, database_service):
             user_book_id,
             pages,
             **progress_kwargs,
+        )
+        log_hardcover_action(
+            database_service, abs_id=abs_id,
+            direction='push', action='date_push',
+            detail={'started_at': book.started_at if not hc_started else None,
+                    'finished_at': book.finished_at if not hc_finished else None},
         )
         logger.info(f"Pushed dates to Hardcover for '{abs_id}'")
 

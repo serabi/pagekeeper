@@ -20,10 +20,16 @@
 
     <div class="container">
         <div class="page-header">
-            <h1>Application Logs</h1>
-            <p>View, filter, and monitor system logs in real-time</p>
+            <h1>Logs</h1>
+            <p>View, filter, and monitor system logs</p>
         </div>
 
+        <div class="r-main-tab-bar" role="tablist" aria-label="Log sections">
+            <button class="r-main-tab-btn active" type="button" id="tab-app" role="tab" data-main-tab="app" aria-selected="true" aria-controls="panel-app">Application Logs</button>
+            <button class="r-main-tab-btn" type="button" id="tab-hardcover" role="tab" data-main-tab="hardcover" aria-selected="false" aria-controls="panel-hardcover">Hardcover Sync</button>
+        </div>
+
+        <div class="r-main-panel" id="panel-app" data-main-panel="app" role="tabpanel" aria-labelledby="tab-app">
         <!-- Log Controls -->
         <div class="controls">
             <div class="control-group">
@@ -95,6 +101,72 @@
                 <button class="btn btn-secondary">Load More Logs</button>
             </div>
         </div>
+    </div><!-- /panel-app -->
+
+        <div class="r-main-panel" id="panel-hardcover" data-main-panel="hardcover" role="tabpanel" aria-labelledby="tab-hardcover" hidden>
+            <div class="controls">
+                <div class="control-group">
+                    <label for="hcDirection">Direction:</label>
+                    <select id="hcDirection" class="input-compact">
+                        <option value="">All</option>
+                        <option value="push">Push</option>
+                        <option value="pull">Pull</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label for="hcAction">Action:</label>
+                    <select id="hcAction" class="input-compact">
+                        <option value="">All</option>
+                        <option value="status_update">Status Update</option>
+                        <option value="create_user_book">Create User Book</option>
+                        <option value="adopt_user_book">Adopt User Book</option>
+                        <option value="rating">Rating</option>
+                        <option value="status_transition">Status Transition</option>
+                        <option value="status_pull">Status Pull</option>
+                        <option value="date_pull">Date Pull</option>
+                        <option value="date_push">Date Push</option>
+                        <option value="automatch">Automatch</option>
+                        <option value="manual_match">Manual Match</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label for="hcSearch">Search:</label>
+                    <input type="text" id="hcSearch" class="search-input input-compact" placeholder="Search by title...">
+                </div>
+                <div class="control-group">
+                    <label>&nbsp;</label>
+                    <button id="hcRefreshBtn" class="btn btn-primary">Refresh</button>
+                </div>
+            </div>
+
+            <div class="log-stats">
+                <span id="hcStatsLine">Showing 0 of 0 entries</span>
+            </div>
+
+            <div class="hc-log-table-wrap">
+                <table class="hc-log-table">
+                    <thead>
+                        <tr>
+                            <th>Timestamp</th>
+                            <th>Direction</th>
+                            <th>Action</th>
+                            <th>Book</th>
+                            <th>Detail</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="hcLogBody">
+                        <tr><td colspan="6" class="hc-empty">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="hc-pagination" id="hcPagination">
+                <button id="hcPrevBtn" class="btn btn-secondary btn-sm" disabled>Prev</button>
+                <span id="hcPageInfo">Page 1 of 1</span>
+                <button id="hcNextBtn" class="btn btn-secondary btn-sm" disabled>Next</button>
+            </div>
+        </div><!-- /panel-hardcover -->
     </div>
 
     <script>
@@ -550,6 +622,140 @@
                 clearInterval(liveRefreshInterval);
             }
         });
+
+        // ── Tab Switching ──
+        const mainTabs = Array.from(document.querySelectorAll('.r-main-tab-btn'));
+        const mainPanels = Array.from(document.querySelectorAll('.r-main-panel'));
+
+        function setMainTab(tabName) {
+            mainTabs.forEach(tab => {
+                const active = tab.dataset.mainTab === tabName;
+                tab.classList.toggle('active', active);
+                tab.setAttribute('aria-selected', active ? 'true' : 'false');
+            });
+            mainPanels.forEach(panel => {
+                panel.hidden = panel.dataset.mainPanel !== tabName;
+            });
+            if (tabName === 'hardcover' && !hcLoaded) {
+                fetchHardcoverLogs();
+            }
+        }
+
+        mainTabs.forEach(tab => {
+            tab.addEventListener('click', () => setMainTab(tab.dataset.mainTab));
+        });
+
+        // ── Hardcover Sync Logs ──
+        let hcPage = 1;
+        let hcTotalPages = 1;
+        let hcLoaded = false;
+        const hcLogBody = document.getElementById('hcLogBody');
+        const hcStatsLine = document.getElementById('hcStatsLine');
+        const hcPageInfo = document.getElementById('hcPageInfo');
+        const hcPrevBtn = document.getElementById('hcPrevBtn');
+        const hcNextBtn = document.getElementById('hcNextBtn');
+
+        function renderHcRow(log) {
+            const tr = document.createElement('tr');
+
+            const tdTs = document.createElement('td');
+            tdTs.className = 'hc-ts';
+            tdTs.textContent = log.created_at ? new Date(log.created_at).toLocaleString() : '';
+            tr.appendChild(tdTs);
+
+            const tdDir = document.createElement('td');
+            const badge = document.createElement('span');
+            badge.className = 'hc-direction-badge hc-dir-' + (log.direction || 'push');
+            badge.textContent = log.direction || '';
+            tdDir.appendChild(badge);
+            tr.appendChild(tdDir);
+
+            const tdAction = document.createElement('td');
+            tdAction.textContent = (log.action || '').replace(/_/g, ' ');
+            tr.appendChild(tdAction);
+
+            const tdTitle = document.createElement('td');
+            tdTitle.className = 'hc-title';
+            tdTitle.textContent = log.book_title || '\u2014';
+            tr.appendChild(tdTitle);
+
+            const tdDetail = document.createElement('td');
+            tdDetail.className = 'hc-detail';
+            if (log.error_message) {
+                tdDetail.textContent = log.error_message;
+            } else if (log.detail && typeof log.detail === 'object') {
+                tdDetail.textContent = Object.entries(log.detail)
+                    .filter(([, v]) => v != null)
+                    .map(([k, v]) => k + ': ' + v)
+                    .join(', ');
+            } else if (log.detail) {
+                tdDetail.textContent = String(log.detail);
+            }
+            tr.appendChild(tdDetail);
+
+            const tdStatus = document.createElement('td');
+            const icon = document.createElement('span');
+            icon.className = 'hc-status-icon ' + (log.success ? 'success' : 'failure');
+            icon.title = log.success ? 'Success' : 'Failed';
+            icon.textContent = log.success ? '\u2713' : '\u2717';
+            tdStatus.appendChild(icon);
+            tr.appendChild(tdStatus);
+
+            return tr;
+        }
+
+        async function fetchHardcoverLogs() {
+            const params = new URLSearchParams({ page: hcPage, per_page: 50 });
+            const dir = document.getElementById('hcDirection').value;
+            const act = document.getElementById('hcAction').value;
+            const search = document.getElementById('hcSearch').value;
+            if (dir) params.set('direction', dir);
+            if (act) params.set('action', act);
+            if (search) params.set('search', search);
+
+            try {
+                const res = await fetch('/api/logs/hardcover?' + params);
+                const data = await res.json();
+                hcLoaded = true;
+                hcTotalPages = data.total_pages || 1;
+
+                const showing = data.logs ? data.logs.length : 0;
+                hcStatsLine.textContent = 'Showing ' + showing + ' of ' + (data.total || 0) + ' entries';
+                hcPageInfo.textContent = 'Page ' + (data.page || 1) + ' of ' + hcTotalPages;
+                hcPrevBtn.disabled = (data.page || 1) <= 1;
+                hcNextBtn.disabled = (data.page || 1) >= hcTotalPages;
+
+                hcLogBody.textContent = '';
+                if (!data.logs || data.logs.length === 0) {
+                    const emptyRow = document.createElement('tr');
+                    const emptyTd = document.createElement('td');
+                    emptyTd.colSpan = 6;
+                    emptyTd.className = 'hc-empty';
+                    emptyTd.textContent = 'No sync events recorded yet.';
+                    emptyRow.appendChild(emptyTd);
+                    hcLogBody.appendChild(emptyRow);
+                    return;
+                }
+
+                data.logs.forEach(log => hcLogBody.appendChild(renderHcRow(log)));
+            } catch (err) {
+                hcLogBody.textContent = '';
+                const errRow = document.createElement('tr');
+                const errTd = document.createElement('td');
+                errTd.colSpan = 6;
+                errTd.className = 'hc-empty';
+                errTd.textContent = 'Error loading logs: ' + err.message;
+                errRow.appendChild(errTd);
+                hcLogBody.appendChild(errRow);
+            }
+        }
+
+        document.getElementById('hcRefreshBtn').addEventListener('click', () => { hcPage = 1; fetchHardcoverLogs(); });
+        document.getElementById('hcDirection').addEventListener('change', () => { hcPage = 1; fetchHardcoverLogs(); });
+        document.getElementById('hcAction').addEventListener('change', () => { hcPage = 1; fetchHardcoverLogs(); });
+        document.getElementById('hcSearch').addEventListener('input', debounce(() => { hcPage = 1; fetchHardcoverLogs(); }, 500));
+        hcPrevBtn.addEventListener('click', () => { if (hcPage > 1) { hcPage--; fetchHardcoverLogs(); } });
+        hcNextBtn.addEventListener('click', () => { if (hcPage < hcTotalPages) { hcPage++; fetchHardcoverLogs(); } });
     </script>
 </body>
 

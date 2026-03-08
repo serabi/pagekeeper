@@ -3,6 +3,7 @@ import os
 
 from src.api.hardcover_client import HardcoverClient
 from src.db.models import Book, HardcoverDetails, State
+from src.services.hardcover_log_service import log_hardcover_action
 from src.services.write_tracker import is_own_write, record_write
 from src.sync_clients.sync_client_interface import ServiceState, SyncClient, SyncResult, UpdateProgressRequest
 from src.utils.ebook_utils import EbookParser
@@ -198,6 +199,12 @@ class HardcoverSyncClient(SyncClient):
 
         hardcover_details.hardcover_status_id = hc_status_id
         self.database_service.save_hardcover_details(hardcover_details)
+        log_hardcover_action(
+            self.database_service, abs_id=book.abs_id,
+            book_title=sanitize_log_data(book.abs_title),
+            direction='pull', action='status_pull',
+            detail={'old_status': old_status, 'new_status': local_status, 'hc_status_id': hc_status_id},
+        )
         logger.info(
             f"Hardcover → local status: '{sanitize_log_data(book.abs_title)}' "
             f"{old_status} → {local_status} (HC status {hc_status_id})"
@@ -237,11 +244,24 @@ class HardcoverSyncClient(SyncClient):
             # Optional journal mirroring (Step 14)
             self._mirror_journal_if_enabled(book, hardcover_details, hc_status_id)
 
+            log_hardcover_action(
+                self.database_service, abs_id=book.abs_id,
+                book_title=sanitize_log_data(book.abs_title),
+                direction='push', action='status_update',
+                detail={'status_label': status_label, 'hc_status_id': hc_status_id},
+            )
             logger.info(
                 f"Local → Hardcover status: '{sanitize_log_data(book.abs_title)}' "
                 f"set to {status_label} (HC status {hc_status_id})"
             )
         except Exception as e:
+            log_hardcover_action(
+                self.database_service, abs_id=book.abs_id,
+                book_title=sanitize_log_data(book.abs_title),
+                direction='push', action='status_update',
+                success=False, error_message=str(e),
+                detail={'status_label': status_label, 'hc_status_id': hc_status_id},
+            )
             logger.warning(f"Failed to push status to Hardcover: {e}")
 
     # ── Cached ID Helpers (Step 4) ────────────────────────────────────
@@ -286,6 +306,12 @@ class HardcoverSyncClient(SyncClient):
         hardcover_details.hardcover_status_id = created.get('status_id', hc_status_id)
         self.database_service.save_hardcover_details(hardcover_details)
         record_write('Hardcover', book.abs_id, {'status': hardcover_details.hardcover_status_id})
+        log_hardcover_action(
+            self.database_service, abs_id=book.abs_id,
+            book_title=sanitize_log_data(book.abs_title),
+            direction='push', action='create_user_book',
+            detail={'user_book_id': created.get('id'), 'status_id': hardcover_details.hardcover_status_id},
+        )
         return created
 
     def _create_or_adopt_user_book(self, book, hardcover_details, edition_id=None):
@@ -301,6 +327,12 @@ class HardcoverSyncClient(SyncClient):
             hardcover_details.hardcover_user_book_id = ub['id']
             hardcover_details.hardcover_status_id = ub.get('status_id')
             self.database_service.save_hardcover_details(hardcover_details)
+            log_hardcover_action(
+                self.database_service, abs_id=book.abs_id,
+                book_title=sanitize_log_data(book.abs_title),
+                direction='pull', action='adopt_user_book',
+                detail={'user_book_id': ub['id'], 'status_id': ub.get('status_id')},
+            )
             logger.info(
                 f"Hardcover: adopted existing user_book {ub['id']} "
                 f"(status {ub.get('status_id')}) for '{sanitize_log_data(book.abs_title)}'"
@@ -319,6 +351,12 @@ class HardcoverSyncClient(SyncClient):
             hardcover_details.hardcover_status_id = result.get('status_id', hc_status_id)
             self.database_service.save_hardcover_details(hardcover_details)
         record_write('Hardcover', book.abs_id, {'status': hc_status_id})
+        log_hardcover_action(
+            self.database_service, abs_id=book.abs_id,
+            book_title=sanitize_log_data(book.abs_title),
+            direction='push', action='create_user_book',
+            detail={'status_id': hc_status_id, 'user_book_id': result.get('id') if result else None},
+        )
 
     def _ensure_read_id(self, user_book_id, hardcover_details):
         """Return cached read ID or fetch and cache it.
@@ -390,8 +428,21 @@ class HardcoverSyncClient(SyncClient):
                 return {'hardcover_synced': False, 'hardcover_error': 'Hardcover rejected rating update'}
 
             record_write('Hardcover', book.abs_id, {'rating': rating})
+            log_hardcover_action(
+                self.database_service, abs_id=book.abs_id,
+                book_title=sanitize_log_data(book.abs_title),
+                direction='push', action='rating',
+                detail={'rating': rating},
+            )
             return {'hardcover_synced': True, 'hardcover_error': None}
         except Exception as e:
+            log_hardcover_action(
+                self.database_service, abs_id=book.abs_id,
+                book_title=sanitize_log_data(book.abs_title),
+                direction='push', action='rating',
+                success=False, error_message=str(e),
+                detail={'rating': rating},
+            )
             logger.warning(f"Failed to push rating to Hardcover: {e}")
             return {'hardcover_synced': False, 'hardcover_error': str(e)}
 
@@ -495,6 +546,13 @@ class HardcoverSyncClient(SyncClient):
 
             self.database_service.save_hardcover_details(hardcover_details)
             self._create_or_adopt_user_book(book, hardcover_details, match.get('edition_id'))
+            log_hardcover_action(
+                self.database_service, abs_id=book.abs_id,
+                book_title=sanitize_log_data(meta.get('title')),
+                direction='push', action='automatch',
+                detail={'matched_by': matched_by, 'hardcover_book_id': match.get('book_id'),
+                        'slug': match.get('slug')},
+            )
             logger.info(f"Hardcover: '{sanitize_log_data(meta.get('title'))}' matched (matched by {matched_by})")
         else:
             logger.warning(f"Hardcover: No match found for '{sanitize_log_data(meta.get('title'))}'")
@@ -536,6 +594,13 @@ class HardcoverSyncClient(SyncClient):
         )
 
         self.database_service.save_hardcover_details(details)
+        log_hardcover_action(
+            self.database_service, abs_id=book_abs_id,
+            book_title=sanitize_log_data(match.get('title', '')),
+            direction='push', action='manual_match',
+            detail={'hardcover_book_id': match['book_id'], 'slug': match.get('slug'),
+                    'input': input_str},
+        )
         logger.info(f"Manually matched ABS {book_abs_id} to Hardcover {match['book_id']} ({match.get('title')})")
 
         book = self.database_service.get_book(book_abs_id)
@@ -578,6 +643,13 @@ class HardcoverSyncClient(SyncClient):
                     int(edition_id) if edition_id else None,
                 )
             except Exception as e:
+                log_hardcover_action(
+                    self.database_service, abs_id=book.abs_id,
+                    book_title=sanitize_log_data(book.abs_title),
+                    direction='push', action='status_transition',
+                    success=False, error_message=str(e),
+                    detail={'from': current_status, 'to': new_status},
+                )
                 logger.error(f"Failed to update Hardcover status: {e}")
                 return current_status
             hardcover_details.hardcover_status_id = new_status
@@ -585,6 +657,13 @@ class HardcoverSyncClient(SyncClient):
             record_write('Hardcover', book.abs_id, {'status': new_status})
 
             status_names = {1: 'Want to Read', 2: 'Currently Reading', 3: 'Read', 4: 'Paused', 5: 'DNF'}
+            log_hardcover_action(
+                self.database_service, abs_id=book.abs_id,
+                book_title=sanitize_log_data(book.abs_title),
+                direction='push', action='status_transition',
+                detail={'from': current_status, 'to': new_status,
+                        'label': status_names.get(new_status, str(new_status))},
+            )
             logger.info(f"Hardcover: '{sanitize_log_data(book.abs_title)}' status → {status_names.get(new_status, new_status)}")
 
             # Mirror journal if enabled

@@ -12,6 +12,7 @@ from .models import (
     BookfusionHighlight,
     BookloreBook,
     HardcoverDetails,
+    HardcoverSyncLog,
 )
 
 logger = logging.getLogger(__name__)
@@ -40,6 +41,40 @@ class IntegrationRepository(BaseRepository):
 
     def get_all_hardcover_details(self):
         return self._get_all(HardcoverDetails)
+
+    # ── Hardcover Sync Logs ──
+
+    def add_hardcover_sync_log(self, entry):
+        return self._save_new(entry)
+
+    def get_hardcover_sync_logs(self, page=1, per_page=50, direction=None, action=None, search=None):
+        with self.get_session() as session:
+            query = session.query(HardcoverSyncLog)
+            if direction:
+                query = query.filter(HardcoverSyncLog.direction == direction)
+            if action:
+                query = query.filter(HardcoverSyncLog.action == action)
+            if search:
+                like = f"%{search}%"
+                query = query.filter(
+                    (HardcoverSyncLog.book_title.ilike(like)) |
+                    (HardcoverSyncLog.detail.ilike(like)) |
+                    (HardcoverSyncLog.error_message.ilike(like))
+                )
+            total = query.count()
+            items = query.order_by(HardcoverSyncLog.created_at.desc()).offset(
+                (page - 1) * per_page
+            ).limit(per_page).all()
+            for item in items:
+                session.expunge(item)
+            return items, total
+
+    def prune_hardcover_sync_logs(self, before_date):
+        with self.get_session() as session:
+            deleted = session.query(HardcoverSyncLog).filter(
+                HardcoverSyncLog.created_at < before_date
+            ).delete(synchronize_session=False)
+            return deleted
 
     # ── Booklore ──
 
