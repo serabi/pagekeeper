@@ -589,6 +589,14 @@ def update_dates(abs_id):
     if not book:
         return jsonify({"success": False, "error": "Book not found"}), 404
 
+    # Push dates to Hardcover if configured (Step 13)
+    try:
+        from src.services.reading_date_service import push_dates_to_hardcover
+        container = get_container()
+        push_dates_to_hardcover(abs_id, container, database_service)
+    except Exception as e:
+        logger.debug(f"Could not push dates to Hardcover: {e}")
+
     return jsonify({"success": True, "started_at": book.started_at, "finished_at": book.finished_at})
 
 
@@ -701,3 +709,158 @@ def set_goal(year):
 
     goal = database_service.save_reading_goal(year, target)
     return jsonify({"success": True, "year": goal.year, "target_books": goal.target_books})
+
+
+# ─── New API Endpoints (Step 1 — Issue #16 leftovers) ────────────────
+
+
+@reading_bp.route('/api/reading/books', methods=['GET'])
+def get_reading_books():
+    """Return all books with reading data (status, progress, dates, rating)."""
+    database_service = get_database_service()
+
+    books = database_service.get_all_books()
+    reading_statuses = {'active', 'completed', 'paused', 'dnf', 'not_started'}
+    books = [b for b in books if b.status in reading_statuses]
+
+    all_states = database_service.get_all_states()
+    states_by_book = {}
+    for state in all_states:
+        states_by_book.setdefault(state.abs_id, []).append(state)
+
+    result = []
+    for book in books:
+        states = states_by_book.get(book.abs_id, [])
+        max_progress = 0
+        for state in states:
+            if state.percentage:
+                max_progress = max(max_progress, round(state.percentage * 100, 1))
+
+        result.append({
+            'abs_id': book.abs_id,
+            'abs_title': book.abs_title,
+            'status': book.status,
+            'unified_progress': min(max_progress, 100.0),
+            'started_at': book.started_at,
+            'finished_at': book.finished_at,
+            'rating': book.rating,
+            'read_count': book.read_count or 1,
+        })
+
+    return jsonify(result)
+
+
+@reading_bp.route('/api/reading/book/<abs_id>', methods=['GET'])
+def get_reading_book(abs_id):
+    """Single book detail with journals."""
+    database_service = get_database_service()
+
+    book = database_service.get_book(abs_id)
+    if not book:
+        return jsonify({"error": "Book not found"}), 404
+
+    states = database_service.get_states_for_book(abs_id)
+    max_progress = 0
+    for state in states:
+        if state.percentage:
+            max_progress = max(max_progress, round(state.percentage * 100, 1))
+
+    journals = database_service.get_reading_journals(abs_id)
+    journal_list = [{
+        'id': j.id,
+        'event': j.event,
+        'entry': j.entry,
+        'percentage': j.percentage,
+        'created_at': j.created_at.isoformat() if j.created_at else None,
+    } for j in journals]
+
+    return jsonify({
+        'abs_id': book.abs_id,
+        'abs_title': book.abs_title,
+        'status': book.status,
+        'unified_progress': min(max_progress, 100.0),
+        'started_at': book.started_at,
+        'finished_at': book.finished_at,
+        'rating': book.rating,
+        'read_count': book.read_count or 1,
+        'journals': journal_list,
+    })
+
+
+@reading_bp.route('/api/reading/book/<abs_id>/status', methods=['POST'])
+def update_status(abs_id):
+    """Update reading status for a book (with journal auto-creation).
+
+    Accepts: {"status": "active"|"completed"|"paused"|"dnf"|"not_started"}
+    """
+    database_service = get_database_service()
+    data = request.json or {}
+    new_status = data.get('status')
+
+    valid_statuses = {'active', 'completed', 'paused', 'dnf', 'not_started'}
+    if new_status not in valid_statuses:
+        return jsonify({"success": False, "error": f"Invalid status. Must be one of: {', '.join(sorted(valid_statuses))}"}), 400
+
+    book = database_service.get_book(abs_id)
+    if not book:
+        return jsonify({"success": False, "error": "Book not found"}), 404
+
+    old_status = book.status
+    if old_status == new_status:
+        return jsonify({"success": True, "status": new_status})
+
+    book.status = new_status
+    database_service.save_book(book)
+
+    # Auto-create journal entries for transitions
+    event_map = {
+        'active': 'resumed' if old_status in ('paused', 'dnf') else 'started',
+        'completed': 'finished',
+        'paused': 'paused',
+        'dnf': 'dnf',
+    }
+    event = event_map.get(new_status)
+    if event:
+        pct = None
+        if event == 'finished':
+            pct = 1.0
+        database_service.add_reading_journal(abs_id, event=event, percentage=pct)
+
+    # Auto-set dates
+    today = date.today().isoformat()
+    if new_status == 'active' and not book.started_at:
+        database_service.update_book_reading_fields(abs_id, started_at=today)
+        # Persist a real 'started' journal entry
+        database_service.add_reading_journal(abs_id, event='started')
+    elif new_status == 'completed' and not book.finished_at:
+        updates = {'finished_at': today}
+        if not book.started_at:
+            updates['started_at'] = today
+        database_service.update_book_reading_fields(abs_id, **updates)
+
+    # Push status to Hardcover (Step 11)
+    try:
+        container = get_container()
+        hc_sync = container.hardcover_sync_client()
+        if hc_sync.is_configured():
+            hc_sync.push_local_status(book, new_status)
+    except Exception as e:
+        logger.debug(f"Could not push status to Hardcover: {e}")
+
+    return jsonify({"success": True, "status": new_status, "previous_status": old_status})
+
+
+@reading_bp.route('/api/reading/stats/<int:year>', methods=['GET'])
+def get_stats(year):
+    """Reading stats for a given year."""
+    database_service = get_database_service()
+    stats = database_service.get_reading_stats(year)
+    goal = database_service.get_reading_goal(year)
+
+    return jsonify({
+        "year": year,
+        "books_finished": stats['books_finished'],
+        "currently_reading": stats['currently_reading'],
+        "total_tracked": stats['total_tracked'],
+        "goal_target": goal.target_books if goal else None,
+    })

@@ -24,6 +24,7 @@ class MockContainer:
         self.mock_database_service.get_all_settings.return_value = {}
         self._sync_clients = {}
         self._hardcover_client = Mock(is_configured=Mock(return_value=False))
+        self._hardcover_sync_client = Mock(is_configured=Mock(return_value=False))
 
     def sync_manager(self):
         return self.mock_sync_manager
@@ -36,6 +37,9 @@ class MockContainer:
 
     def hardcover_client(self):
         return self._hardcover_client
+
+    def hardcover_sync_client(self):
+        return self._hardcover_sync_client
 
     def storyteller_client(self):
         return Mock(is_configured=Mock(return_value=False))
@@ -118,19 +122,16 @@ class TestBookStatusEndpoints(unittest.TestCase):
         self.db.save_book.assert_called_once_with(book)
 
     def test_pause_syncs_hardcover(self):
-        """Pausing should set Hardcover status_id=4."""
+        """Pausing should push 'paused' status to Hardcover via sync client."""
         book = self._make_book(status='active')
         self.db.get_book.return_value = book
 
-        hc_details = HardcoverDetails(abs_id='book-1', hardcover_book_id='123', hardcover_edition_id='456')
-        self.db.get_hardcover_details.return_value = hc_details
-
-        self.mock_container._hardcover_client = Mock(is_configured=Mock(return_value=True))
+        self.mock_container._hardcover_sync_client = Mock(is_configured=Mock(return_value=True))
 
         resp = self.client.post('/api/pause/book-1')
         self.assertEqual(resp.status_code, 200)
 
-        self.mock_container._hardcover_client.update_status.assert_called_once_with(123, 4, 456)
+        self.mock_container._hardcover_sync_client.push_local_status.assert_called_once_with(book, 'paused')
 
     def test_pause_rejects_non_active(self):
         for status in ['paused', 'dnf', 'pending', 'processing']:
@@ -175,34 +176,28 @@ class TestBookStatusEndpoints(unittest.TestCase):
         self.assertEqual(book.status, 'active')
 
     def test_resume_dnf_syncs_hardcover(self):
-        """Resuming from DNF should set Hardcover status to Currently Reading (2)."""
+        """Resuming from DNF should push 'active' status to Hardcover."""
         book = self._make_book(status='dnf')
         self.db.get_book.return_value = book
 
-        hc_details = HardcoverDetails(abs_id='book-1', hardcover_book_id='123', hardcover_edition_id='456')
-        self.db.get_hardcover_details.return_value = hc_details
-
-        self.mock_container._hardcover_client = Mock(is_configured=Mock(return_value=True))
+        self.mock_container._hardcover_sync_client = Mock(is_configured=Mock(return_value=True))
 
         resp = self.client.post('/api/resume/book-1')
         self.assertEqual(resp.status_code, 200)
 
-        self.mock_container._hardcover_client.update_status.assert_called_once_with(123, 2, 456)
+        self.mock_container._hardcover_sync_client.push_local_status.assert_called_once_with(book, 'active')
 
     def test_resume_paused_syncs_hardcover(self):
-        """Resuming from paused should set Hardcover status to Currently Reading (2)."""
+        """Resuming from paused should push 'active' status to Hardcover."""
         book = self._make_book(status='paused')
         self.db.get_book.return_value = book
 
-        hc_details = HardcoverDetails(abs_id='book-1', hardcover_book_id='123', hardcover_edition_id='456')
-        self.db.get_hardcover_details.return_value = hc_details
-
-        self.mock_container._hardcover_client = Mock(is_configured=Mock(return_value=True))
+        self.mock_container._hardcover_sync_client = Mock(is_configured=Mock(return_value=True))
 
         resp = self.client.post('/api/resume/book-1')
         self.assertEqual(resp.status_code, 200)
 
-        self.mock_container._hardcover_client.update_status.assert_called_once_with(123, 2, 456)
+        self.mock_container._hardcover_sync_client.push_local_status.assert_called_once_with(book, 'active')
 
     def test_resume_rejects_active(self):
         book = self._make_book(status='active')
@@ -245,19 +240,16 @@ class TestBookStatusEndpoints(unittest.TestCase):
         self.assertEqual(book.status, 'dnf')
 
     def test_dnf_syncs_hardcover(self):
-        """DNF should set Hardcover status_id=5."""
+        """DNF should push 'dnf' status to Hardcover via sync client."""
         book = self._make_book(status='active')
         self.db.get_book.return_value = book
 
-        hc_details = HardcoverDetails(abs_id='book-1', hardcover_book_id='123', hardcover_edition_id='456')
-        self.db.get_hardcover_details.return_value = hc_details
-
-        self.mock_container._hardcover_client = Mock(is_configured=Mock(return_value=True))
+        self.mock_container._hardcover_sync_client = Mock(is_configured=Mock(return_value=True))
 
         resp = self.client.post('/api/dnf/book-1')
         self.assertEqual(resp.status_code, 200)
 
-        self.mock_container._hardcover_client.update_status.assert_called_once_with(123, 5, 456)
+        self.mock_container._hardcover_sync_client.push_local_status.assert_called_once_with(book, 'dnf')
 
     def test_dnf_rejects_pending(self):
         book = self._make_book(status='pending')

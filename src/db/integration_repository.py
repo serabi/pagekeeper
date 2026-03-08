@@ -31,7 +31,8 @@ class IntegrationRepository(BaseRepository):
             details,
             ['hardcover_book_id', 'hardcover_slug', 'hardcover_edition_id',
              'hardcover_pages', 'hardcover_audio_seconds', 'isbn', 'asin', 'matched_by',
-             'hardcover_cover_url'],
+             'hardcover_cover_url', 'hardcover_user_book_id', 'hardcover_user_book_read_id',
+             'hardcover_status_id', 'hardcover_audio_edition_id'],
         )
 
     def delete_hardcover_details(self, abs_id):

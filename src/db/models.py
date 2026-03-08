@@ -182,6 +182,12 @@ class HardcoverDetails(Base):
     matched_by = Column(String(50))  # 'isbn', 'asin', 'title_author', 'title'
     hardcover_cover_url = Column(String(500), nullable=True)
 
+    # Cached bidirectional sync columns
+    hardcover_user_book_id = Column(Integer, nullable=True)
+    hardcover_user_book_read_id = Column(Integer, nullable=True)
+    hardcover_status_id = Column(Integer, nullable=True)
+    hardcover_audio_edition_id = Column(String(255), nullable=True)
+
     # Relationship
     book = relationship("Book", back_populates="hardcover_details")
 
@@ -189,7 +195,9 @@ class HardcoverDetails(Base):
                  hardcover_edition_id: str = None,
                  hardcover_pages: int = None, hardcover_audio_seconds: int = None,
                  isbn: str = None, asin: str = None, matched_by: str = None,
-                 hardcover_cover_url: str = None):
+                 hardcover_cover_url: str = None,
+                 hardcover_user_book_id: int = None, hardcover_user_book_read_id: int = None,
+                 hardcover_status_id: int = None, hardcover_audio_edition_id: str = None):
         self.abs_id = abs_id
         self.hardcover_book_id = hardcover_book_id
         self.hardcover_slug = hardcover_slug
@@ -200,6 +208,10 @@ class HardcoverDetails(Base):
         self.asin = asin
         self.matched_by = matched_by
         self.hardcover_cover_url = hardcover_cover_url
+        self.hardcover_user_book_id = hardcover_user_book_id
+        self.hardcover_user_book_read_id = hardcover_user_book_read_id
+        self.hardcover_status_id = hardcover_status_id
+        self.hardcover_audio_edition_id = hardcover_audio_edition_id
 
     def __repr__(self):
         return f"<HardcoverDetails(abs_id='{self.abs_id}', hardcover_book_id='{self.hardcover_book_id}')>"

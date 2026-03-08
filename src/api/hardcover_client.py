@@ -13,6 +13,8 @@ Key features:
 
 import logging
 import os
+import threading
+import time
 from datetime import date
 
 import requests
@@ -27,6 +29,11 @@ class HardcoverClient:
         self.api_url = "https://api.hardcover.app/v1/graphql"
         self.token = os.environ.get("HARDCOVER_TOKEN")
         self.user_id = None
+
+        # Rate limiter: 1 req/sec gives comfortable headroom under 60 req/min limit
+        self._last_request_time = 0.0
+        self._rate_lock = threading.Lock()
+        self._min_interval = 1.0
 
         if self.token:
             self.token = self.token.strip()
@@ -61,9 +68,20 @@ class HardcoverClient:
         logger.info(f"Hardcover client connection verified, user id: {user_id}")
         return True
 
+    def _rate_limit(self):
+        """Enforce minimum interval between API requests."""
+        with self._rate_lock:
+            now = time.monotonic()
+            elapsed = now - self._last_request_time
+            if elapsed < self._min_interval:
+                time.sleep(self._min_interval - elapsed)
+            self._last_request_time = time.monotonic()
+
     def query(self, query: str, variables: dict | None = None) -> dict | None:
         if not self.token:
             return None
+
+        self._rate_limit()
 
         try:
             r = requests.post(
@@ -72,6 +90,18 @@ class HardcoverClient:
                 headers=self.headers,
                 timeout=10,
             )
+
+            # Handle rate limiting (429)
+            if r.status_code == 429:
+                logger.warning("Hardcover rate limit hit (429), retrying after 5s")
+                time.sleep(5)
+                self._last_request_time = time.monotonic()
+                r = requests.post(
+                    self.api_url,
+                    json={"query": query, "variables": variables or {}},
+                    headers=self.headers,
+                    timeout=10,
+                )
 
             if r.status_code == 200:
                 data = r.json()
@@ -968,3 +998,107 @@ class HardcoverClient:
                 "slug": book.get("slug"),
             })
         return results
+
+    def get_currently_reading(self) -> dict:
+        """Bulk-fetch all user_books with Want to Read (1) or Currently Reading (2) status.
+
+        Returns dict keyed by book_id for quick lookup.
+        """
+        query = """
+        query {
+            me {
+                user_books(where: {status_id: {_in: [1, 2, 4]}}) {
+                    id
+                    status_id
+                    book_id
+                    edition_id
+                    user_book_reads(order_by: {id: desc}, limit: 1) {
+                        id
+                        started_at
+                        finished_at
+                        progress_pages
+                        progress_seconds
+                    }
+                }
+            }
+        }
+        """
+        result = self.query(query)
+        if not result or not result.get("me"):
+            return {}
+
+        me = result["me"]
+        if isinstance(me, list):
+            me = me[0] if me else {}
+
+        user_books = me.get("user_books", [])
+        return {ub["book_id"]: ub for ub in user_books}
+
+    def get_all_editions(self, book_id: int) -> dict:
+        """Fetch all default editions for a book, keyed by format type.
+
+        Returns dict like {'ebook': {...}, 'audio': {...}, 'physical': {...}}.
+        """
+        query = """
+        query ($bookId: Int!) {
+            books_by_pk(id: $bookId) {
+                default_ebook_edition {
+                    id
+                    pages
+                }
+                default_physical_edition {
+                    id
+                    pages
+                }
+                default_audio_edition {
+                    id
+                    audio_seconds
+                }
+            }
+        }
+        """
+        result = self.query(query, {"bookId": book_id})
+        editions = {}
+        if result and result.get("books_by_pk"):
+            book = result["books_by_pk"]
+            if book.get("default_ebook_edition"):
+                editions['ebook'] = book["default_ebook_edition"]
+            if book.get("default_physical_edition"):
+                editions['physical'] = book["default_physical_edition"]
+            if book.get("default_audio_edition"):
+                editions['audio'] = book["default_audio_edition"]
+        return editions
+
+    def create_reading_journal(self, book_id: int, edition_id: int | None,
+                               event: str, action_at: str | None = None) -> bool:
+        """Create a reading journal entry on Hardcover.
+
+        Events: 'started_reading', 'finished_reading', etc.
+        """
+        query = """
+        mutation ($object: ReadingJournalCreateInput!) {
+            insert_reading_journal(object: $object) {
+                error
+                reading_journal { id }
+            }
+        }
+        """
+        obj = {
+            "book_id": int(book_id),
+            "event": event,
+            "privacy_setting_id": 1,
+            "tags": [],
+        }
+        if edition_id:
+            obj["edition_id"] = int(edition_id)
+        if action_at:
+            obj["action_at"] = action_at
+
+        result = self.query(query, {"object": obj})
+        if result and result.get("insert_reading_journal"):
+            error = result["insert_reading_journal"].get("error")
+            if error:
+                logger.error(f"Hardcover create_reading_journal error: {error}")
+                return False
+            return True
+        return False

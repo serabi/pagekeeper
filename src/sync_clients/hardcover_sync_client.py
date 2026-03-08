@@ -1,52 +1,320 @@
 import logging
+import os
 
 from src.api.hardcover_client import HardcoverClient
 from src.db.models import Book, HardcoverDetails, State
+from src.services.write_tracker import is_own_write, record_write
 from src.sync_clients.sync_client_interface import ServiceState, SyncClient, SyncResult, UpdateProgressRequest
 from src.utils.ebook_utils import EbookParser
 from src.utils.logging_utils import sanitize_log_data
 
 logger = logging.getLogger(__name__)
 
+# Hardcover status IDs
+HC_WANT_TO_READ = 1
+HC_CURRENTLY_READING = 2
+HC_READ = 3
+HC_PAUSED = 4
+HC_DNF = 5
+
+# Local status → Hardcover status mapping
+LOCAL_TO_HC_STATUS = {
+    'active': HC_CURRENTLY_READING,
+    'completed': HC_READ,
+    'paused': HC_PAUSED,
+    'dnf': HC_DNF,
+}
+
+# Hardcover status → local status mapping
+HC_TO_LOCAL_STATUS = {
+    HC_CURRENTLY_READING: 'active',
+    HC_READ: 'completed',
+    HC_PAUSED: 'paused',
+    HC_DNF: 'dnf',
+}
+
+# Hardcover status → journal event mapping
+HC_TRANSITION_EVENTS = {
+    HC_CURRENTLY_READING: 'resumed',
+    HC_PAUSED: 'paused',
+    HC_DNF: 'dnf',
+    HC_READ: 'finished',
+}
+
 
 class HardcoverSyncClient(SyncClient):
     """
-    Hardcover sync client that handles both automating matching and progress sync.
-    This integrates Hardcover as a proper sync client in the sync cycle.
+    Hardcover sync client — bidirectional sync with caching, rate limiting,
+    status sync, and optional journal mirroring.
     """
 
-    def __init__(self, hardcover_client: HardcoverClient, ebook_parser: EbookParser, abs_client=None, database_service=None):
+    def __init__(self, hardcover_client: HardcoverClient, ebook_parser: EbookParser,
+                 abs_client=None, database_service=None):
         super().__init__(ebook_parser)
         self.hardcover_client = hardcover_client
-        self.abs_client = abs_client  # For fetching book metadata
+        self.abs_client = abs_client
         self.database_service = database_service
 
     def is_configured(self) -> bool:
-        """Check if Hardcover is configured."""
         return self.hardcover_client.is_configured()
 
     def check_connection(self):
-        """Check connection to Hardcover API."""
         return self.hardcover_client.check_connection()
 
     def can_be_leader(self) -> bool:
-        """
-        Hardcover cannot be a leader because it doesn't provide text content
-        for synchronization. It only receives updates from other clients.
-        """
+        """Hardcover cannot lead — it doesn't provide text content."""
         return False
 
     def get_supported_sync_types(self) -> set:
-        """Hardcover supports both audiobook and ebook syncing (as a follower)."""
         return {'audiobook', 'ebook'}
 
-    def get_service_state(self, book: Book, prev_state: State | None, title_snip: str = "", bulk_context: dict = None) -> ServiceState | None:
+    # ── Bulk State Fetching (Step 8) ──────────────────────────────────
+
+    def fetch_bulk_state(self) -> dict | None:
+        """Pre-fetch all active user_books from Hardcover in one API call.
+
+        Returns dict keyed by hardcover_book_id for quick lookup by get_service_state().
         """
-        Since Hardcover can never be the leader, its service state is not used for
-        leader selection or text extraction. Return None to indicate no state needed.
-        Auto-matching and progress sync happen in update_progress when actually needed.
+        if not self.is_configured():
+            return None
+        try:
+            return self.hardcover_client.get_currently_reading()
+        except Exception as e:
+            logger.debug(f"Hardcover bulk fetch failed: {e}")
+            return None
+
+    # ── get_service_state (Step 9) ────────────────────────────────────
+
+    def get_service_state(self, book: Book, prev_state: State | None,
+                          title_snip: str = "", bulk_context: dict = None) -> ServiceState | None:
+        """Read Hardcover progress for delta detection.
+
+        Uses bulk_context if available (from fetch_bulk_state), otherwise
+        falls back to a per-book API call. Checks write-suppression to
+        avoid echo loops.
         """
+        if not self.is_configured() or not self.database_service:
+            return None
+
+        hardcover_details = self.database_service.get_hardcover_details(book.abs_id)
+        if not hardcover_details or not hardcover_details.hardcover_book_id:
+            return None
+
+        hc_book_id = int(hardcover_details.hardcover_book_id)
+
+        # Look up from bulk context or fetch individually
+        ub = None
+        if bulk_context is not None:
+            ub = bulk_context.get(hc_book_id)
+        if ub is None:
+            ub = self.hardcover_client.find_user_book(hc_book_id)
+        if not ub:
+            return None
+
+        # Cache user_book_id and status_id
+        if ub.get('id') and hardcover_details.hardcover_user_book_id != ub['id']:
+            hardcover_details.hardcover_user_book_id = ub['id']
+            self.database_service.save_hardcover_details(hardcover_details)
+        if ub.get('status_id') and hardcover_details.hardcover_status_id != ub.get('status_id'):
+            # Status pull from Hardcover (Step 12)
+            self._sync_status_from_hardcover(book, hardcover_details, ub['status_id'])
+
+        # Calculate percentage from progress
+        reads = ub.get('user_book_reads', [])
+        if not reads:
+            return None
+
+        read = reads[0]
+        # Cache read ID
+        if read.get('id') and hardcover_details.hardcover_user_book_read_id != read['id']:
+            hardcover_details.hardcover_user_book_read_id = read['id']
+            self.database_service.save_hardcover_details(hardcover_details)
+
+        percentage = self._calculate_percentage(hardcover_details, read)
+        if percentage is None:
+            return None
+
+        current_state = {'pct': percentage, 'status': ub.get('status_id')}
+
+        # Write suppression
+        if is_own_write('Hardcover', book.abs_id, state=current_state):
+            return None
+
+        previous_pct = prev_state.percentage if prev_state else 0.0
+        delta = percentage - previous_pct
+
+        return ServiceState(
+            current=current_state,
+            previous_pct=previous_pct,
+            delta=delta,
+            threshold=0.01,
+            is_configured=True,
+            display=('Hardcover', f"{percentage:.0%}"),
+            value_formatter=lambda v: f"{v:.0%}",
+        )
+
+    def _calculate_percentage(self, hardcover_details, read) -> float | None:
+        """Calculate progress percentage from a user_book_read entry."""
+        progress_pages = read.get('progress_pages')
+        progress_seconds = read.get('progress_seconds')
+        total_pages = hardcover_details.hardcover_pages or 0
+        total_seconds = hardcover_details.hardcover_audio_seconds or 0
+
+        if progress_seconds and total_seconds > 0:
+            return min(progress_seconds / total_seconds, 1.0)
+        elif progress_pages and total_pages > 0:
+            return min(progress_pages / total_pages, 1.0)
         return None
+
+    # ── Status Sync: Hardcover → Local (Step 12) ─────────────────────
+
+    def _sync_status_from_hardcover(self, book, hardcover_details, hc_status_id):
+        """Pull status changes from Hardcover and apply locally."""
+        cached_status = hardcover_details.hardcover_status_id
+        if cached_status == hc_status_id:
+            return  # No change
+
+        # Don't act on our own writes
+        if is_own_write('Hardcover', book.abs_id):
+            hardcover_details.hardcover_status_id = hc_status_id
+            self.database_service.save_hardcover_details(hardcover_details)
+            return
+
+        local_status = HC_TO_LOCAL_STATUS.get(hc_status_id)
+        if not local_status or book.status == local_status:
+            hardcover_details.hardcover_status_id = hc_status_id
+            self.database_service.save_hardcover_details(hardcover_details)
+            return
+
+        # Apply the status change
+        old_status = book.status
+        book.status = local_status
+        self.database_service.save_book(book)
+
+        # Create journal entry for the transition
+        event = HC_TRANSITION_EVENTS.get(hc_status_id)
+        if event:
+            self.database_service.add_reading_journal(book.abs_id, event=event)
+
+        hardcover_details.hardcover_status_id = hc_status_id
+        self.database_service.save_hardcover_details(hardcover_details)
+        logger.info(
+            f"Hardcover → local status: '{sanitize_log_data(book.abs_title)}' "
+            f"{old_status} → {local_status} (HC status {hc_status_id})"
+        )
+
+    # ── Status Sync: Local → Hardcover (Step 11) ─────────────────────
+
+    def push_local_status(self, book, status_label):
+        """Push a local status change to Hardcover.
+
+        Args:
+            book: Book model instance
+            status_label: one of 'active', 'completed', 'paused', 'dnf'
+        """
+        if not self.is_configured() or not self.database_service:
+            return
+
+        hc_status_id = LOCAL_TO_HC_STATUS.get(status_label)
+        if not hc_status_id:
+            return
+
+        hardcover_details = self.database_service.get_hardcover_details(book.abs_id)
+        if not hardcover_details or not hardcover_details.hardcover_book_id:
+            return
+
+        try:
+            edition_id = self._select_edition_id(book, hardcover_details)
+            self.hardcover_client.update_status(
+                int(hardcover_details.hardcover_book_id),
+                hc_status_id,
+                int(edition_id) if edition_id else None,
+            )
+            hardcover_details.hardcover_status_id = hc_status_id
+            self.database_service.save_hardcover_details(hardcover_details)
+            record_write('Hardcover', book.abs_id, {'status': hc_status_id})
+
+            # Optional journal mirroring (Step 14)
+            self._mirror_journal_if_enabled(book, hardcover_details, hc_status_id)
+
+            logger.info(
+                f"Local → Hardcover status: '{sanitize_log_data(book.abs_title)}' "
+                f"set to {status_label} (HC status {hc_status_id})"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to push status to Hardcover: {e}")
+
+    # ── Cached ID Helpers (Step 4) ────────────────────────────────────
+
+    def _ensure_user_book(self, book, hardcover_details):
+        """Return cached user_book dict or fetch and cache IDs.
+
+        Reduces steady-state API calls from 2-3 → 0 per book.
+        """
+        if hardcover_details.hardcover_user_book_id and hardcover_details.hardcover_status_id:
+            return {
+                'id': hardcover_details.hardcover_user_book_id,
+                'status_id': hardcover_details.hardcover_status_id,
+            }
+
+        ub = self.hardcover_client.get_user_book(hardcover_details.hardcover_book_id)
+        if not ub:
+            return None
+
+        hardcover_details.hardcover_user_book_id = ub['id']
+        hardcover_details.hardcover_status_id = ub.get('status_id')
+        self.database_service.save_hardcover_details(hardcover_details)
+        return ub
+
+    def _ensure_read_id(self, user_book_id, hardcover_details):
+        """Return cached read ID or fetch and cache it.
+
+        Detects re-reads: if the latest read has finished_at set, a new read
+        will be created by the update_progress mutation.
+        """
+        if hardcover_details.hardcover_user_book_read_id:
+            return hardcover_details.hardcover_user_book_read_id
+
+        # The read ID will be populated when update_progress creates/updates a read
+        return None
+
+    # ── Edition Selection (Step 7) ────────────────────────────────────
+
+    def _select_edition_id(self, book, hardcover_details):
+        """Select the appropriate edition based on sync mode."""
+        sync_mode = getattr(book, 'sync_mode', 'audiobook')
+        if sync_mode == 'audiobook' and hardcover_details.hardcover_audio_edition_id:
+            return hardcover_details.hardcover_audio_edition_id
+        return hardcover_details.hardcover_edition_id
+
+    # ── Optional Journal Mirroring (Step 14) ──────────────────────────
+
+    def _mirror_journal_if_enabled(self, book, hardcover_details, hc_status_id):
+        """Create a Hardcover reading journal entry if the user has enabled mirroring."""
+        event_map = {
+            HC_CURRENTLY_READING: ('started_reading', 'HARDCOVER_JOURNAL_ON_START'),
+            HC_READ: ('finished_reading', 'HARDCOVER_JOURNAL_ON_FINISH'),
+        }
+        entry = event_map.get(hc_status_id)
+        if not entry:
+            return
+
+        event_name, env_key = entry
+        if os.environ.get(env_key, '').lower() != 'true':
+            return
+
+        try:
+            edition_id = self._select_edition_id(book, hardcover_details)
+            self.hardcover_client.create_reading_journal(
+                int(hardcover_details.hardcover_book_id),
+                int(edition_id) if edition_id else None,
+                event_name,
+            )
+            logger.info(f"Hardcover journal mirrored: '{event_name}' for '{sanitize_log_data(book.abs_title)}'")
+        except Exception as e:
+            logger.debug(f"Could not mirror journal to Hardcover: {e}")
+
+    # ── Automatch ─────────────────────────────────────────────────────
 
     def _try_match_with_strategy(self, search_func, strategy_name, book_title):
         """Try a single search strategy and validate it has pages or audio_seconds."""
@@ -57,22 +325,18 @@ class HardcoverSyncClient(SyncClient):
         pages = match.get('pages')
         if not pages or pages <= 0:
             logger.info(f"'{book_title}' could not find valid page count using '{strategy_name}' match")
-            return None, match  # Return None for valid match, but keep rejected match
+            return None, match
 
-        return match, None  # Return valid match, no rejected match
+        return match, None
 
     def automatch_hardcover(self, book):
-        """
-        Match a book with Hardcover using various search strategies.
-        Tries page-based editions first, falls back to audiobook editions.
-        """
+        """Match a book with Hardcover using various search strategies."""
         if not self.hardcover_client.is_configured():
             return
 
-        # Check if we already have hardcover details for this book
         existing_details = self.database_service.get_hardcover_details(book.abs_id)
         if existing_details:
-            return  # Already matched
+            return
 
         if not self.abs_client or not self.abs_client.is_configured():
             logger.debug(f"Skipping Hardcover automatch for '{sanitize_log_data(book.abs_title)}': ABS not available")
@@ -88,7 +352,6 @@ class HardcoverSyncClient(SyncClient):
         title = meta.get('title')
         author = meta.get('authorName')
 
-        # Try different search strategies in order of preference
         match = None
         matched_by = None
         first_rejected = None
@@ -112,18 +375,27 @@ class HardcoverSyncClient(SyncClient):
                     first_rejected = rejected_match
                     first_rejected_by = strategy_name
 
-        # If no page-based match found, check if first rejected match has an audiobook edition
+        # Fallback: check if first rejected match has an audiobook edition
         audio_seconds = None
+        audio_edition_id = None
         if not match and first_rejected:
             book_id = first_rejected.get('book_id')
             if book_id:
-                edition = self.hardcover_client.get_default_edition(book_id)
-                if edition and edition.get('audio_seconds') and edition['audio_seconds'] > 0:
+                editions = self.hardcover_client.get_all_editions(book_id)
+                audio_ed = editions.get('audio')
+                if audio_ed and audio_ed.get('audio_seconds') and audio_ed['audio_seconds'] > 0:
                     match = first_rejected
                     matched_by = first_rejected_by
-                    audio_seconds = edition['audio_seconds']
-                    match['edition_id'] = edition['id']
-                    match['pages'] = -1  # Sentinel: audiobook, no pages
+                    audio_seconds = audio_ed['audio_seconds']
+                    audio_edition_id = str(audio_ed['id'])
+                    # Use ebook/physical edition for pages if available
+                    page_ed = editions.get('ebook') or editions.get('physical')
+                    if page_ed and page_ed.get('pages') and page_ed['pages'] > 0:
+                        match['edition_id'] = page_ed['id']
+                        match['pages'] = page_ed['pages']
+                    else:
+                        match['edition_id'] = audio_ed['id']
+                        match['pages'] = -1
                     logger.info(f"Hardcover: '{sanitize_log_data(meta.get('title'))}' matched as audiobook ({audio_seconds}s)")
 
         if match:
@@ -136,30 +408,33 @@ class HardcoverSyncClient(SyncClient):
                 hardcover_audio_seconds=audio_seconds,
                 isbn=isbn,
                 asin=asin,
-                matched_by=matched_by
+                matched_by=matched_by,
+                hardcover_audio_edition_id=audio_edition_id,
             )
 
             self.database_service.save_hardcover_details(hardcover_details)
-            self.hardcover_client.update_status(int(match.get('book_id')), 1, match.get('edition_id'))
+            result = self.hardcover_client.update_status(int(match.get('book_id')), HC_WANT_TO_READ, match.get('edition_id'))
+            # Cache the user_book_id from the status update result
+            if result and result.get('id'):
+                hardcover_details.hardcover_user_book_id = result['id']
+                hardcover_details.hardcover_status_id = HC_WANT_TO_READ
+                self.database_service.save_hardcover_details(hardcover_details)
+            record_write('Hardcover', book.abs_id, {'status': HC_WANT_TO_READ})
             logger.info(f"Hardcover: '{sanitize_log_data(meta.get('title'))}' matched and set to Want to Read (matched by {matched_by})")
         else:
             logger.warning(f"Hardcover: No match found for '{sanitize_log_data(meta.get('title'))}'")
 
     def set_manual_match(self, book_abs_id: str, input_str: str) -> bool:
-        """
-        Manually match an ABS book to a Hardcover book via URL, ID, or Slug.
-        """
+        """Manually match an ABS book to a Hardcover book via URL, ID, or Slug."""
         if not self.hardcover_client.is_configured():
             logger.error("Hardcover client not configured")
             return False
 
-        # Resolve the input string to a Hardcover book
         match = self.hardcover_client.resolve_book_from_input(input_str)
         if not match:
             logger.error(f"Could not resolve Hardcover book from '{input_str}'")
             return False
 
-        # Try to get existing metadata from ABS for completeness
         isbn = None
         asin = None
 
@@ -173,7 +448,6 @@ class HardcoverSyncClient(SyncClient):
             except Exception as e:
                 logger.warning(f"Failed to fetch ABS details during manual match: {e}")
 
-        # Create/Update HardcoverDetails
         details = HardcoverDetails(
             abs_id=book_abs_id,
             hardcover_book_id=match['book_id'],
@@ -183,105 +457,123 @@ class HardcoverSyncClient(SyncClient):
             hardcover_audio_seconds=match.get('audio_seconds'),
             isbn=isbn,
             asin=asin,
-            matched_by='manual'
+            matched_by='manual',
         )
 
         self.database_service.save_hardcover_details(details)
         logger.info(f"Manually matched ABS {book_abs_id} to Hardcover {match['book_id']} ({match.get('title')})")
 
-        # Trigger an initial status update to ensure it's tracked
-        self.hardcover_client.update_status(match['book_id'], 1, match.get('edition_id'))
+        result = self.hardcover_client.update_status(match['book_id'], HC_WANT_TO_READ, match.get('edition_id'))
+        if result and result.get('id'):
+            details.hardcover_user_book_id = result['id']
+            details.hardcover_status_id = HC_WANT_TO_READ
+            self.database_service.save_hardcover_details(details)
+        record_write('Hardcover', book_abs_id, {'status': HC_WANT_TO_READ})
         return True
 
     def get_text_from_current_state(self, book: Book, state: ServiceState) -> str | None:
-        """
-        Hardcover doesn't provide text content, so return None.
-        This client is primarily for progress synchronization.
-        """
         return None
 
+    # ── Smarter Status Transitions (Step 6) ───────────────────────────
+
     def _handle_status_transition(self, book, hardcover_details, current_status, percentage, is_finished):
-        """Handle status transitions based on progress percentage."""
-        # If finished and not already marked as Read (3), promote to Read
-        if is_finished and current_status != 3:
-            self.hardcover_client.update_status(
-                hardcover_details.hardcover_book_id,
-                3,
-                hardcover_details.hardcover_edition_id
-            )
-            logger.info(f"Hardcover: '{sanitize_log_data(book.abs_title)}' status promoted to Read")
-            return 3
+        """Handle status transitions based on progress.
 
-        # If progress > 2% and currently "Want to Read" (1), promote to "Currently Reading" (2)
-        elif percentage > 0.02 and current_status == 1:
-            self.hardcover_client.update_status(
-                hardcover_details.hardcover_book_id,
-                2,
-                hardcover_details.hardcover_edition_id
-            )
-            logger.info(f"Hardcover: '{sanitize_log_data(book.abs_title)}' status promoted to Currently Reading")
-            return 2
+        Transition table:
+        | Current         | Condition        | New Status          |
+        |-----------------|------------------|---------------------|
+        | Want to Read(1) | progress > 2%    | Currently Reading(2)|
+        | Reading(2)      | finished(>99%)   | Read(3)             |
+        | Paused(4)       | progress > 2%    | Currently Reading(2)|
+        | DNF(5)          | any              | no change           |
+        | Read(3)         | non-re-read      | no change           |
+        """
+        new_status = current_status
 
-        return current_status
+        if is_finished and current_status not in (HC_READ, HC_DNF):
+            new_status = HC_READ
+        elif percentage > 0.02 and current_status in (HC_WANT_TO_READ, HC_PAUSED):
+            new_status = HC_CURRENTLY_READING
+
+        if new_status != current_status:
+            edition_id = self._select_edition_id(book, hardcover_details)
+            self.hardcover_client.update_status(
+                int(hardcover_details.hardcover_book_id),
+                new_status,
+                int(edition_id) if edition_id else None,
+            )
+            hardcover_details.hardcover_status_id = new_status
+            self.database_service.save_hardcover_details(hardcover_details)
+            record_write('Hardcover', book.abs_id, {'status': new_status})
+
+            status_names = {1: 'Want to Read', 2: 'Currently Reading', 3: 'Read', 4: 'Paused', 5: 'DNF'}
+            logger.info(f"Hardcover: '{sanitize_log_data(book.abs_title)}' status → {status_names.get(new_status, new_status)}")
+
+            # Mirror journal if enabled
+            self._mirror_journal_if_enabled(book, hardcover_details, new_status)
+
+        return new_status
+
+    # ── Progress Updates ──────────────────────────────────────────────
 
     def update_progress(self, book: Book, request: UpdateProgressRequest) -> SyncResult:
-        """
-        Update progress in Hardcover based on the incoming locator result.
-        Performs auto-matching if needed before syncing progress.
-        """
+        """Update progress in Hardcover. Uses cached IDs to minimize API calls."""
         if not self.is_configured() or not self.database_service:
             return SyncResult(None, False)
 
-        # Ensure we have hardcover details (auto-match if needed)
         self.automatch_hardcover(book)
 
         percentage = request.locator_result.percentage
 
-        # Get hardcover details for this book
         hardcover_details = self.database_service.get_hardcover_details(book.abs_id)
         if not hardcover_details or not hardcover_details.hardcover_book_id:
             return SyncResult(None, False)
 
-        # Get user book from Hardcover
-        ub = self.hardcover_client.get_user_book(hardcover_details.hardcover_book_id)
+        # Use cached user_book or fetch (Step 4)
+        ub = self._ensure_user_book(book, hardcover_details)
         if not ub:
             return SyncResult(None, False)
 
-        # Check if this is an audiobook edition
-        audio_seconds = getattr(hardcover_details, 'hardcover_audio_seconds', None) or 0
+        audio_seconds = hardcover_details.hardcover_audio_seconds or 0
+
+        # Edition-aware: select correct edition based on sync mode (Step 7)
+        edition_id = self._select_edition_id(book, hardcover_details)
 
         if audio_seconds > 0:
-            return self._update_audiobook_progress(book, hardcover_details, ub, percentage, audio_seconds)
+            return self._update_audiobook_progress(book, hardcover_details, ub, percentage, audio_seconds, edition_id)
 
         # --- PAGE-BASED PATH ---
         total_pages = hardcover_details.hardcover_pages or 0
 
-        # Attempt to refresh if pages are missing
         if total_pages <= 0:
             if total_pages == -1:
-                return SyncResult(None, False)  # Already verified no valid edition exists
+                return SyncResult(None, False)
 
-            logger.info(f"Hardcover: Pages are 0 for {sanitize_log_data(book.abs_title)}, attempting to refresh details...")
-            refreshed_edition = self.hardcover_client.get_default_edition(hardcover_details.hardcover_book_id)
+            logger.info(f"Hardcover: Pages are 0 for {sanitize_log_data(book.abs_title)}, refreshing...")
+            editions = self.hardcover_client.get_all_editions(int(hardcover_details.hardcover_book_id))
 
-            if refreshed_edition and refreshed_edition.get('pages'):
-                # Found page-based edition
-                total_pages = refreshed_edition['pages']
+            page_ed = editions.get('ebook') or editions.get('physical')
+            audio_ed = editions.get('audio')
+
+            if page_ed and page_ed.get('pages') and page_ed['pages'] > 0:
+                total_pages = page_ed['pages']
                 hardcover_details.hardcover_pages = total_pages
-                hardcover_details.hardcover_edition_id = refreshed_edition['id']
+                hardcover_details.hardcover_edition_id = page_ed['id']
+                if audio_ed and audio_ed.get('audio_seconds') and audio_ed['audio_seconds'] > 0:
+                    hardcover_details.hardcover_audio_edition_id = str(audio_ed['id'])
+                    hardcover_details.hardcover_audio_seconds = audio_ed['audio_seconds']
                 self.database_service.save_hardcover_details(hardcover_details)
-                logger.info(f"Hardcover: Updated page count to {total_pages}")
-            elif refreshed_edition and refreshed_edition.get('audio_seconds') and refreshed_edition['audio_seconds'] > 0:
-                # Found audiobook edition instead
-                audio_seconds = refreshed_edition['audio_seconds']
+                edition_id = self._select_edition_id(book, hardcover_details)
+            elif audio_ed and audio_ed.get('audio_seconds') and audio_ed['audio_seconds'] > 0:
+                audio_seconds = audio_ed['audio_seconds']
                 hardcover_details.hardcover_audio_seconds = audio_seconds
-                hardcover_details.hardcover_edition_id = refreshed_edition['id']
+                hardcover_details.hardcover_audio_edition_id = str(audio_ed['id'])
+                hardcover_details.hardcover_edition_id = audio_ed['id']
                 hardcover_details.hardcover_pages = -1
                 self.database_service.save_hardcover_details(hardcover_details)
-                logger.info(f"Hardcover: Found audiobook edition ({audio_seconds}s) for {sanitize_log_data(book.abs_title)}")
-                return self._update_audiobook_progress(book, hardcover_details, ub, percentage, audio_seconds)
+                edition_id = self._select_edition_id(book, hardcover_details)
+                return self._update_audiobook_progress(book, hardcover_details, ub, percentage, audio_seconds, edition_id)
             else:
-                logger.warning(f"Hardcover Sync Skipped: {sanitize_log_data(book.abs_title)} still has 0 pages after refresh")
                 hardcover_details.hardcover_pages = -1
                 self.database_service.save_hardcover_details(hardcover_details)
                 return SyncResult(None, False)
@@ -294,75 +586,61 @@ class HardcoverSyncClient(SyncClient):
             page_num = max(1, min(int(total_pages * percentage), total_pages))
 
         is_finished = percentage > 0.99 or (total_pages > 0 and page_num == total_pages)
-        current_status = ub.get('status_id')
+        current_status = ub.get('status_id') or hardcover_details.hardcover_status_id or HC_WANT_TO_READ
 
-        # Handle status transitions
         current_status = self._handle_status_transition(book, hardcover_details, current_status, percentage, is_finished)
 
-        # Update progress
         try:
             self.hardcover_client.update_progress(
                 ub['id'],
                 page_num,
-                edition_id=hardcover_details.hardcover_edition_id,
+                edition_id=edition_id,
                 is_finished=is_finished,
-                current_percentage=percentage
+                current_percentage=percentage,
             )
 
-            # Calculate actual percentage from page number for state tracking
             actual_pct = min(page_num / total_pages, 1.0) if total_pages > 0 else percentage
 
             updated_state = {
                 'pct': actual_pct,
                 'pages': page_num,
                 'total_pages': total_pages,
-                'status': current_status
+                'status': current_status,
             }
 
-            try:
-                from src.services.write_tracker import record_write
-                record_write('Hardcover', book.abs_id, updated_state)
-            except ImportError:
-                pass
-
+            record_write('Hardcover', book.abs_id, updated_state)
             return SyncResult(actual_pct, True, updated_state)
 
         except Exception as e:
             logger.error(f"Failed to update Hardcover progress: {e}")
             return SyncResult(None, False)
 
-    def _update_audiobook_progress(self, book, hardcover_details, ub, percentage, audio_seconds):
+    def _update_audiobook_progress(self, book, hardcover_details, ub, percentage, audio_seconds, edition_id=None):
         """Update Hardcover progress using progress_seconds for audiobook editions."""
         is_finished = percentage > 0.99
-        current_status = ub.get('status_id')
+        current_status = ub.get('status_id') or hardcover_details.hardcover_status_id or HC_WANT_TO_READ
 
-        # Handle status transitions
         current_status = self._handle_status_transition(book, hardcover_details, current_status, percentage, is_finished)
 
         try:
             progress_seconds = int(audio_seconds * percentage)
             self.hardcover_client.update_progress(
                 ub['id'],
-                0,  # No page number for audiobooks
-                edition_id=hardcover_details.hardcover_edition_id,
+                0,
+                edition_id=edition_id or hardcover_details.hardcover_edition_id,
                 is_finished=is_finished,
                 current_percentage=percentage,
-                audio_seconds=audio_seconds
+                audio_seconds=audio_seconds,
             )
 
             updated_state = {
                 'pct': percentage,
                 'progress_seconds': progress_seconds,
                 'total_seconds': audio_seconds,
-                'status': current_status
+                'status': current_status,
             }
 
-            try:
-                from src.services.write_tracker import record_write
-                record_write('Hardcover', book.abs_id, updated_state)
-            except ImportError:
-                pass
-
+            record_write('Hardcover', book.abs_id, updated_state)
             return SyncResult(percentage, True, updated_state)
 
         except Exception as e:

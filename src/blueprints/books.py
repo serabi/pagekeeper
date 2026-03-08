@@ -172,20 +172,10 @@ def pause_book(abs_id):
     database_service.add_reading_journal(abs_id, event='paused')
     logger.info(f"Book paused: '{sanitize_log_data(book.abs_title or abs_id)}'")
 
-    # Sync Paused status to Hardcover (status_id=4)
     container = get_container()
-    hardcover_client = container.hardcover_client()
-    if hardcover_client.is_configured():
-        hc_details = database_service.get_hardcover_details(abs_id)
-        if hc_details and hc_details.hardcover_book_id:
-            try:
-                hardcover_client.update_status(
-                    int(hc_details.hardcover_book_id), 4,
-                    int(hc_details.hardcover_edition_id) if hc_details.hardcover_edition_id else None
-                )
-                logger.info(f"Hardcover status set to Paused for '{sanitize_log_data(book.abs_title)}'")
-            except Exception as e:
-                logger.warning(f"Failed to update Hardcover paused status: {e}")
+    hc_sync = container.hardcover_sync_client()
+    if hc_sync.is_configured():
+        hc_sync.push_local_status(book, 'paused')
 
     return jsonify({"success": True})
 
@@ -204,20 +194,10 @@ def dnf_book(abs_id):
     database_service.add_reading_journal(abs_id, event='dnf')
     logger.info(f"Book marked DNF: '{sanitize_log_data(book.abs_title or abs_id)}'")
 
-    # Sync DNF status to Hardcover (status_id=5)
     container = get_container()
-    hardcover_client = container.hardcover_client()
-    if hardcover_client.is_configured():
-        hc_details = database_service.get_hardcover_details(abs_id)
-        if hc_details and hc_details.hardcover_book_id:
-            try:
-                hardcover_client.update_status(
-                    int(hc_details.hardcover_book_id), 5,
-                    int(hc_details.hardcover_edition_id) if hc_details.hardcover_edition_id else None
-                )
-                logger.info(f"Hardcover status set to DNF for '{sanitize_log_data(book.abs_title)}'")
-            except Exception as e:
-                logger.warning(f"Failed to update Hardcover DNF status: {e}")
+    hc_sync = container.hardcover_sync_client()
+    if hc_sync.is_configured():
+        hc_sync.push_local_status(book, 'dnf')
 
     return jsonify({"success": True})
 
@@ -232,10 +212,14 @@ def resume_book(abs_id):
         return jsonify({"success": False, "error": f"Cannot resume a book with status '{book.status}'"}), 400
 
     was_inactive = book.status in ('dnf', 'paused')
+    was_not_started = book.status == 'not_started'
     book.status = 'active'
     book.activity_flag = False
     database_service.save_book(book)
-    database_service.add_reading_journal(abs_id, event='resumed')
+    if was_not_started:
+        database_service.add_reading_journal(abs_id, event='started')
+    else:
+        database_service.add_reading_journal(abs_id, event='resumed')
     container = get_container()
     if not book.started_at:
         database_service.update_book_reading_fields(
@@ -243,20 +227,11 @@ def resume_book(abs_id):
         )
     logger.info(f"Book resumed: '{sanitize_log_data(book.abs_title or abs_id)}'")
 
-    # If resuming from DNF or Paused, reset Hardcover to Currently Reading (status_id=2)
+    # If resuming from DNF or Paused, sync status to external services
     if was_inactive:
-        hardcover_client = container.hardcover_client()
-        if hardcover_client.is_configured():
-            hc_details = database_service.get_hardcover_details(abs_id)
-            if hc_details and hc_details.hardcover_book_id:
-                try:
-                    hardcover_client.update_status(
-                        int(hc_details.hardcover_book_id), 2,
-                        int(hc_details.hardcover_edition_id) if hc_details.hardcover_edition_id else None
-                    )
-                    logger.info(f"Hardcover status reset to Currently Reading for '{sanitize_log_data(book.abs_title)}'")
-                except Exception as e:
-                    logger.warning(f"Failed to update Hardcover resume status: {e}")
+        hc_sync = container.hardcover_sync_client()
+        if hc_sync.is_configured():
+            hc_sync.push_local_status(book, 'active')
 
         # Push READING status to Booklore
         if book.ebook_filename:

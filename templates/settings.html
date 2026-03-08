@@ -775,6 +775,31 @@
                                 When enabled, Hardcover is used to populate reading dates and provide cover
                                 images for ebook-only books without other cover sources.
                             </div>
+
+                            <div class="field-grid" style="margin-top: 1rem;">
+                                <div class="form-group">
+                                    <label>Journal on Start</label>
+                                    <div class="toggle-switch-wrapper">
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" name="HARDCOVER_JOURNAL_ON_START"
+                                                {% if get_bool('HARDCOVER_JOURNAL_ON_START') %}checked{% endif %}>
+                                            <span class="slider"></span>
+                                        </label>
+                                    </div>
+                                    <div class="help-text">Create a Hardcover reading journal entry when you start a book.</div>
+                                </div>
+                                <div class="form-group">
+                                    <label>Journal on Finish</label>
+                                    <div class="toggle-switch-wrapper">
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" name="HARDCOVER_JOURNAL_ON_FINISH"
+                                                {% if get_bool('HARDCOVER_JOURNAL_ON_FINISH') %}checked{% endif %}>
+                                            <span class="slider"></span>
+                                        </label>
+                                    </div>
+                                    <div class="help-text">Create a Hardcover reading journal entry when you finish a book.</div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

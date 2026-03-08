@@ -7,7 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -22,23 +22,17 @@ class TestHardcoverSyncClient(unittest.TestCase):
     """Test suite for HardcoverSyncClient auto-matching and progress sync."""
 
     def setUp(self):
-        """Set up test environment before each test."""
-        # Create temporary directory for test database
         self.temp_dir = tempfile.mkdtemp()
         self.test_db_path = str(Path(self.temp_dir) / 'test_hardcover.db')
 
-        # Create real database service for testing
         self.database_service = DatabaseService(self.test_db_path)
 
-        # Create mock clients
         self.mock_hardcover_client = Mock()
         self.mock_abs_client = Mock()
         self.mock_ebook_parser = Mock()
 
-        # Configure hardcover client mock
         self.mock_hardcover_client.is_configured.return_value = True
 
-        # Create HardcoverSyncClient instance
         self.hardcover_sync_client = HardcoverSyncClient(
             hardcover_client=self.mock_hardcover_client,
             ebook_parser=self.mock_ebook_parser,
@@ -46,37 +40,27 @@ class TestHardcoverSyncClient(unittest.TestCase):
             database_service=self.database_service
         )
 
-        # Create test book
         self.test_book = Book(
             abs_id='test-hardcover-book',
             abs_title='Test Hardcover Book',
             ebook_filename='test-hardcover.epub',
             status='active',
-            duration=7200.0  # 2 hours
+            duration=7200.0
         )
         self.database_service.save_book(self.test_book)
 
     def tearDown(self):
-        """Clean up after each test."""
         import shutil
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_basic_interface_compliance(self):
-        """Test that HardcoverSyncClient implements the required interface correctly."""
-        # Test basic methods exist
-        self.assertTrue(hasattr(self.hardcover_sync_client, 'is_configured'))
-        self.assertTrue(hasattr(self.hardcover_sync_client, 'can_be_leader'))
-        self.assertTrue(hasattr(self.hardcover_sync_client, 'get_service_state'))
-        self.assertTrue(hasattr(self.hardcover_sync_client, 'update_progress'))
-
-        # Test basic behavior
         self.assertTrue(self.hardcover_sync_client.is_configured())
         self.assertFalse(self.hardcover_sync_client.can_be_leader())
+        # get_service_state returns None when no hardcover_details exist
         self.assertIsNone(self.hardcover_sync_client.get_service_state(self.test_book, None))
 
-    def test_automatch_successful_isbn_search(self):
-        """Test successful auto-matching by ISBN with API calls verification."""
-        # Mock ABS item details with ISBN
+    @patch('src.sync_clients.hardcover_sync_client.record_write')
+    def test_automatch_successful_isbn_search(self, mock_record_write):
         mock_abs_item = {
             'media': {
                 'metadata': {
@@ -88,189 +72,152 @@ class TestHardcoverSyncClient(unittest.TestCase):
         }
         self.mock_abs_client.get_item_details.return_value = mock_abs_item
 
-        # Mock Hardcover search success
         self.mock_hardcover_client.search_by_isbn.return_value = {
             'book_id': '12345',
             'edition_id': '67890',
             'pages': 300,
             'title': 'Test ISBN Book'
         }
+        # update_status returns user_book result for caching
+        self.mock_hardcover_client.update_status.return_value = {'id': 999, 'status_id': 1}
 
-        # Mock user book for progress update
-        mock_user_book = {'id': 'test-user-book', 'status_id': 1, 'page_number': 10}
+        mock_user_book = {'id': 999, 'status_id': 1}
         self.mock_hardcover_client.get_user_book.return_value = mock_user_book
 
-        # Create update request to trigger auto-matching
         update_request = UpdateProgressRequest(
             locator_result=LocatorResult(percentage=0.5)
         )
 
-        # Execute update_progress which should trigger auto-matching
         result = self.hardcover_sync_client.update_progress(self.test_book, update_request)
 
-        # Verify the API calls were made correctly
         self.mock_abs_client.get_item_details.assert_called_once_with('test-hardcover-book')
         self.mock_hardcover_client.search_by_isbn.assert_called_once_with('9781234567890')
 
-        # Verify initial status was set to "Want to Read" (1)
+        # Verify initial status was set to Want to Read (1)
         self.mock_hardcover_client.update_status.assert_any_call(12345, 1, '67890')
 
-        # Verify hardcover details were saved to database
         saved_details = self.database_service.get_hardcover_details('test-hardcover-book')
         self.assertIsNotNone(saved_details)
         self.assertEqual(saved_details.hardcover_book_id, '12345')
         self.assertEqual(saved_details.isbn, '9781234567890')
         self.assertEqual(saved_details.matched_by, 'isbn')
 
-        # Verify progress update was attempted
         self.assertTrue(result.success)
 
-    def test_update_progress_calls_hardcover_api(self):
-        """Test that update_progress correctly calls Hardcover API for progress and status updates."""
-        # Pre-setup matched book to skip auto-matching
+    @patch('src.sync_clients.hardcover_sync_client.record_write')
+    def test_update_progress_calls_hardcover_api(self, mock_record_write):
         hardcover_details = HardcoverDetails(
             abs_id='test-hardcover-book',
-            hardcover_book_id='existing-book-123',
-            hardcover_edition_id='existing-edition-456',
+            hardcover_book_id='123',
+            hardcover_edition_id='456',
             hardcover_pages=200,
-            matched_by='pre-existing'
+            matched_by='pre-existing',
+            hardcover_user_book_id=789,
+            hardcover_status_id=1,
         )
         self.database_service.save_hardcover_details(hardcover_details)
 
-        # Mock user book with "Want to Read" status
-        mock_user_book = {
-            'id': 'user-book-id-789',
-            'status_id': 1,  # Want to Read
-            'page_number': 0
-        }
-        self.mock_hardcover_client.get_user_book.return_value = mock_user_book
-
-        # Test progress > 2% should promote to "Currently Reading"
         update_request = UpdateProgressRequest(
-            locator_result=LocatorResult(percentage=0.25)  # 25% progress
+            locator_result=LocatorResult(percentage=0.25)
         )
 
         result = self.hardcover_sync_client.update_progress(self.test_book, update_request)
 
-        # Verify status update API call
-        self.mock_hardcover_client.update_status.assert_called_with('existing-book-123', 2, 'existing-edition-456')
+        # Status should be promoted: Want to Read (1) → Currently Reading (2)
+        self.mock_hardcover_client.update_status.assert_called_with(123, 2, 456)
 
-        # Verify progress update API call
-        expected_page = int(200 * 0.25)  # 50 pages out of 200
+        expected_page = int(200 * 0.25)
         self.mock_hardcover_client.update_progress.assert_called_with(
-            'user-book-id-789',
+            789,
             expected_page,
-            edition_id='existing-edition-456',
+            edition_id='456',
             is_finished=False,
-            current_percentage=0.25
+            current_percentage=0.25,
         )
 
-        # Verify successful result
         self.assertTrue(result.success)
 
-    def test_finished_book_status_promotion(self):
-        """Test that finished books (>99%) get promoted to 'Read' status."""
-        # Pre-setup matched book
+    @patch('src.sync_clients.hardcover_sync_client.record_write')
+    def test_finished_book_status_promotion(self, mock_record_write):
         hardcover_details = HardcoverDetails(
             abs_id='test-hardcover-book',
-            hardcover_book_id='finished-book-123',
-            hardcover_edition_id='finished-edition-456',
+            hardcover_book_id='123',
+            hardcover_edition_id='456',
             hardcover_pages=100,
-            matched_by='test'
+            matched_by='test',
+            hardcover_user_book_id=789,
+            hardcover_status_id=2,
         )
         self.database_service.save_hardcover_details(hardcover_details)
 
-        # Mock user book with "Currently Reading" status
-        mock_user_book = {
-            'id': 'finished-user-book',
-            'status_id': 2,  # Currently Reading
-            'page_number': 95
-        }
-        self.mock_hardcover_client.get_user_book.return_value = mock_user_book
-
-        # Test finished book (>99% progress)
         update_request = UpdateProgressRequest(
-            locator_result=LocatorResult(percentage=0.995)  # 99.5% progress
+            locator_result=LocatorResult(percentage=0.995)
         )
 
         self.hardcover_sync_client.update_progress(self.test_book, update_request)
 
-        # Verify status was promoted to "Read" (3)
-        self.mock_hardcover_client.update_status.assert_called_with('finished-book-123', 3, 'finished-edition-456')
+        # Status should be promoted to Read (3)
+        self.mock_hardcover_client.update_status.assert_called_with(123, 3, 456)
 
-        # Verify progress was updated with finished flag
-        expected_page = int(100 * 0.995)  # 99 pages out of 100
+        expected_page = int(100 * 0.995)
         self.mock_hardcover_client.update_progress.assert_called_with(
-            'finished-user-book',
+            789,
             expected_page,
-            edition_id='finished-edition-456',
+            edition_id='456',
             is_finished=True,
-            current_percentage=0.995
+            current_percentage=0.995,
         )
 
-    def test_automatch_skip_when_already_matched(self):
-        """Test that auto-matching is skipped if book is already matched."""
-        # Pre-save hardcover details to simulate already matched book
+    @patch('src.sync_clients.hardcover_sync_client.record_write')
+    def test_automatch_skip_when_already_matched(self, mock_record_write):
         existing_details = HardcoverDetails(
             abs_id='test-hardcover-book',
-            hardcover_book_id='existing-123',
-            hardcover_edition_id='existing-456',
+            hardcover_book_id='100',
+            hardcover_edition_id='200',
             hardcover_pages=200,
-            matched_by='manual'
+            matched_by='manual',
+            hardcover_user_book_id=789,
+            hardcover_status_id=1,
         )
         self.database_service.save_hardcover_details(existing_details)
 
-        # Mock user book for progress update
-        mock_user_book = {'id': 'existing-user-book', 'status_id': 1}
-        self.mock_hardcover_client.get_user_book.return_value = mock_user_book
-
-        # Create update request
         update_request = UpdateProgressRequest(
             locator_result=LocatorResult(percentage=0.4)
         )
 
-        # Execute update_progress
         self.hardcover_sync_client.update_progress(self.test_book, update_request)
 
-        # Verify ABS client was NOT called since book is already matched
+        # ABS should NOT be called since book is already matched
         self.mock_abs_client.get_item_details.assert_not_called()
-
-        # Verify no new hardcover search was performed
         self.mock_hardcover_client.search_by_isbn.assert_not_called()
 
-    def test_zero_pages_edge_case(self):
-        """Test handling of books with zero pages."""
-        # Pre-setup matched book with zero pages
+    @patch('src.sync_clients.hardcover_sync_client.record_write')
+    def test_zero_pages_edge_case(self, mock_record_write):
         hardcover_details = HardcoverDetails(
             abs_id='test-hardcover-book',
-            hardcover_book_id='zero-pages-123',
-            hardcover_edition_id='zero-pages-456',
-            hardcover_pages=0,  # Zero pages
-            matched_by='test'
+            hardcover_book_id='300',
+            hardcover_edition_id='400',
+            hardcover_pages=0,
+            matched_by='test',
+            hardcover_user_book_id=789,
+            hardcover_status_id=1,
         )
         self.database_service.save_hardcover_details(hardcover_details)
 
-        # Create update request
         update_request = UpdateProgressRequest(
             locator_result=LocatorResult(percentage=0.5)
         )
 
-        # Mock get_default_edition to return None (refresh fails)
-        self.mock_hardcover_client.get_default_edition.return_value = None
+        # Mock get_all_editions to return empty (refresh fails)
+        self.mock_hardcover_client.get_all_editions.return_value = {}
 
-        # Execute update_progress
         result = self.hardcover_sync_client.update_progress(self.test_book, update_request)
 
-        # Verify it returns failure for zero pages
         self.assertFalse(result.success)
         self.assertIsNone(result.location)
-
-        # Verify no progress update was attempted
         self.mock_hardcover_client.update_progress.assert_not_called()
 
     def test_no_configuration_returns_failure(self):
-        """Test that unconfigured client returns failure."""
-        # Mock hardcover client as not configured
         self.mock_hardcover_client.is_configured.return_value = False
 
         update_request = UpdateProgressRequest(
@@ -278,27 +225,21 @@ class TestHardcoverSyncClient(unittest.TestCase):
         )
 
         result = self.hardcover_sync_client.update_progress(self.test_book, update_request)
-
-        # Verify it returns failure when not configured
         self.assertFalse(result.success)
 
-    def test_api_error_handling(self):
-        """Test error handling when Hardcover API calls fail."""
-        # Pre-setup matched book
+    @patch('src.sync_clients.hardcover_sync_client.record_write')
+    def test_api_error_handling(self, mock_record_write):
         hardcover_details = HardcoverDetails(
             abs_id='test-hardcover-book',
-            hardcover_book_id='error-book-123',
-            hardcover_edition_id='error-edition-456',
+            hardcover_book_id='error-123',
+            hardcover_edition_id='error-456',
             hardcover_pages=150,
-            matched_by='test'
+            matched_by='test',
+            hardcover_user_book_id=789,
+            hardcover_status_id=2,
         )
         self.database_service.save_hardcover_details(hardcover_details)
 
-        # Mock user book
-        mock_user_book = {'id': 'error-user-book', 'status_id': 2, 'page_number': 50}
-        self.mock_hardcover_client.get_user_book.return_value = mock_user_book
-
-        # Mock API error during progress update
         self.mock_hardcover_client.update_progress.side_effect = Exception("Hardcover API Error")
 
         update_request = UpdateProgressRequest(
@@ -306,15 +247,105 @@ class TestHardcoverSyncClient(unittest.TestCase):
         )
 
         result = self.hardcover_sync_client.update_progress(self.test_book, update_request)
-
-        # Verify it returns failure on API error
         self.assertFalse(result.success)
 
     def test_get_text_from_current_state_returns_none(self):
-        """Test that get_text_from_current_state always returns None since Hardcover doesn't provide text."""
         text = self.hardcover_sync_client.get_text_from_current_state(self.test_book, None)
         self.assertIsNone(text)
 
+    @patch('src.sync_clients.hardcover_sync_client.record_write')
+    def test_push_local_status(self, mock_record_write):
+        """Test push_local_status pushes to Hardcover and caches status."""
+        hardcover_details = HardcoverDetails(
+            abs_id='test-hardcover-book',
+            hardcover_book_id='123',
+            hardcover_edition_id='456',
+            hardcover_pages=200,
+            matched_by='test',
+        )
+        self.database_service.save_hardcover_details(hardcover_details)
+
+        self.hardcover_sync_client.push_local_status(self.test_book, 'paused')
+
+        self.mock_hardcover_client.update_status.assert_called_once_with(123, 4, 456)
+        mock_record_write.assert_called()
+
+        # Verify cached status was updated
+        updated_details = self.database_service.get_hardcover_details('test-hardcover-book')
+        self.assertEqual(updated_details.hardcover_status_id, 4)
+
+    @patch('src.sync_clients.hardcover_sync_client.record_write')
+    def test_dnf_status_not_auto_resumed(self, mock_record_write):
+        """Test that DNF books are not auto-resumed by progress updates."""
+        hardcover_details = HardcoverDetails(
+            abs_id='test-hardcover-book',
+            hardcover_book_id='123',
+            hardcover_edition_id='456',
+            hardcover_pages=200,
+            matched_by='test',
+            hardcover_user_book_id=789,
+            hardcover_status_id=5,  # DNF
+        )
+        self.database_service.save_hardcover_details(hardcover_details)
+
+        update_request = UpdateProgressRequest(
+            locator_result=LocatorResult(percentage=0.5)
+        )
+
+        self.hardcover_sync_client.update_progress(self.test_book, update_request)
+
+        # Status should NOT change from DNF — update_status should not be called
+        self.mock_hardcover_client.update_status.assert_not_called()
+
+    @patch('src.sync_clients.hardcover_sync_client.is_own_write', return_value=False)
+    @patch('src.sync_clients.hardcover_sync_client.record_write')
+    def test_get_service_state_with_bulk_context(self, mock_record_write, mock_is_own):
+        """Test that get_service_state uses bulk context for efficient lookups."""
+        hardcover_details = HardcoverDetails(
+            abs_id='test-hardcover-book',
+            hardcover_book_id='123',
+            hardcover_edition_id='456',
+            hardcover_pages=200,
+            matched_by='test',
+        )
+        self.database_service.save_hardcover_details(hardcover_details)
+
+        bulk_context = {
+            123: {
+                'id': 789,
+                'status_id': 2,
+                'book_id': 123,
+                'edition_id': 456,
+                'user_book_reads': [{
+                    'id': 101,
+                    'started_at': '2026-01-15',
+                    'finished_at': None,
+                    'progress_pages': 100,
+                    'progress_seconds': None,
+                }],
+            }
+        }
+
+        state = self.hardcover_sync_client.get_service_state(
+            self.test_book, None, bulk_context=bulk_context
+        )
+
+        self.assertIsNotNone(state)
+        self.assertAlmostEqual(state.current['pct'], 0.5)  # 100/200 pages
+
+        # Verify IDs were cached
+        updated = self.database_service.get_hardcover_details('test-hardcover-book')
+        self.assertEqual(updated.hardcover_user_book_id, 789)
+        self.assertEqual(updated.hardcover_user_book_read_id, 101)
+
+    def test_fetch_bulk_state(self):
+        """Test that fetch_bulk_state calls get_currently_reading."""
+        self.mock_hardcover_client.get_currently_reading.return_value = {123: {'id': 789}}
+
+        result = self.hardcover_sync_client.fetch_bulk_state()
+
+        self.assertEqual(result, {123: {'id': 789}})
+        self.mock_hardcover_client.get_currently_reading.assert_called_once()
 
 
 if __name__ == '__main__':

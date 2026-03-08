@@ -100,6 +100,78 @@ def _push_completion_to_clients(book, container, database_service):
         _push_booklore_read_status(book, container, 'READ')
 
 
+def push_dates_to_hardcover(abs_id, container, database_service):
+    """Push local started_at/finished_at to Hardcover if the HC read is missing those dates.
+
+    Only fills in missing dates on the Hardcover side — never overwrites existing HC dates.
+    """
+    try:
+        hardcover_client = container.hardcover_client()
+        if not hardcover_client.is_configured():
+            return
+
+        hc_details = database_service.get_hardcover_details(abs_id)
+        if not hc_details or not hc_details.hardcover_book_id:
+            return
+
+        book = database_service.get_book(abs_id)
+        if not book:
+            return
+
+        # Only push if we have local dates to offer
+        if not book.started_at and not book.finished_at:
+            return
+
+        user_book = hardcover_client.find_user_book(int(hc_details.hardcover_book_id))
+        if not user_book:
+            return
+
+        reads = user_book.get("user_book_reads", [])
+        if not reads:
+            return
+
+        read = reads[0]
+        hc_started = read.get("started_at")
+        hc_finished = read.get("finished_at")
+
+        # Only push if HC is missing the date and we have it locally
+        needs_push = False
+        if book.started_at and not hc_started:
+            needs_push = True
+        if book.finished_at and not hc_finished:
+            needs_push = True
+
+        if not needs_push:
+            return
+
+        # Use update_progress to set dates on the user_book_read
+        # We need the user_book_id — use cached or from the user_book
+        user_book_id = hc_details.hardcover_user_book_id or user_book.get('id')
+        if not user_book_id:
+            return
+
+        # Calculate current page/seconds for the progress update
+        audio_seconds = hc_details.hardcover_audio_seconds or 0
+        total_pages = hc_details.hardcover_pages or 0
+
+        # Get current local progress
+        local_pct = _max_state_progress(abs_id, database_service)
+        is_finished = local_pct >= 0.99 or book.status == 'completed'
+
+        hardcover_client.update_progress(
+            user_book_id,
+            max(1, int(total_pages * local_pct)) if total_pages > 0 else 0,
+            edition_id=hc_details.hardcover_edition_id,
+            is_finished=is_finished,
+            current_percentage=local_pct,
+            audio_seconds=audio_seconds if audio_seconds > 0 else None,
+        )
+        logger.info(f"Pushed dates to Hardcover for '{abs_id}'")
+
+    except Exception as e:
+        logger.debug(f"Could not push dates to Hardcover for '{abs_id}': {e}")
+
+
 def _push_booklore_read_status(book, container, status):
     """Push a read status (READING, READ, etc.) to Booklore."""
     try:
