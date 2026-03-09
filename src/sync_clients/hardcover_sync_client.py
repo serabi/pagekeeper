@@ -350,13 +350,13 @@ class HardcoverSyncClient(SyncClient):
             hardcover_details.hardcover_user_book_id = result['id']
             hardcover_details.hardcover_status_id = result.get('status_id', hc_status_id)
             self.database_service.save_hardcover_details(hardcover_details)
-        record_write('Hardcover', book.abs_id, {'status': hc_status_id})
-        log_hardcover_action(
-            self.database_service, abs_id=book.abs_id,
-            book_title=sanitize_log_data(book.abs_title),
-            direction='push', action='create_user_book',
-            detail={'status_id': hc_status_id, 'user_book_id': result.get('id') if result else None},
-        )
+            record_write('Hardcover', book.abs_id, {'status': hc_status_id})
+            log_hardcover_action(
+                self.database_service, abs_id=book.abs_id,
+                book_title=sanitize_log_data(book.abs_title),
+                direction='push', action='create_user_book',
+                detail={'status_id': hc_status_id, 'user_book_id': result['id']},
+            )
 
     def _ensure_read_id(self, user_book_id, hardcover_details):
         """Return cached read ID or fetch and cache it.

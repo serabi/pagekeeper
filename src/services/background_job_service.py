@@ -2,7 +2,7 @@ import logging
 import os
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from src.db.models import Job
@@ -46,12 +46,12 @@ class BackgroundJobService:
         """Delete Hardcover sync log entries older than the configured retention period."""
         try:
             retention_days = int(os.getenv("HARDCOVER_LOG_RETENTION_DAYS", 90))
-            cutoff = datetime.utcnow() - timedelta(days=retention_days)
+            cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
             deleted = self.database_service.prune_hardcover_sync_logs(cutoff)
             if deleted:
                 logger.info(f"Pruned {deleted} Hardcover sync log entries older than {retention_days} days")
         except Exception as e:
-            logger.debug(f"Could not prune Hardcover sync logs: {e}")
+            logger.warning(f"Could not prune Hardcover sync logs: {e}")
 
     def cleanup_stale_jobs(self):
         """Reset jobs that were interrupted mid-process on restart."""

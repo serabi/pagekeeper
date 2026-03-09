@@ -233,6 +233,8 @@ class TestHardcoverSyncLogAPI(unittest.TestCase):
         import shutil
         import src.db.migration_utils
         src.db.migration_utils.initialize_database = self.original_init_db
+        os.environ.pop('DATA_DIR', None)
+        os.environ.pop('BOOKS_DIR', None)
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_get_all_logs(self):

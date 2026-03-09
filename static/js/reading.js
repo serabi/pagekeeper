@@ -574,7 +574,10 @@ function initReadingDetail() {
       fetch(`/api/reading/book/${hcSyncBtn.dataset.absId}/dates/sync-hardcover`, {
         method: 'POST',
       })
-        .then(r => r.json())
+        .then(r => {
+          if (!r.ok) return r.text().then(t => { throw new Error(t || 'Sync failed'); });
+          return r.json();
+        })
         .then(data => {
           hcSyncBtn.disabled = false;
           if (hcSyncStatus) {
@@ -789,7 +792,10 @@ function initReadingDetail() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ privacy }),
       })
-        .then(r => r.json())
+        .then(r => {
+          if (!r.ok) return r.text().then(t => { throw new Error(t || 'Push failed'); });
+          return r.json();
+        })
         .then(data => {
           if (data.success) {
             // Update the menu button in the timeline to show success
@@ -826,9 +832,17 @@ function initReadingDetail() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ journal_sync: value }),
-      }).catch(() => {
-        syncToggle.checked = !syncToggle.checked;
-      });
+      })
+        .then(r => {
+          if (!r.ok) throw new Error('Request failed');
+          return r.json();
+        })
+        .then(data => {
+          if (!data.success) syncToggle.checked = !syncToggle.checked;
+        })
+        .catch(() => {
+          syncToggle.checked = !syncToggle.checked;
+        });
     });
   }
 }

@@ -8,7 +8,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = 'j1s2y3n4c5o6'
-down_revision = None
+down_revision = 'add_hardcover_sync_log_table'
 branch_labels = None
 depends_on = None
 

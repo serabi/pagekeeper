@@ -70,10 +70,13 @@ class ReadingRepository(BaseRepository):
     def find_journal_by_event(self, abs_id, event):
         """Find the most recent journal entry for a book with a given event type."""
         with self.get_session() as session:
-            return session.query(ReadingJournal).filter(
+            journal = session.query(ReadingJournal).filter(
                 ReadingJournal.abs_id == abs_id,
                 ReadingJournal.event == event,
             ).order_by(ReadingJournal.created_at.desc()).first()
+            if journal:
+                session.expunge(journal)
+            return journal
 
     def cleanup_bookfusion_import_notes(self, abs_id=None):
         """Strip the legacy emoji prefix and backfill timestamps when a cached highlight matches."""

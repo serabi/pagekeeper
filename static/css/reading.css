@@ -1209,6 +1209,7 @@
 }
 
 .r-star-btn {
+  position: relative;
   background: none;
   border: none;
   padding: 4px 2px;
@@ -1223,6 +1224,16 @@
   background-clip: text;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
+}
+
+.r-star-btn::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  min-width: 44px;
+  min-height: 44px;
 }
 
 .r-star-btn:hover {

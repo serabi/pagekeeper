@@ -70,12 +70,17 @@ class HardcoverClient:
 
     def _rate_limit(self):
         """Enforce minimum interval between API requests."""
+        wait = 0.0
         with self._rate_lock:
             now = time.monotonic()
             elapsed = now - self._last_request_time
             if elapsed < self._min_interval:
-                time.sleep(self._min_interval - elapsed)
-            self._last_request_time = time.monotonic()
+                wait = self._min_interval - elapsed
+                self._last_request_time = now + wait
+            else:
+                self._last_request_time = now
+        if wait > 0:
+            time.sleep(wait)
 
     def query(self, query: str, variables: dict | None = None) -> dict | None:
         if not self.token:
@@ -1141,6 +1146,7 @@ class HardcoverClient:
         query = """
         mutation ($object: ReadingJournalCreateType!) {
             insert_reading_journal(object: $object) {
+                error
                 reading_journal { id }
             }
         }
@@ -1160,6 +1166,10 @@ class HardcoverClient:
 
         result = self.query(query, {"object": obj})
         if result and result.get("insert_reading_journal"):
+            error = result["insert_reading_journal"].get("error")
+            if error:
+                logger.error(f"Hardcover create_reading_journal error: {error}")
+                return False
             if result["insert_reading_journal"].get("reading_journal"):
                 return True
             logger.error("Hardcover create_reading_journal: no reading_journal in response")

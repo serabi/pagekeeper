@@ -48,6 +48,8 @@ class IntegrationRepository(BaseRepository):
         return self._save_new(entry)
 
     def get_hardcover_sync_logs(self, page=1, per_page=50, direction=None, action=None, search=None):
+        safe_page = max(1, int(page))
+        safe_per_page = max(1, int(per_page))
         with self.get_session() as session:
             query = session.query(HardcoverSyncLog)
             if direction:
@@ -63,8 +65,8 @@ class IntegrationRepository(BaseRepository):
                 )
             total = query.count()
             items = query.order_by(HardcoverSyncLog.created_at.desc()).offset(
-                (page - 1) * per_page
-            ).limit(per_page).all()
+                (safe_page - 1) * safe_per_page
+            ).limit(safe_per_page).all()
             for item in items:
                 session.expunge(item)
             return items, total

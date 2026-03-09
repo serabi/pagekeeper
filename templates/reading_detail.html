@@ -879,7 +879,10 @@
         }
 
         document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') closeRdConfirm();
+            if (e.key === 'Escape') {
+                closeRdConfirm();
+                if (typeof closeHcPushModal === 'function') closeHcPushModal();
+            }
         });
 
         // Toggle metadata

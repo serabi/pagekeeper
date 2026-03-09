@@ -39,6 +39,14 @@ def _get_reading_stats_service():
     return ReadingStatsService(get_database_service())
 
 
+def _safe_privacy(val):
+    """Parse the journal privacy setting to int, defaulting to 3 (me-only)."""
+    try:
+        return int(val)
+    except (TypeError, ValueError):
+        return 3
+
+
 def _resolve_journal_sync(hardcover_details, database_service):
     """Resolve whether journal sync is enabled for a book (per-book or global)."""
     if not hardcover_details or not hardcover_details.hardcover_book_id:
@@ -506,7 +514,7 @@ def reading_detail(abs_id):
         ),
         hardcover_linked=bool(hardcover and hardcover.hardcover_book_id),
         journal_sync_enabled=_resolve_journal_sync(hardcover, database_service),
-        journal_privacy_default=int(database_service.get_setting('HARDCOVER_JOURNAL_PRIVACY') or 3),
+        journal_privacy_default=_safe_privacy(database_service.get_setting('HARDCOVER_JOURNAL_PRIVACY')),
     )
 
 
@@ -810,7 +818,10 @@ def push_journal_to_hardcover(journal_id):
             return jsonify({"success": False, "error": "Hardcover not configured"}), 400
 
         data = request.json or {}
-        privacy_override = data.get('privacy')
+        try:
+            privacy_override = int(data['privacy'])
+        except (KeyError, TypeError, ValueError):
+            privacy_override = None
 
         hc_sync = container.hardcover_sync_client()
         edition_id = hc_sync._select_edition_id(
