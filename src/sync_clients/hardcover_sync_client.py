@@ -407,13 +407,16 @@ class HardcoverSyncClient(SyncClient):
         try:
             edition_id = self.select_edition_id(book, hardcover_details)
             privacy = self.get_journal_privacy()
-            self.hardcover_client.create_reading_journal(
+            success = self.hardcover_client.create_reading_journal(
                 int(hardcover_details.hardcover_book_id),
                 int(edition_id) if edition_id else None,
                 event_name,
                 privacy_setting_id=privacy,
             )
-            logger.info(f"Hardcover journal mirrored: '{event_name}' for '{sanitize_log_data(book.abs_title)}'")
+            if success:
+                logger.info(f"Hardcover journal mirrored: '{event_name}' for '{sanitize_log_data(book.abs_title)}'")
+            else:
+                logger.warning(f"Hardcover journal mirror rejected: '{event_name}' for book {hardcover_details.hardcover_book_id} (edition {edition_id})")
         except Exception as e:
             logger.debug(f"Could not mirror journal to Hardcover: {e}")
 
@@ -448,20 +451,23 @@ class HardcoverSyncClient(SyncClient):
         try:
             edition_id = self.select_edition_id(book, hardcover_details)
             privacy = self.get_journal_privacy()
-            self.hardcover_client.create_reading_journal(
+            success = self.hardcover_client.create_reading_journal(
                 int(hardcover_details.hardcover_book_id),
                 int(edition_id) if edition_id else None,
                 'note',
                 entry=entry,
                 privacy_setting_id=privacy,
             )
-            log_hardcover_action(
-                self.database_service, abs_id=book.abs_id,
-                book_title=sanitize_log_data(book.abs_title),
-                direction='push', action='journal_note',
-                detail={'entry_preview': entry[:80] + ('...' if len(entry) > 80 else ''), 'privacy': privacy},
-            )
-            logger.info(f"Hardcover journal note pushed for '{sanitize_log_data(book.abs_title)}'")
+            if success:
+                log_hardcover_action(
+                    self.database_service, abs_id=book.abs_id,
+                    book_title=sanitize_log_data(book.abs_title),
+                    direction='push', action='journal_note',
+                    detail={'entry_preview': entry[:80] + ('...' if len(entry) > 80 else ''), 'privacy': privacy},
+                )
+                logger.info(f"Hardcover journal note pushed for '{sanitize_log_data(book.abs_title)}'")
+            else:
+                logger.warning(f"Hardcover journal note rejected for book {hardcover_details.hardcover_book_id} (edition {edition_id})")
         except Exception as e:
             log_hardcover_action(
                 self.database_service, abs_id=book.abs_id,

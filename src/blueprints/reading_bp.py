@@ -835,6 +835,7 @@ def push_journal_to_hardcover(journal_id):
             int(hardcover_details.hardcover_book_id),
             int(edition_id) if edition_id else None,
             'note',
+            action_at=journal.created_at.isoformat() if journal.created_at else None,
             entry=journal.entry,
             privacy_setting_id=privacy,
         )

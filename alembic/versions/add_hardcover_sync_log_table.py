@@ -32,7 +32,7 @@ def upgrade() -> None:
         sa.Column('direction', sa.String(4), nullable=False),
         sa.Column('action', sa.String(30), nullable=False),
         sa.Column('detail', sa.Text(), nullable=True),
-        sa.Column('success', sa.Boolean(), server_default=sa.text('1')),
+        sa.Column('success', sa.Boolean(), server_default=sa.true()),
         sa.Column('error_message', sa.Text(), nullable=True),
         sa.Column('created_at', sa.DateTime(), server_default=sa.text('CURRENT_TIMESTAMP')),
     )
