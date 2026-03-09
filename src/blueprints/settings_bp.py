@@ -128,6 +128,7 @@ def settings():
             'XPATH_FALLBACK_TO_PREVIOUS_SEGMENT',
             'KOSYNC_ENABLED',
             'STORYTELLER_ENABLED',
+            'STORYTELLER_FORCE_MODE',
             'BOOKLORE_ENABLED',
             'CWA_ENABLED',
             'HARDCOVER_ENABLED',

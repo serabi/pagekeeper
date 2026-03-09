@@ -416,6 +416,12 @@ input[type="radio"] {
   accent-color: var(--color-primary);
 }
 
+.storyteller-submit-note {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
 .batch-select-card {
   width: 100%;
   border: 2px solid var(--color-border-light);

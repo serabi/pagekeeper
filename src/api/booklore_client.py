@@ -14,12 +14,6 @@ logger = logging.getLogger(__name__)
 
 class BookloreClient:
     def __init__(self, database_service=None):
-        raw_url = os.environ.get("BOOKLORE_SERVER", "").rstrip('/')
-        if raw_url and not raw_url.lower().startswith(('http://', 'https://')):
-            raw_url = f"http://{raw_url}"
-        self.base_url = raw_url
-        self.username = os.environ.get("BOOKLORE_USER")
-        self.password = os.environ.get("BOOKLORE_PASSWORD")
         self.db = database_service
 
         # In-memory cache for performance (populated from DB)
@@ -32,12 +26,31 @@ class BookloreClient:
         self._token_max_age = 300
         self.session = requests.Session()
 
-        # Legacy Cache file path (for migration only)
-        self.legacy_cache_file = Path(os.environ.get("DATA_DIR", "/data")) / "booklore_cache.json"
-
-        # Load cache from DB (and migrate if needed)
-        self.target_library_id = os.environ.get("BOOKLORE_LIBRARY_ID")
+        # Load cache from DB (and migrate legacy JSON if needed)
         self._load_cache()
+
+    @property
+    def base_url(self) -> str:
+        raw_url = os.environ.get("BOOKLORE_SERVER", "").rstrip('/')
+        if raw_url and not raw_url.lower().startswith(('http://', 'https://')):
+            raw_url = f"http://{raw_url}"
+        return raw_url
+
+    @property
+    def username(self) -> str | None:
+        return os.environ.get("BOOKLORE_USER")
+
+    @property
+    def password(self) -> str | None:
+        return os.environ.get("BOOKLORE_PASSWORD")
+
+    @property
+    def target_library_id(self) -> str | None:
+        return os.environ.get("BOOKLORE_LIBRARY_ID")
+
+    @property
+    def legacy_cache_file(self) -> Path:
+        return Path(os.environ.get("DATA_DIR", "/data")) / "booklore_cache.json"
 
     def _load_cache(self):
         """Load cache from DB, migrating legacy JSON if needed."""

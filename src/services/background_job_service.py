@@ -244,13 +244,14 @@ class BackgroundJobService:
             storyteller_force = os.getenv("STORYTELLER_FORCE_MODE", "false").lower() == "true"
             transcript_source = self._try_storyteller_alignment(book, abs_id, book_text, update_progress)
 
-            # In force mode, skip SMIL/Whisper entirely
+            # Always defer if there's an active Storyteller submission — don't waste
+            # CPU on Whisper when Storyteller is already processing this book.
+            if transcript_source == "STORYTELLER_PENDING":
+                raise StorytellerDeferral("Storyteller processing not yet complete, deferring until ready")
+
+            # In force mode, skip SMIL/Whisper for ALL books (auto-submit if needed)
             if storyteller_force and transcript_source != "STORYTELLER_NATIVE":
-                if transcript_source == "STORYTELLER_PENDING":
-                    raise StorytellerDeferral(
-                        "Storyteller processing not yet complete (force mode enabled, skipping Whisper)"
-                    )
-                elif book.storyteller_uuid:
+                if book.storyteller_uuid:
                     raise StorytellerDeferral(
                         "Storyteller alignment not available yet (force mode enabled, skipping Whisper)"
                     )
@@ -267,11 +268,7 @@ class BackgroundJobService:
                             f"'{sanitize_log_data(abs_title)}' — falling back to SMIL/Whisper"
                         )
 
-            if not storyteller_force or transcript_source == "STORYTELLER_NATIVE":
-                # Clear pending sentinel so fallback logic proceeds normally
-                if transcript_source == "STORYTELLER_PENDING":
-                    transcript_source = None
-
+            if transcript_source != "STORYTELLER_NATIVE":
                 # Priority 2: SMIL extraction
                 if not transcript_source and hasattr(self.transcriber, "transcribe_from_smil"):
                     try:

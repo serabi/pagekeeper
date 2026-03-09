@@ -4,6 +4,7 @@ import logging
 import os
 import re
 import shutil
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -38,11 +39,18 @@ class StorytellerSubmissionService:
     of Storyteller's import folder, which Storyteller watches for new submissions.
     """
 
-    def __init__(self, storyteller_client, abs_client, database_service, import_dir: str | None):
+    def __init__(self, storyteller_client, abs_client, database_service, import_dir: str | None = None):
         self.storyteller_client = storyteller_client
         self.abs_client = abs_client
         self.database_service = database_service
-        self.import_dir = Path(import_dir) if import_dir else None
+        # Store the initial value but always prefer the live env var
+        self._initial_import_dir = import_dir
+
+    @property
+    def import_dir(self) -> Path | None:
+        """Resolve import dir from env (hot-reloadable) or initial config."""
+        raw = os.environ.get("STORYTELLER_IMPORT_DIR", "").strip() or self._initial_import_dir
+        return Path(raw) if raw else None
 
     def is_available(self) -> bool:
         """True if import_dir is configured, exists, and is writable."""
@@ -125,9 +133,13 @@ class StorytellerSubmissionService:
             self.database_service.save_storyteller_submission(submission)
 
             logger.info(f"Storyteller submission complete: '{title}' ({len(files_copied)} files) -> {dir_name}")
+
+            # Try to trigger Storyteller processing automatically
+            storyteller_uuid = self._trigger_processing_after_import(title, submission)
+
             return SubmissionResult(
                 success=True,
-                status="queued",
+                status="queued" if not storyteller_uuid else "processing",
                 submission_dir=dir_name,
                 files_copied=files_copied,
             )
@@ -178,8 +190,15 @@ class StorytellerSubmissionService:
                 try:
                     results = self.storyteller_client.search_books(book.abs_title)
                     if len(results) == 1:
-                        submission.storyteller_uuid = results[0].get("uuid")
+                        storyteller_uuid = results[0].get("uuid")
+                        submission.storyteller_uuid = storyteller_uuid
                         self._update_submission_status(submission, "processing")
+
+                        # If we just discovered the UUID, try triggering processing
+                        # in case Storyteller has the book but never started alignment
+                        if storyteller_uuid:
+                            self.storyteller_client.trigger_processing(storyteller_uuid)
+
                         return "processing"
                 except Exception as e:
                     logger.warning(f"Storyteller book search failed: {e}")
@@ -199,6 +218,52 @@ class StorytellerSubmissionService:
     def get_submission(self, abs_id: str):
         """Get the most recent submission for a book, if any."""
         return self.database_service.get_storyteller_submission(abs_id)
+
+    def _trigger_processing_after_import(self, title: str, submission) -> str | None:
+        """Wait for Storyteller to detect imported files, then trigger processing.
+
+        Storyteller watches its import directory and creates DB records when files
+        appear, but doesn't start alignment automatically. We need to:
+        1. Wait for Storyteller to detect the files (poll by title search)
+        2. Call POST /api/v2/books/{uuid}/process to start alignment
+
+        Returns the storyteller_uuid if processing was triggered, None otherwise.
+        """
+        if not self.storyteller_client or not self.storyteller_client.is_configured():
+            logger.info("Storyteller API not configured — cannot auto-trigger processing")
+            return None
+
+        # Poll for the book to appear in Storyteller (up to ~30 seconds)
+        storyteller_uuid = None
+        for attempt in range(6):
+            time.sleep(5)
+            try:
+                results = self.storyteller_client.search_books(title)
+                if results:
+                    storyteller_uuid = results[0].get("uuid")
+                    if storyteller_uuid:
+                        break
+            except Exception as e:
+                logger.debug(f"Storyteller search attempt {attempt + 1} failed: {e}")
+
+        if not storyteller_uuid:
+            logger.warning(f"Storyteller did not detect '{title}' within 30s — processing must be triggered manually")
+            return None
+
+        # Trigger processing
+        triggered = self.storyteller_client.trigger_processing(storyteller_uuid)
+        if triggered:
+            self._update_submission_status(submission, "processing")
+            # Update the submission with the discovered UUID
+            self.database_service.update_storyteller_submission_status(
+                submission.id, "processing", datetime.now(UTC),
+                storyteller_uuid=storyteller_uuid,
+            )
+            logger.info(f"Storyteller processing triggered for '{title}' (uuid: {storyteller_uuid[:8]}...)")
+            return storyteller_uuid
+        else:
+            logger.warning(f"Failed to trigger Storyteller processing for '{title}'")
+            return None
 
     def _check_transcriptions_by_uuid(self, book_uuid: str) -> bool:
         """Check if Storyteller has transcription data for a book by UUID."""

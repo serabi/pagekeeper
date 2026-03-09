@@ -158,8 +158,15 @@
                             </div>
                             {% if storyteller_submit_available %}
                             <label class="storyteller-submit-option">
+                                {% if storyteller_force_mode %}
+                                <input type="checkbox" name="storyteller_submit" value="1" checked disabled>
+                                <input type="hidden" name="storyteller_submit" value="1">
+                                Submit to Storyteller for narrated EPUB3 creation
+                                <span class="storyteller-submit-note">(forced via Settings &rarr; Audiobooks)</span>
+                                {% else %}
                                 <input type="checkbox" name="storyteller_submit" value="1">
                                 Submit to Storyteller for narrated EPUB3 creation
+                                {% endif %}
                             </label>
                             {% endif %}
                         </div>

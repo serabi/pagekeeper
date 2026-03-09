@@ -27,7 +27,6 @@ logger = logging.getLogger(__name__)
 class HardcoverClient:
     def __init__(self):
         self.api_url = "https://api.hardcover.app/v1/graphql"
-        self.token = os.environ.get("HARDCOVER_TOKEN")
         self.user_id = None
 
         # Rate limiter: 1 req/sec gives comfortable headroom under 60 req/min limit
@@ -35,16 +34,16 @@ class HardcoverClient:
         self._rate_lock = threading.Lock()
         self._min_interval = 1.0
 
-        if self.token:
-            self.token = self.token.strip()
-            if self.token.lower().startswith("bearer "):
-                self.token = self.token[7:].strip()
+    @property
+    def token(self) -> str | None:
+        raw = os.environ.get("HARDCOVER_TOKEN", "").strip()
+        if raw.lower().startswith("bearer "):
+            raw = raw[7:].strip()
+        return raw or None
 
-        if not self.token:
-            logger.info("HARDCOVER_TOKEN not set")
-            return
-
-        self.headers = {
+    @property
+    def headers(self) -> dict:
+        return {
             "Content-Type": "application/json",
             "Authorization": f"Bearer {self.token}",
             "User-Agent": "PageKeeper/1.0",

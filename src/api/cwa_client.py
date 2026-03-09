@@ -10,63 +10,54 @@ logger = logging.getLogger(__name__)
 
 class CWAClient:
     def __init__(self):
-        # Strip trailing slash and verify we don't duplicate /opds
+        self.session = requests.Session()
+        self.session.headers.update({
+            "User-Agent": "KOReader/2023.10",
+            "Accept": "application/atom+xml,application/xml,application/xhtml+xml,text/xml;q=0.9,*/*;q=0.8",
+        })
+        self.search_template = None
+
+    @property
+    def base_url(self) -> str:
         raw_url = os.environ.get("CWA_SERVER", "").rstrip('/')
         if raw_url.endswith('/opds'):
             raw_url = raw_url[:-5]
-
-        # Ensure scheme is present (case-insensitive check)
         if raw_url and not raw_url.lower().startswith(('http://', 'https://')):
             raw_url = f"http://{raw_url}"
+        return raw_url
 
-        self.base_url = raw_url
+    @property
+    def username(self) -> str:
+        return os.environ.get("CWA_USERNAME", "").strip()
 
-        # Sanitize credentials (strip whitespace)
-        self.username = os.environ.get("CWA_USERNAME", "").strip()
-        self.password = os.environ.get("CWA_PASSWORD", "").strip()
-        self.enabled = os.environ.get("CWA_ENABLED", "").lower() == "true"
+    @property
+    def password(self) -> str:
+        return os.environ.get("CWA_PASSWORD", "").strip()
 
-        if self.username:
-            # Log masked username to confirm what we loaded
-            # Show first 2 chars if possible, or just 1 if short
-            masked = self.username[:2] + "***" if len(self.username) > 2 else "***"
-            logger.debug(f"CWA Auth: Loaded credentials for user '{masked}'")
-        else:
-            logger.warning("CWA Auth: No username provided (Guest Mode?)")
+    @property
+    def enabled(self) -> bool:
+        return os.environ.get("CWA_ENABLED", "").lower() == "true"
 
-        self.session = requests.Session()
-
-        # Standardize headers for all requests
-        headers = {
-            "User-Agent": "KOReader/2023.10",  # Spoof KOReader
-            "Accept": "application/atom+xml,application/xml,application/xhtml+xml,text/xml;q=0.9,*/*;q=0.8",
-        }
-
-        # Force Pre-emptive Basic Auth
-        # This sends credentials immediately without waiting for a 401 Challenge,
-        # bypassing the "Redirect to Login Page" issue.
+    def _get_auth_headers(self) -> dict:
+        """Build auth headers from current credentials (reads live env vars)."""
+        headers = {}
         if self.username and self.password:
-            # We still set session.auth for compatibility, but the header takes precedence
-            # REMOVED: self.session.auth = (self.username, self.password)
-
-            # Manually construct the header
             user_pass = f"{self.username}:{self.password}"
             encoded_u = base64.b64encode(user_pass.encode()).decode()
             headers["Authorization"] = f"Basic {encoded_u}"
+        return headers
 
-        self.session.headers.update(headers)
-
-        self.timeout = 30
-        self.search_template = None
+    @property
+    def timeout(self) -> int:
+        return 30
 
     def _make_request(self, url, **kwargs):
-        """Helper to make requests with cookies cleared to force Basic Auth."""
+        """Helper to make requests with fresh auth headers and cleared cookies."""
         try:
-            # Clear cookies to prevent 'Guest' session sticking
             self.session.cookies.clear()
-            # Merge kwargs with default timeout if not present
             kwargs.setdefault('timeout', self.timeout)
-            return self.session.get(url, **kwargs)
+            headers = {**self._get_auth_headers(), **kwargs.pop('headers', {})}
+            return self.session.get(url, headers=headers, **kwargs)
         except Exception as e:
             logger.error(f"CWA Request failed: {e}")
             raise
