@@ -1,0 +1,207 @@
+"""Service for submitting books to Storyteller for narrated EPUB3 creation."""
+
+import logging
+import os
+import re
+import shutil
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+
+import requests
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class SubmissionResult:
+    success: bool
+    status: str = ''
+    submission_dir: str = ''
+    error: str = ''
+    files_copied: list[str] = field(default_factory=list)
+
+
+class StorytellerSubmissionService:
+    """Submits books to Storyteller by copying ebook + audio to the import directory.
+
+    Storyteller requires both an ebook (EPUB) and audio file(s) to create a
+    narrated EPUB3 with media overlays. The service copies both into a subdirectory
+    of Storyteller's import folder, which Storyteller watches for new submissions.
+    """
+
+    def __init__(self, storyteller_client, abs_client, database_service, import_dir: str | None):
+        self.storyteller_client = storyteller_client
+        self.abs_client = abs_client
+        self.database_service = database_service
+        self.import_dir = Path(import_dir) if import_dir else None
+
+    def is_available(self) -> bool:
+        """True if import_dir is configured, exists, and is writable."""
+        if not self.import_dir:
+            return False
+        try:
+            return self.import_dir.is_dir() and os.access(self.import_dir, os.W_OK)
+        except OSError:
+            return False
+
+    def submit_book(self, abs_id: str, title: str, ebook_path: Path,
+                    audio_files: list[dict]) -> SubmissionResult:
+        """Copy ebook + audio files to Storyteller's import directory.
+
+        Storyteller needs both an EPUB and audio to produce a narrated EPUB3.
+
+        Args:
+            abs_id: The book's ABS ID.
+            title: Book title (used for the import directory name).
+            ebook_path: Path to the ebook file (epub). Required.
+            audio_files: List of dicts with 'stream_url' and 'ext' keys from ABS. Required.
+        """
+        if not self.is_available():
+            return SubmissionResult(success=False, error='Import directory not configured or not writable')
+
+        if not ebook_path or not ebook_path.exists():
+            return SubmissionResult(success=False, error='Ebook file not found')
+
+        if not audio_files:
+            return SubmissionResult(success=False, error='Audio files are required for Storyteller submission')
+
+        dir_name = self._sanitize_dirname(title, abs_id)
+        target_dir = self.import_dir / dir_name
+
+        # Validate path stays within import root
+        try:
+            resolved = target_dir.resolve()
+            if self.import_dir.resolve() not in resolved.parents and resolved != self.import_dir.resolve():
+                return SubmissionResult(success=False, error='Invalid submission directory path')
+        except OSError:
+            return SubmissionResult(success=False, error='Could not resolve submission path')
+
+        try:
+            target_dir.mkdir(parents=True, exist_ok=True)
+            files_copied = []
+
+            # Copy ebook
+            dest = target_dir / ebook_path.name
+            shutil.copy2(ebook_path, dest)
+            files_copied.append(ebook_path.name)
+            logger.info(f"Storyteller submission: copied ebook '{ebook_path.name}' for '{title}'")
+
+            # Download and copy audio files from ABS
+            for i, af in enumerate(audio_files):
+                stream_url = af.get('stream_url')
+                ext = af.get('ext', 'mp3')
+                if not stream_url:
+                    continue
+                audio_filename = f"{dir_name}.{ext}" if len(audio_files) == 1 else f"{dir_name}_{i + 1:02d}.{ext}"
+                audio_dest = target_dir / audio_filename
+                if self._download_file(stream_url, audio_dest):
+                    files_copied.append(audio_filename)
+
+            # Must have at least the ebook + one audio file
+            if len(files_copied) < 2:
+                logger.error(f"Storyteller submission incomplete for '{title}': only {files_copied}")
+                # Clean up partial submission
+                shutil.rmtree(target_dir, ignore_errors=True)
+                return SubmissionResult(success=False, error='Failed to download audio files')
+
+            # Persist submission record
+            from src.db.models import StorytellerSubmission
+            submission = StorytellerSubmission(
+                abs_id=abs_id,
+                status='queued',
+                submission_dir=dir_name,
+            )
+            self.database_service.save_storyteller_submission(submission)
+
+            logger.info(f"Storyteller submission complete: '{title}' ({len(files_copied)} files) -> {dir_name}")
+            return SubmissionResult(
+                success=True, status='queued',
+                submission_dir=dir_name, files_copied=files_copied,
+            )
+
+        except Exception as e:
+            logger.error(f"Storyteller submission failed for '{title}': {e}")
+            return SubmissionResult(success=False, error=str(e))
+
+    def check_status(self, abs_id: str) -> str:
+        """Check if Storyteller has finished processing a submitted book.
+
+        Returns: 'queued', 'processing', 'ready', 'failed', or 'not_found'.
+        """
+        submission = self.database_service.get_active_storyteller_submission(abs_id)
+        if not submission:
+            return 'not_found'
+
+        if submission.status in ('ready', 'failed'):
+            return submission.status
+
+        # Check if Storyteller has produced transcription output
+        assets_dir = os.environ.get('STORYTELLER_ASSETS_DIR', '').strip()
+        if assets_dir and submission.submission_dir:
+            # Try resolving via the stored storyteller_uuid first
+            if submission.storyteller_uuid:
+                if self._check_transcriptions_by_uuid(submission.storyteller_uuid):
+                    submission.status = 'ready'
+                    submission.last_checked_at = datetime.utcnow()
+                    self.database_service.save_storyteller_submission(submission)
+                    return 'ready'
+
+            # Fallback: check by directory name in assets
+            assets_root = Path(assets_dir) / 'assets'
+            transcripts_dir = assets_root / submission.submission_dir / 'transcriptions'
+            if transcripts_dir.is_dir() and any(transcripts_dir.iterdir()):
+                submission.status = 'ready'
+                submission.last_checked_at = datetime.utcnow()
+                self.database_service.save_storyteller_submission(submission)
+                return 'ready'
+
+        # Try to discover the storyteller_uuid via API title search
+        if not submission.storyteller_uuid and self.storyteller_client and self.storyteller_client.is_configured():
+            book = self.database_service.get_book(abs_id)
+            if book and book.abs_title:
+                results = self.storyteller_client.search_books(book.abs_title)
+                if len(results) == 1:
+                    submission.storyteller_uuid = results[0].get('uuid')
+                    submission.last_checked_at = datetime.utcnow()
+                    self.database_service.save_storyteller_submission(submission)
+
+        submission.status = 'processing'
+        submission.last_checked_at = datetime.utcnow()
+        self.database_service.save_storyteller_submission(submission)
+        return 'processing'
+
+    def get_submission(self, abs_id: str):
+        """Get the active submission for a book, if any."""
+        return self.database_service.get_active_storyteller_submission(abs_id)
+
+    def _check_transcriptions_by_uuid(self, book_uuid: str) -> bool:
+        """Check if Storyteller has transcription data for a book by UUID."""
+        if not self.storyteller_client:
+            return False
+        chapters = self.storyteller_client.get_word_timeline_chapters(book_uuid)
+        return chapters is not None and len(chapters) > 0
+
+    def _sanitize_dirname(self, title: str, abs_id: str) -> str:
+        """Create a safe, deterministic directory name from a book title."""
+        clean = re.sub(r'[<>:"/\\|?*]', '', title)
+        clean = clean.strip('. ')
+        if not clean:
+            clean = abs_id
+        if len(clean) > 200:
+            clean = clean[:200]
+        return clean
+
+    def _download_file(self, url: str, dest: Path) -> bool:
+        """Download a file from a URL to a local path."""
+        try:
+            with requests.get(url, stream=True, timeout=300) as r:
+                r.raise_for_status()
+                with open(dest, 'wb') as f:
+                    for chunk in r.iter_content(chunk_size=8192):
+                        f.write(chunk)
+            logger.debug(f"Downloaded: {dest.name}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to download {dest.name}: {e}")
+            return False

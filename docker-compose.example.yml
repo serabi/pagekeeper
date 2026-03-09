@@ -24,6 +24,9 @@ services:
       - ./data:/data                    # App data (database, cache)
       # === OPTIONAL ===
       # - /path/to/ebooks:/books:ro     # Only needed for cross-format sync without Booklore/CWA
+      # === STORYTELLER (OPTIONAL) ===
+      # - /path/to/storyteller/processing:/storyteller-data:ro   # Storyteller's processing dir (for word-level alignment)
+      # - /path/to/storyteller/import:/storyteller-import:rw     # Storyteller's import dir (for submitting books)
 
     ports:
       - "8080:4477"   # Admin Dashboard (Keep Internal/LAN)

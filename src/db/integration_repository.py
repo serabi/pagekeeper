@@ -13,6 +13,7 @@ from .models import (
     BookloreBook,
     HardcoverDetails,
     HardcoverSyncLog,
+    StorytellerSubmission,
 )
 
 logger = logging.getLogger(__name__)
@@ -77,6 +78,43 @@ class IntegrationRepository(BaseRepository):
                 HardcoverSyncLog.created_at < before_date
             ).delete(synchronize_session=False)
             return deleted
+
+    # ── Storyteller Submissions ──
+
+    def save_storyteller_submission(self, submission):
+        """Save or update a storyteller submission. Supersedes any existing active submission for the same book."""
+        with self.get_session() as session:
+            # Mark any existing active submissions as superseded
+            session.query(StorytellerSubmission).filter(
+                StorytellerSubmission.abs_id == submission.abs_id,
+                StorytellerSubmission.status.in_(['queued', 'processing']),
+            ).update({StorytellerSubmission.status: 'superseded'}, synchronize_session=False)
+            session.add(submission)
+            session.flush()
+            session.refresh(submission)
+            session.expunge(submission)
+            return submission
+
+    def get_active_storyteller_submission(self, abs_id):
+        """Get the most recent non-terminal submission for a book."""
+        with self.get_session() as session:
+            sub = session.query(StorytellerSubmission).filter(
+                StorytellerSubmission.abs_id == abs_id,
+                StorytellerSubmission.status.in_(['queued', 'processing']),
+            ).order_by(StorytellerSubmission.submitted_at.desc()).first()
+            if sub:
+                session.expunge(sub)
+            return sub
+
+    def get_storyteller_submission(self, abs_id):
+        """Get the most recent submission (any status) for a book."""
+        with self.get_session() as session:
+            sub = session.query(StorytellerSubmission).filter(
+                StorytellerSubmission.abs_id == abs_id,
+            ).order_by(StorytellerSubmission.submitted_at.desc()).first()
+            if sub:
+                session.expunge(sub)
+            return sub
 
     # ── Booklore ──
 

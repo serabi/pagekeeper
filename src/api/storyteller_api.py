@@ -60,29 +60,19 @@ class StorytellerAPIClient:
 
     def _make_request(self, method: str, endpoint: str, json_data: dict = None) -> requests.Response | None:
         token = self._get_fresh_token()
-        if not token: return None
+        if not token:
+            return None
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
         try:
             url = f"{self.base_url}{endpoint}"
-            if method.upper() == "GET":
-                response = self.session.get(url, headers=headers, timeout=10)
-            elif method.upper() == "POST":
-                response = self.session.post(url, headers=headers, json=json_data, timeout=10)
-            elif method.upper() == "PUT":
-                response = self.session.put(url, headers=headers, json=json_data, timeout=10)
-            else: return None
-
+            response = self.session.request(method, url, headers=headers, json=json_data, timeout=10)
             if response.status_code == 401:
                 self._token = None
                 token = self._get_fresh_token()
-                if not token: return None
+                if not token:
+                    return None
                 headers["Authorization"] = f"Bearer {token}"
-                if method.upper() == "GET":
-                    response = self.session.get(url, headers=headers, timeout=10)
-                elif method.upper() == "POST":
-                    response = self.session.post(url, headers=headers, json=json_data, timeout=10)
-                elif method.upper() == "PUT":
-                    response = self.session.put(url, headers=headers, json=json_data, timeout=10)
+                response = self.session.request(method, url, headers=headers, json=json_data, timeout=10)
             return response
         except Exception as e:
             logger.error(f"Storyteller API request failed ('{method}' '{endpoint}'): {e}")

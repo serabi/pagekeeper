@@ -419,6 +419,17 @@ class DatabaseService:
     def prune_hardcover_sync_logs(self, before_date):
         return self._integrations.prune_hardcover_sync_logs(before_date)
 
+    # ── Integrations: Storyteller Submissions ──
+
+    def save_storyteller_submission(self, submission):
+        return self._integrations.save_storyteller_submission(submission)
+
+    def get_active_storyteller_submission(self, abs_id):
+        return self._integrations.get_active_storyteller_submission(abs_id)
+
+    def get_storyteller_submission(self, abs_id):
+        return self._integrations.get_storyteller_submission(abs_id)
+
     # ── Integrations: Booklore (delegates to IntegrationRepository) ──
 
     def get_booklore_book(self, filename):

@@ -23,6 +23,7 @@ from src.services.alignment_service import AlignmentService
 from src.services.background_job_service import BackgroundJobService
 from src.services.library_service import LibraryService
 from src.services.migration_service import MigrationService
+from src.services.storyteller_submission_service import StorytellerSubmissionService
 from src.services.suggestion_service import SuggestionService
 from src.sync_clients.abs_ebook_sync_client import ABSEbookSyncClient
 from src.sync_clients.abs_sync_client import ABSSyncClient
@@ -143,6 +144,19 @@ class Container(containers.DeclarativeContainer):
     # Storyteller client with factory
     storyteller_client = providers.Singleton(
         StorytellerAPIClient
+    )
+
+    # Storyteller Submission Service
+    storyteller_import_dir = providers.Callable(
+        lambda: os.environ.get('STORYTELLER_IMPORT_DIR', '').strip() or None
+    )
+
+    storyteller_submission_service = providers.Singleton(
+        StorytellerSubmissionService,
+        storyteller_client=storyteller_client,
+        abs_client=abs_client,
+        database_service=database_service,
+        import_dir=storyteller_import_dir,
     )
 
     # Transcriber

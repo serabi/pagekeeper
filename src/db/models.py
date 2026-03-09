@@ -251,6 +251,34 @@ class HardcoverSyncLog(Base):
         return f"<HardcoverSyncLog(id={self.id}, action='{self.action}', direction='{self.direction}')>"
 
 
+class StorytellerSubmission(Base):
+    """Tracks books submitted to Storyteller for narrated EPUB3 creation."""
+    __tablename__ = 'storyteller_submissions'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    abs_id = Column(String(255), ForeignKey('books.abs_id', ondelete='CASCADE'), nullable=False, index=True)
+    status = Column(String(20), nullable=False, default='queued')  # queued, processing, ready, failed
+    submission_dir = Column(String(500), nullable=True)
+    storyteller_uuid = Column(String(36), nullable=True)
+    error = Column(Text, nullable=True)
+    submitted_at = Column(DateTime, default=datetime.utcnow)
+    last_checked_at = Column(DateTime, nullable=True)
+
+    book = relationship("Book", backref="storyteller_submissions")
+
+    def __init__(self, abs_id: str, status: str = 'queued', submission_dir: str = None,
+                 storyteller_uuid: str = None, error: str = None):
+        self.abs_id = abs_id
+        self.status = status
+        self.submission_dir = submission_dir
+        self.storyteller_uuid = storyteller_uuid
+        self.error = error
+        self.submitted_at = datetime.utcnow()
+
+    def __repr__(self):
+        return f"<StorytellerSubmission(id={self.id}, abs_id='{self.abs_id}', status='{self.status}')>"
+
+
 class State(Base):
     """
     State model storing sync state per book and client.

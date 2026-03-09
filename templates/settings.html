@@ -320,6 +320,12 @@
                                     placeholder="/storyteller-data">
                                 <div class="help-text">Mount Storyteller's data directory for native wordTimeline alignment. Bypasses Whisper transcription when word-level timing data is available.</div>
                             </div>
+                            <div class="form-group full-width">
+                                <label>Import Directory</label>
+                                <input type="text" name="STORYTELLER_IMPORT_DIR" value="{{ get_val('STORYTELLER_IMPORT_DIR') }}"
+                                    placeholder="/storyteller-import">
+                                <div class="help-text">Mount Storyteller's /import directory here. Books submitted for narrated EPUB3 creation will be copied from Audiobookshelf and Booklore to this path.</div>
+                            </div>
                         </div>
                     </div>
                 </div>
