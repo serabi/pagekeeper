@@ -60,6 +60,9 @@ def test_dependency_injection():
         storyteller_db = container.storyteller_client()
         print(f"[OK] Storyteller DB: {type(storyteller_db).__name__}")
 
+        storyteller_submission = container.storyteller_submission_service()
+        print(f"[OK] StorytellerSubmissionService: {type(storyteller_submission).__name__}")
+
         db = container.database_service()
         print(f"[OK] DB: {type(db).__name__}")
 
