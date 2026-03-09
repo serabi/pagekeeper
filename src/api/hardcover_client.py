@@ -70,12 +70,17 @@ class HardcoverClient:
 
     def _rate_limit(self):
         """Enforce minimum interval between API requests."""
+        wait = 0.0
         with self._rate_lock:
             now = time.monotonic()
             elapsed = now - self._last_request_time
             if elapsed < self._min_interval:
-                time.sleep(self._min_interval - elapsed)
-            self._last_request_time = time.monotonic()
+                wait = self._min_interval - elapsed
+                self._last_request_time = now + wait
+            else:
+                self._last_request_time = now
+        if wait > 0:
+            time.sleep(wait)
 
     def query(self, query: str, variables: dict | None = None) -> dict | None:
         if not self.token:
@@ -682,6 +687,7 @@ class HardcoverClient:
         audio_seconds: int = None,
         started_at: str = None,
         finished_at: str = None,
+        force_dates: bool = False,
     ) -> bool:
         """
         Update reading progress.
@@ -690,6 +696,9 @@ class HardcoverClient:
 
         Optional started_at/finished_at (YYYY-MM-DD strings) override the default
         of using today's date when filling missing dates on the Hardcover read.
+
+        When force_dates is True, provided started_at/finished_at will overwrite
+        existing dates on the Hardcover read (used for user-initiated date edits).
         """
         # First check if there's an existing read
         read_query = """
@@ -717,20 +726,29 @@ class HardcoverClient:
             existing_read = read_result["user_book_reads"][0]
             read_id = existing_read["id"]
 
-            # Preserve existing dates
+            # Preserve existing dates unless force_dates is set
             started_at_val = existing_read.get("started_at")
             finished_at_val = existing_read.get("finished_at")
 
-            # If no start date exists, and we passed 2%, fill it in
-            if not started_at_val and should_start:
-                started_at_val = started_at or today
-                logger.info(
-                    f"Hardcover: Setting started_at to '{started_at_val}' (Progress: {current_percentage:.1%})"
-                )
+            if force_dates:
+                # User explicitly edited dates — overwrite HC values
+                if started_at is not None:
+                    started_at_val = started_at
+                    logger.info(f"Hardcover: Force-setting started_at to '{started_at_val}'")
+                if finished_at is not None:
+                    finished_at_val = finished_at
+                    logger.info(f"Hardcover: Force-setting finished_at to '{finished_at_val}'")
+            else:
+                # If no start date exists, and we passed 2%, fill it in
+                if not started_at_val and should_start:
+                    started_at_val = started_at or today
+                    logger.info(
+                        f"Hardcover: Setting started_at to '{started_at_val}' (Progress: {current_percentage:.1%})"
+                    )
 
-            if is_finished and not finished_at_val:
-                finished_at_val = finished_at or today
-                logger.info(f"Hardcover: Setting finished_at to '{finished_at_val}'")
+                if is_finished and not finished_at_val:
+                    finished_at_val = finished_at or today
+                    logger.info(f"Hardcover: Setting finished_at to '{finished_at_val}'")
 
             # Use progress_seconds for audiobooks, progress_pages for page-based editions
             if audio_seconds and audio_seconds > 0:
@@ -1116,13 +1134,17 @@ class HardcoverClient:
         return editions
 
     def create_reading_journal(self, book_id: int, edition_id: int | None,
-                               event: str, action_at: str | None = None) -> bool:
+                               event: str, action_at: str | None = None,
+                               entry: str | None = None,
+                               privacy_setting_id: int = 3) -> bool:
         """Create a reading journal entry on Hardcover.
 
-        Events: 'started_reading', 'finished_reading', etc.
+        Events: 'started_reading', 'finished_reading', 'note', etc.
+        entry: optional text content for notes/highlights.
+        privacy_setting_id: 1=public, 2=followers, 3=private (default).
         """
         query = """
-        mutation ($object: ReadingJournalCreateInput!) {
+        mutation ($object: ReadingJournalCreateType!) {
             insert_reading_journal(object: $object) {
                 error
                 reading_journal { id }
@@ -1132,19 +1154,23 @@ class HardcoverClient:
         obj = {
             "book_id": int(book_id),
             "event": event,
-            "privacy_setting_id": 1,
+            "privacy_setting_id": privacy_setting_id,
             "tags": [],
         }
         if edition_id:
             obj["edition_id"] = int(edition_id)
         if action_at:
             obj["action_at"] = action_at
+        if entry:
+            obj["entry"] = entry
 
         result = self.query(query, {"object": obj})
         if result and result.get("insert_reading_journal"):
-            error = result["insert_reading_journal"].get("error")
-            if error:
-                logger.error(f"Hardcover create_reading_journal error: {error}")
+            errors = result["insert_reading_journal"].get("errors")
+            if errors:
+                logger.error(f"Hardcover create_reading_journal error: {errors}")
                 return False
-            return True
+            if result["insert_reading_journal"].get("reading_journal"):
+                return True
+            logger.error("Hardcover create_reading_journal: no reading_journal in response")
         return False

@@ -174,8 +174,8 @@ def api_logs_live():
 def api_logs_hardcover():
     """API endpoint for fetching Hardcover sync logs with filtering and pagination."""
     try:
-        page = request.args.get('page', 1, type=int)
-        per_page = min(request.args.get('per_page', 50, type=int), 200)
+        page = max(1, request.args.get('page', 1, type=int))
+        per_page = max(1, min(request.args.get('per_page', 50, type=int), 200))
         direction = request.args.get('direction') or None
         action = request.args.get('action') or None
         search = request.args.get('search') or None

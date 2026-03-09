@@ -139,6 +139,7 @@ def settings():
             'BOOKFUSION_ENABLED',
             'HARDCOVER_JOURNAL_ON_START',
             'HARDCOVER_JOURNAL_ON_FINISH',
+            'HARDCOVER_JOURNAL_PUSH_NOTES',
         ]
 
         current_settings = database_service.get_all_settings()

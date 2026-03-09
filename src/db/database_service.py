@@ -373,8 +373,11 @@ class DatabaseService:
     def add_reading_journal(self, abs_id, event, entry=None, percentage=None, created_at=None):
         return self._reading.add_reading_journal(abs_id, event, entry, percentage, created_at)
 
-    def update_reading_journal(self, journal_id, *, entry=None):
-        return self._reading.update_reading_journal(journal_id, entry=entry)
+    def update_reading_journal(self, journal_id, *, entry=None, created_at=None):
+        return self._reading.update_reading_journal(journal_id, entry=entry, created_at=created_at)
+
+    def find_journal_by_event(self, abs_id, event):
+        return self._reading.find_journal_by_event(abs_id, event)
 
     def cleanup_bookfusion_import_notes(self, abs_id=None):
         return self._reading.cleanup_bookfusion_import_notes(abs_id)

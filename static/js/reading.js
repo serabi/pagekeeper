@@ -427,7 +427,7 @@ function initReadingPage(currentYear) {
 
 
 function initReadingDetail() {
-  // ── Rating stars ──
+  // ── Rating stars (5 stars, half-star support) ──
   const rc = document.getElementById('rating-stars');
   if (rc) {
     const absId = rc.dataset.absId;
@@ -443,8 +443,15 @@ function initReadingDetail() {
     function applyRatingState(value) {
       const numeric = Number(value) || 0;
       stars.forEach(star => {
-        const starValue = parseFloat(star.dataset.value || '0');
-        star.classList.toggle('filled', starValue <= numeric);
+        const idx = parseInt(star.dataset.index, 10);
+        star.classList.remove('r-star-full', 'r-star-half', 'r-star-empty');
+        if (numeric >= idx) {
+          star.classList.add('r-star-full');
+        } else if (numeric >= idx - 0.5) {
+          star.classList.add('r-star-half');
+        } else {
+          star.classList.add('r-star-empty');
+        }
       });
       rc.dataset.rating = String(numeric);
       if (label) label.textContent = numeric > 0 ? formatRating(numeric) : 'Rate';
@@ -457,42 +464,79 @@ function initReadingDetail() {
       syncStatus.textContent = message;
     }
 
-    stars.forEach(star => {
-      star.addEventListener('click', () => {
-        const value = parseFloat(star.dataset.value);
-        fetch(`/api/reading/book/${absId}/rating`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ rating: value }),
+    function submitRating(value) {
+      fetch(`/api/reading/book/${absId}/rating`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rating: value }),
+      })
+        .then(r => {
+          if (!r.ok) throw new Error('Failed to save rating');
+          return r.json();
         })
-          .then(r => {
-            if (!r.ok) throw new Error('Failed to save rating');
-            return r.json();
-          })
-          .then(data => {
-            if (data.success) {
-              applyRatingState(data.rating);
-              if (!hardcoverSyncAvailable) {
-                if (syncStatus) syncStatus.hidden = true;
-              } else if (data.hardcover_synced) {
-                setSyncStatus('success', 'Synced to Hardcover');
-              } else if (data.hardcover_error) {
-                setSyncStatus('warning', 'Saved locally, Hardcover sync failed');
-              } else {
-                if (syncStatus) syncStatus.hidden = true;
-              }
+        .then(data => {
+          if (data.success) {
+            applyRatingState(data.rating);
+            if (!hardcoverSyncAvailable) {
+              if (syncStatus) syncStatus.hidden = true;
+            } else if (data.hardcover_synced) {
+              setSyncStatus('success', 'Synced to Hardcover');
+            } else if (data.hardcover_error) {
+              setSyncStatus('warning', 'Saved locally, Hardcover sync failed');
+            } else {
+              if (syncStatus) syncStatus.hidden = true;
             }
-          })
-          .catch(() => {
-            setSyncStatus('error', 'Save failed — rating not saved');
-          });
+          }
+        })
+        .catch(() => {
+          setSyncStatus('error', 'Save failed — rating not saved');
+        });
+    }
+
+    function getStarValue(star, clientX) {
+      const idx = parseInt(star.dataset.index, 10);
+      const rect = star.getBoundingClientRect();
+      const isLeftHalf = (clientX - rect.left) < rect.width / 2;
+      return isLeftHalf ? idx - 0.5 : idx;
+    }
+
+    stars.forEach(star => {
+      // Click / tap: left half → half star, right half → full star
+      star.addEventListener('click', (e) => {
+        submitRating(getStarValue(star, e.clientX));
       });
+
+      // Touch: use touch coordinates for half-star detection
+      star.addEventListener('touchend', (e) => {
+        e.preventDefault();
+        const touch = e.changedTouches[0];
+        submitRating(getStarValue(star, touch.clientX));
+      });
+
+      // Hover preview (desktop)
+      star.addEventListener('mousemove', (e) => {
+        const previewValue = getStarValue(star, e.clientX);
+        applyRatingState(previewValue);
+        if (label) label.textContent = formatRating(previewValue);
+      });
+    });
+
+    // Restore actual rating when mouse leaves the rating area
+    rc.addEventListener('mouseleave', () => {
+      applyRatingState(parseFloat(rc.dataset.rating || '0'));
     });
 
     applyRatingState(parseFloat(rc.dataset.rating || '0'));
   }
 
   // ── Date fields ──
+  function flashDateFeedback(input, ok, msg) {
+    const color = ok ? 'var(--color-success, #22c55e)' : 'var(--color-danger, red)';
+    input.style.outline = `2px solid ${color}`;
+    input.title = msg || '';
+    setTimeout(() => { input.style.outline = ''; input.title = ''; }, 2500);
+  }
+
   function bindDate(field, inputId) {
     const input = document.getElementById(inputId);
     if (!input) return;
@@ -507,14 +551,53 @@ function initReadingDetail() {
         .then(r => r.json())
         .then(data => {
           if (!data.success) {
-            input.style.outline = '2px solid var(--color-danger, red)';
-            setTimeout(() => { input.style.outline = ''; }, 2000);
+            flashDateFeedback(input, false, data.error || 'Save failed');
+          } else {
+            flashDateFeedback(input, true, 'Saved');
           }
+        })
+        .catch(() => {
+          flashDateFeedback(input, false, 'Save failed');
         });
     });
   }
   bindDate('started_at', 'started-at');
   bindDate('finished_at', 'finished-at');
+
+  // ── Sync Dates to Hardcover button ──
+  const hcSyncBtn = document.getElementById('hc-date-sync');
+  const hcSyncStatus = document.getElementById('hc-date-sync-status');
+  if (hcSyncBtn) {
+    hcSyncBtn.addEventListener('click', () => {
+      hcSyncBtn.disabled = true;
+      if (hcSyncStatus) { hcSyncStatus.hidden = true; }
+      fetch(`/api/reading/book/${hcSyncBtn.dataset.absId}/dates/sync-hardcover`, {
+        method: 'POST',
+      })
+        .then(r => {
+          if (!r.ok) return r.text().then(t => { throw new Error(t || 'Sync failed'); });
+          return r.json();
+        })
+        .then(data => {
+          hcSyncBtn.disabled = false;
+          if (hcSyncStatus) {
+            hcSyncStatus.hidden = false;
+            hcSyncStatus.className = `r-hc-date-sync-status ${data.success ? 'success' : 'error'}`;
+            hcSyncStatus.textContent = data.success ? 'Dates synced to Hardcover' : (data.error || 'Sync failed');
+            setTimeout(() => { hcSyncStatus.hidden = true; }, 4000);
+          }
+        })
+        .catch(() => {
+          hcSyncBtn.disabled = false;
+          if (hcSyncStatus) {
+            hcSyncStatus.hidden = false;
+            hcSyncStatus.className = 'r-hc-date-sync-status error';
+            hcSyncStatus.textContent = 'Sync failed';
+            setTimeout(() => { hcSyncStatus.hidden = true; }, 4000);
+          }
+        });
+    });
+  }
 
   // ── About This Book description expand/collapse ──
   const descWrap = document.getElementById('about-book-desc-wrap');
@@ -628,6 +711,12 @@ function initReadingDetail() {
         return;
       }
 
+      if (actionBtn.dataset.action === 'push-hardcover') {
+        openHcPushModal(journalId, item);
+        menu.classList.remove('open');
+        return;
+      }
+
       if (actionBtn.dataset.action !== 'delete') return;
       if (!confirm('Delete this journal entry?')) return;
       function flashError() {
@@ -658,6 +747,102 @@ function initReadingDetail() {
           if (btn) btn.setAttribute('aria-expanded', 'false');
         });
       }
+    });
+  }
+
+  // ── Hardcover Push Modal ──
+  const hcPushModal = document.getElementById('hc-push-modal');
+  const hcPushPreview = document.getElementById('hc-push-preview');
+  const hcPushPrivacy = document.getElementById('hc-push-privacy-select');
+  const hcPushConfirm = document.getElementById('hc-push-confirm');
+  let _hcPushJournalId = null;
+  let _hcPushItem = null;
+
+  function openHcPushModal(journalId, item) {
+    if (!hcPushModal) return;
+    _hcPushJournalId = journalId;
+    _hcPushItem = item;
+    const entry = item?.dataset.entry || item?.querySelector('.r-tl-text')?.textContent || '';
+    if (hcPushPreview) hcPushPreview.textContent = entry.length > 200 ? entry.slice(0, 200) + '...' : entry;
+    if (hcPushPrivacy) hcPushPrivacy.value = hcPushModal.dataset.privacyDefault || '3';
+    if (hcPushConfirm) {
+      hcPushConfirm.disabled = false;
+      hcPushConfirm.textContent = 'Push';
+    }
+    hcPushModal.style.display = 'flex';
+  }
+  window.openHcPushModal = openHcPushModal;
+
+  function closeHcPushModal() {
+    if (hcPushModal) hcPushModal.style.display = 'none';
+    _hcPushJournalId = null;
+    _hcPushItem = null;
+  }
+  window.closeHcPushModal = closeHcPushModal;
+
+  if (hcPushConfirm) {
+    hcPushConfirm.addEventListener('click', () => {
+      if (!_hcPushJournalId) return;
+      const privacy = parseInt(hcPushPrivacy?.value, 10) || 3;
+      hcPushConfirm.disabled = true;
+      hcPushConfirm.textContent = 'Pushing...';
+
+      fetch(`/api/reading/journal/${_hcPushJournalId}/push-hardcover`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ privacy }),
+      })
+        .then(r => {
+          if (!r.ok) return r.text().then(t => { throw new Error(t || 'Push failed'); });
+          return r.json();
+        })
+        .then(data => {
+          if (data.success) {
+            // Update the menu button in the timeline to show success
+            if (_hcPushItem) {
+              const pushBtn = _hcPushItem.querySelector('[data-action="push-hardcover"]');
+              if (pushBtn) {
+                pushBtn.textContent = 'Pushed \u2713';
+                pushBtn.classList.add('r-tl-menu-item--success');
+                pushBtn.disabled = true;
+              }
+            }
+            closeHcPushModal();
+          } else {
+            hcPushConfirm.textContent = data.error || 'Failed';
+            hcPushConfirm.disabled = false;
+            setTimeout(() => { hcPushConfirm.textContent = 'Push'; }, 2500);
+          }
+        })
+        .catch(() => {
+          hcPushConfirm.textContent = 'Failed';
+          hcPushConfirm.disabled = false;
+          setTimeout(() => { hcPushConfirm.textContent = 'Push'; }, 2500);
+        });
+    });
+  }
+
+  // ── Journal Sync Toggle ──
+  const syncToggle = document.getElementById('journal-sync-toggle');
+  if (syncToggle) {
+    syncToggle.addEventListener('change', () => {
+      const absId = syncToggle.dataset.absId;
+      const value = syncToggle.checked ? 'on' : 'off';
+      fetch(`/api/reading/book/${absId}/journal-sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ journal_sync: value }),
+      })
+        .then(r => {
+          if (!r.ok) throw new Error('Request failed');
+          return r.json();
+        })
+        .then(data => {
+          if (!data.success) syncToggle.checked = !syncToggle.checked;
+        })
+        .catch(() => {
+          syncToggle.checked = !syncToggle.checked;
+        });
     });
   }
 }

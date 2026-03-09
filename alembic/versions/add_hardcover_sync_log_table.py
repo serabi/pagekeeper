@@ -32,9 +32,9 @@ def upgrade() -> None:
         sa.Column('direction', sa.String(4), nullable=False),
         sa.Column('action', sa.String(30), nullable=False),
         sa.Column('detail', sa.Text(), nullable=True),
-        sa.Column('success', sa.Boolean(), default=True),
+        sa.Column('success', sa.Boolean(), server_default=sa.true()),
         sa.Column('error_message', sa.Text(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), default=sa.func.now()),
+        sa.Column('created_at', sa.DateTime(), server_default=sa.text('CURRENT_TIMESTAMP')),
     )
     op.create_index('ix_hardcover_sync_logs_abs_id', 'hardcover_sync_logs', ['abs_id'])
     op.create_index('ix_hardcover_sync_logs_action', 'hardcover_sync_logs', ['action'])

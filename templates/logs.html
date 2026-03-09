@@ -127,6 +127,7 @@
                         <option value="date_push">Date Push</option>
                         <option value="automatch">Automatch</option>
                         <option value="manual_match">Manual Match</option>
+                        <option value="journal_note">Journal Note</option>
                     </select>
                 </div>
                 <div class="control-group">
@@ -655,6 +656,81 @@
         const hcPrevBtn = document.getElementById('hcPrevBtn');
         const hcNextBtn = document.getElementById('hcNextBtn');
 
+        const HC_STATUS_NAMES = {1: 'Want to Read', 2: 'Currently Reading', 3: 'Read', 4: 'Paused', 5: 'DNF'};
+        const HC_ACTION_LABELS = {
+            status_update: 'Status Update',
+            status_transition: 'Status Transition',
+            status_pull: 'Status Pull',
+            create_user_book: 'Create User Book',
+            adopt_user_book: 'Adopt User Book',
+            rating: 'Rating',
+            date_pull: 'Date Pull',
+            date_push: 'Date Push',
+            automatch: 'Automatch',
+            manual_match: 'Manual Match',
+            journal_note: 'Journal Note',
+        };
+        const HC_PRIVACY_NAMES = {1: 'public', 2: 'followers', 3: 'private'};
+
+        function formatHcDetail(log) {
+            if (log.error_message) return log.error_message;
+            const d = log.detail;
+            if (!d || typeof d !== 'object') return d ? String(d) : '';
+            const action = log.action || '';
+
+            if (action === 'journal_note') {
+                const privacy = HC_PRIVACY_NAMES[d.privacy] || 'private';
+                const preview = d.entry_preview || '';
+                const source = d.source && d.source !== 'note' ? ` [${d.source}]` : '';
+                return preview
+                    ? `\u201c${preview}\u201d (${privacy})${source}`
+                    : `Pushed note (${privacy})${source}`;
+            }
+            if (action === 'rating') {
+                return d.rating != null ? `Set rating to ${d.rating}` : 'Cleared rating';
+            }
+            if (action === 'status_update') {
+                const label = d.status_label || '';
+                const hcId = d.hc_status_id;
+                const hcName = HC_STATUS_NAMES[hcId] || '';
+                return label ? `${label} \u2192 ${hcName || 'HC ' + hcId}` : (hcName || '');
+            }
+            if (action === 'status_transition') {
+                const from = HC_STATUS_NAMES[d.from] || d.from;
+                const to = HC_STATUS_NAMES[d.to] || d.to;
+                return `${from} \u2192 ${to}`;
+            }
+            if (action === 'status_pull') {
+                return `${d.old_status || '?'} \u2192 ${d.new_status || '?'} (HC status ${d.hc_status_id || '?'})`;
+            }
+            if (action === 'date_pull' || action === 'date_push') {
+                const parts = [];
+                if (d.started_at) parts.push(`started: ${d.started_at}`);
+                if (d.finished_at) parts.push(`finished: ${d.finished_at}`);
+                return parts.join(', ') || '';
+            }
+            if (action === 'automatch') {
+                const by = d.matched_by || 'unknown';
+                return `Matched by ${by}` + (d.slug ? ` (${d.slug})` : '');
+            }
+            if (action === 'manual_match') {
+                return `Linked to ${d.slug || d.input || 'HC ' + (d.hardcover_book_id || '?')}`;
+            }
+            if (action === 'adopt_user_book') {
+                const status = HC_STATUS_NAMES[d.status_id] || '';
+                return status ? `Adopted existing (${status})` : 'Adopted existing';
+            }
+            if (action === 'create_user_book') {
+                const status = HC_STATUS_NAMES[d.status_id] || '';
+                return status ? `Created as ${status}` : 'Created';
+            }
+            // Fallback: key: value pairs
+            return Object.entries(d)
+                .filter(([, v]) => v != null)
+                .map(([k, v]) => k.replace(/_/g, ' ') + ': ' + v)
+                .join(', ');
+        }
+
         function renderHcRow(log) {
             const tr = document.createElement('tr');
 
@@ -671,7 +747,7 @@
             tr.appendChild(tdDir);
 
             const tdAction = document.createElement('td');
-            tdAction.textContent = (log.action || '').replace(/_/g, ' ');
+            tdAction.textContent = HC_ACTION_LABELS[log.action] || (log.action || '').replace(/_/g, ' ');
             tr.appendChild(tdAction);
 
             const tdTitle = document.createElement('td');
@@ -681,16 +757,7 @@
 
             const tdDetail = document.createElement('td');
             tdDetail.className = 'hc-detail';
-            if (log.error_message) {
-                tdDetail.textContent = log.error_message;
-            } else if (log.detail && typeof log.detail === 'object') {
-                tdDetail.textContent = Object.entries(log.detail)
-                    .filter(([, v]) => v != null)
-                    .map(([k, v]) => k + ': ' + v)
-                    .join(', ');
-            } else if (log.detail) {
-                tdDetail.textContent = String(log.detail);
-            }
+            tdDetail.textContent = formatHcDetail(log);
             tr.appendChild(tdDetail);
 
             const tdStatus = document.createElement('td');
@@ -715,6 +782,7 @@
 
             try {
                 const res = await fetch('/api/logs/hardcover?' + params);
+                if (!res.ok) throw new Error('Server returned ' + res.status);
                 const data = await res.json();
                 hcLoaded = true;
                 hcTotalPages = data.total_pages || 1;

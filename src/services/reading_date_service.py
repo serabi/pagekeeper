@@ -107,55 +107,65 @@ def _push_completion_to_clients(book, container, database_service):
         _push_booklore_read_status(book, container, 'READ')
 
 
-def push_dates_to_hardcover(abs_id, container, database_service):
-    """Push local started_at/finished_at to Hardcover if the HC read is missing those dates.
+def push_dates_to_hardcover(abs_id, container, database_service, *, force=False):
+    """Push local started_at/finished_at to Hardcover.
 
-    Only fills in missing dates on the Hardcover side — never overwrites existing HC dates.
+    By default, only fills in missing dates on the Hardcover side.
+    When force=True (user-initiated edit), overwrites existing HC dates.
+
+    Returns True if dates were pushed, False otherwise.
     """
     try:
         hardcover_client = container.hardcover_client()
         if not hardcover_client.is_configured():
-            return
+            return False
 
         hc_details = database_service.get_hardcover_details(abs_id)
         if not hc_details or not hc_details.hardcover_book_id:
-            return
+            return False
 
         book = database_service.get_book(abs_id)
         if not book:
-            return
+            return False
 
         # Only push if we have local dates to offer
         if not book.started_at and not book.finished_at:
-            return
+            return False
 
         user_book = hardcover_client.find_user_book(int(hc_details.hardcover_book_id))
         if not user_book:
-            return
+            return False
 
         reads = user_book.get("user_book_reads", [])
         if not reads:
-            return
+            return False
 
         read = reads[0]
         hc_started = read.get("started_at")
         hc_finished = read.get("finished_at")
 
-        # Only push if HC is missing the date and we have it locally
-        needs_push = False
-        if book.started_at and not hc_started:
-            needs_push = True
-        if book.finished_at and not hc_finished:
-            needs_push = True
+        if force:
+            # Force mode: push any local date that differs from HC
+            needs_push = False
+            if book.started_at and book.started_at != hc_started:
+                needs_push = True
+            if book.finished_at and book.finished_at != hc_finished:
+                needs_push = True
+        else:
+            # Default: only push if HC is missing the date and we have it locally
+            needs_push = False
+            if book.started_at and not hc_started:
+                needs_push = True
+            if book.finished_at and not hc_finished:
+                needs_push = True
 
         if not needs_push:
-            return
+            return False
 
         # Use update_progress to set dates on the user_book_read
-        # We need the user_book_id — use cached or from the user_book
         user_book_id = hc_details.hardcover_user_book_id or user_book.get('id')
         if not user_book_id:
-            return
+            return False
 
         # Calculate current page/seconds for the progress update
         audio_seconds = hc_details.hardcover_audio_seconds or 0
@@ -167,14 +177,22 @@ def push_dates_to_hardcover(abs_id, container, database_service):
 
         pages = max(0, min(total_pages, int(total_pages * local_pct))) if total_pages > 0 else 0
 
-        # Build kwargs, forwarding local dates only when HC is missing them
+        if force:
+            # Only force-push dates that actually differ from HC
+            push_started = book.started_at if book.started_at and book.started_at != hc_started else None
+            push_finished = book.finished_at if book.finished_at and book.finished_at != hc_finished else None
+        else:
+            push_started = book.started_at if book.started_at and not hc_started else None
+            push_finished = book.finished_at if book.finished_at and not hc_finished else None
+
         progress_kwargs = {
             'edition_id': hc_details.hardcover_edition_id,
             'is_finished': is_finished,
             'current_percentage': local_pct,
             'audio_seconds': audio_seconds if audio_seconds > 0 else None,
-            'started_at': book.started_at if book.started_at and not hc_started else None,
-            'finished_at': book.finished_at if book.finished_at and not hc_finished else None,
+            'started_at': push_started,
+            'finished_at': push_finished,
+            'force_dates': force,
         }
 
         hardcover_client.update_progress(
@@ -185,13 +203,15 @@ def push_dates_to_hardcover(abs_id, container, database_service):
         log_hardcover_action(
             database_service, abs_id=abs_id,
             direction='push', action='date_push',
-            detail={'started_at': book.started_at if not hc_started else None,
-                    'finished_at': book.finished_at if not hc_finished else None},
+            detail={'started_at': push_started, 'finished_at': push_finished,
+                    'force': force},
         )
-        logger.info(f"Pushed dates to Hardcover for '{abs_id}'")
+        logger.info(f"Pushed dates to Hardcover for '{abs_id}' (force={force})")
+        return True
 
     except Exception as e:
         logger.debug(f"Could not push dates to Hardcover for '{abs_id}': {e}")
+        return False
 
 
 def _push_booklore_read_status(book, container, status):
@@ -212,7 +232,7 @@ def _mark_completed(book, dates, database_service, stats, reason, container=None
     and read_count is incremented.
     """
     updates = {}
-    if dates.get('finished_at'):
+    if not book.finished_at and dates.get('finished_at'):
         updates['finished_at'] = dates['finished_at']
     elif not book.finished_at:
         updates['finished_at'] = date.today().isoformat()

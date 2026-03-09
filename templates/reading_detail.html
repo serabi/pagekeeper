@@ -58,9 +58,16 @@
                     </button>
                     {# Rating stars under cover #}
                     <div class="r-detail-rating" id="rating-stars" data-abs-id="{{ book.abs_id }}" data-rating="{{ book.rating or 0 }}" data-hardcover-sync-available="{{ 'true' if hardcover_rating_sync_available else 'false' }}">
-                        {% for i in range(1, 11) %}
-                        {% set value = i / 2 %}
-                        <button class="r-star-btn {% if value <= (book.rating or 0) %}filled{% endif %}" data-value="{{ value }}" type="button" title="{{ value }}/5">&#9733;</button>
+                        {% set rating = book.rating or 0 %}
+                        {% for i in range(1, 6) %}
+                        {% if rating >= i %}
+                          {% set state = 'full' %}
+                        {% elif rating >= i - 0.5 %}
+                          {% set state = 'half' %}
+                        {% else %}
+                          {% set state = 'empty' %}
+                        {% endif %}
+                        <button class="r-star-btn r-star-{{ state }}" data-index="{{ i }}" type="button" title="{{ i }}/5">&#9733;</button>
                         {% endfor %}
                         <span class="r-rating-label" id="rating-label">{% if book.rating %}{{ book.rating }}/5{% else %}Rate{% endif %}</span>
                     </div>
@@ -431,6 +438,13 @@
                             <input type="date" id="finished-at" class="input-inline" value="{{ book.finished_at or '' }}" data-abs-id="{{ book.abs_id }}">
                         </label>
                     </div>
+                    {% if hardcover_rating_sync_available %}
+                    <button type="button" class="r-hc-date-sync-btn" id="hc-date-sync" data-abs-id="{{ book.abs_id }}">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+                        Sync Dates to Hardcover
+                    </button>
+                    <span class="r-hc-date-sync-status" id="hc-date-sync-status" hidden></span>
+                    {% endif %}
 
                     <form class="r-journal-form" id="journal-form" data-abs-id="{{ book.abs_id }}">
                         <div class="r-journal-compose">
@@ -438,6 +452,14 @@
                             <textarea id="journal-entry" placeholder="What stood out in this session?" rows="3"></textarea>
                         </div>
                         <div class="r-journal-form-actions">
+                            {% if hardcover_linked %}
+                            <label class="r-journal-sync-toggle" title="Sync notes to Hardcover">
+                                <input type="checkbox" id="journal-sync-toggle" data-abs-id="{{ book.abs_id }}"
+                                    {% if journal_sync_enabled %}checked{% endif %}>
+                                <svg class="r-hc-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+                                <span class="r-journal-sync-label">HC sync</span>
+                            </label>
+                            {% endif %}
                             <button type="button" class="btn btn-secondary btn-sm r-journal-cancel hidden" id="journal-cancel">Cancel</button>
                             <button type="submit" class="btn btn-primary btn-sm r-journal-submit" id="journal-submit">Add Note</button>
                         </div>
@@ -453,7 +475,7 @@
 
                     <div class="r-timeline" id="journal-timeline">
                         {% for journal in journals %}
-                        <div class="r-tl-item" data-journal-id="{{ journal.id }}">
+                        <div class="r-tl-item" data-journal-id="{{ journal.id }}" data-entry="{{ journal.entry or '' }}">
                             <div class="r-tl-line"></div>
                             <div class="r-tl-dot r-tl-dot-{{ journal.event }}"></div>
                             <div class="r-tl-body">
@@ -473,6 +495,9 @@
                                     <div class="r-tl-menu-dropdown">
                                         {% if journal.event == 'note' %}
                                         <button class="r-tl-menu-item" type="button" data-action="edit">Edit</button>
+                                        {% endif %}
+                                        {% if hardcover_linked and journal.entry %}
+                                        <button class="r-tl-menu-item" type="button" data-action="push-hardcover">Push to Hardcover</button>
                                         {% endif %}
                                         <button class="r-tl-menu-item r-tl-menu-item--danger" type="button" data-action="delete">Delete</button>
                                     </div>
@@ -511,6 +536,29 @@
         </div>
         {% endif %}
     </div>
+
+    {# ── Hardcover Push Modal ── #}
+    {% if hardcover_linked %}
+    <div id="hc-push-modal" class="confirm-modal" style="display:none;" data-privacy-default="{{ journal_privacy_default }}">
+        <div class="confirm-modal-overlay" onclick="closeHcPushModal()"></div>
+        <div class="confirm-modal-box">
+            <h3 class="confirm-modal-title">Push to Hardcover</h3>
+            <p class="confirm-modal-message" id="hc-push-preview"></p>
+            <div class="hc-push-privacy">
+                <label for="hc-push-privacy-select">Privacy:</label>
+                <select id="hc-push-privacy-select" class="form-select">
+                    <option value="3">Private</option>
+                    <option value="2">Followers Only</option>
+                    <option value="1">Public</option>
+                </select>
+            </div>
+            <div class="confirm-modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeHcPushModal()">Cancel</button>
+                <button type="button" class="btn btn-primary" id="hc-push-confirm">Push</button>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 
     {# ── Cover Picker Modal ── #}
     <div id="cover-picker-modal" class="modal-backdrop" style="display:none;" onclick="if(event.target===this)closeCoverPicker()">
@@ -831,7 +879,10 @@
         }
 
         document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') closeRdConfirm();
+            if (e.key === 'Escape') {
+                closeRdConfirm();
+                if (typeof closeHcPushModal === 'function') closeHcPushModal();
+            }
         });
 
         // Toggle metadata

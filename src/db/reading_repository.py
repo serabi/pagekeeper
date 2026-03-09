@@ -53,16 +53,29 @@ class ReadingRepository(BaseRepository):
             ReadingJournal(abs_id=abs_id, event=event, entry=entry, percentage=percentage, created_at=created_at)
         )
 
-    def update_reading_journal(self, journal_id, *, entry=None):
+    def update_reading_journal(self, journal_id, *, entry=None, created_at=None):
         with self.get_session() as session:
             journal = session.query(ReadingJournal).filter(ReadingJournal.id == journal_id).first()
             if not journal:
                 return None
             if entry is not None:
                 journal.entry = entry
+            if created_at is not None:
+                journal.created_at = created_at
             session.flush()
             session.refresh(journal)
             session.expunge(journal)
+            return journal
+
+    def find_journal_by_event(self, abs_id, event):
+        """Find the most recent journal entry for a book with a given event type."""
+        with self.get_session() as session:
+            journal = session.query(ReadingJournal).filter(
+                ReadingJournal.abs_id == abs_id,
+                ReadingJournal.event == event,
+            ).order_by(ReadingJournal.created_at.desc()).first()
+            if journal:
+                session.expunge(journal)
             return journal
 
     def cleanup_bookfusion_import_notes(self, abs_id=None):

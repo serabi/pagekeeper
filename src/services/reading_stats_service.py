@@ -50,7 +50,7 @@ class ReadingStatsService:
 
         goal = self.database_service.get_reading_goal(year)
         goal_target = goal.target_books if goal else None
-        goal_percent = 0.0
+        goal_percent = None
         if goal_target and goal_target > 0:
             goal_percent = min(round((books_finished / goal_target) * 100, 1), 100.0)
 
@@ -74,7 +74,7 @@ class ReadingStatsService:
         max_progress = 0.0
         for state in states:
             pct = getattr(state, 'percentage', None)
-            if pct:
+            if pct is not None:
                 max_progress = max(max_progress, float(pct) * 100.0)
         return min(max_progress, 100.0)
 

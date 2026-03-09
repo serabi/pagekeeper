@@ -720,6 +720,26 @@
                                     </div>
                                     <div class="help-text">Create a Hardcover reading journal entry when you finish a book.</div>
                                 </div>
+                                <div class="form-group">
+                                    <label for="HARDCOVER_JOURNAL_PUSH_NOTES">Push Notes to Hardcover</label>
+                                    <div class="toggle-switch-wrapper">
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" id="HARDCOVER_JOURNAL_PUSH_NOTES" name="HARDCOVER_JOURNAL_PUSH_NOTES"
+                                                {% if get_bool('HARDCOVER_JOURNAL_PUSH_NOTES') %}checked{% endif %}>
+                                            <span class="slider"></span>
+                                        </label>
+                                    </div>
+                                    <div class="help-text">Automatically push journal notes to Hardcover when created. Can be overridden per book.</div>
+                                </div>
+                                <div class="form-group">
+                                    <label for="HARDCOVER_JOURNAL_PRIVACY">Journal Privacy</label>
+                                    <select id="HARDCOVER_JOURNAL_PRIVACY" name="HARDCOVER_JOURNAL_PRIVACY" class="form-select">
+                                        <option value="3" {% if get_val('HARDCOVER_JOURNAL_PRIVACY') != '1' and get_val('HARDCOVER_JOURNAL_PRIVACY') != '2' %}selected{% endif %}>Private</option>
+                                        <option value="2" {% if get_val('HARDCOVER_JOURNAL_PRIVACY') == '2' %}selected{% endif %}>Followers Only</option>
+                                        <option value="1" {% if get_val('HARDCOVER_JOURNAL_PRIVACY') == '1' %}selected{% endif %}>Public</option>
+                                    </select>
+                                    <div class="help-text">Privacy level for all journal entries pushed to Hardcover (notes, start/finish events).</div>
+                                </div>
                             </div>
                         </div>
                     </div>

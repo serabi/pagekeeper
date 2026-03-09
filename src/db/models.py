@@ -187,6 +187,7 @@ class HardcoverDetails(Base):
     hardcover_user_book_read_id = Column(Integer, nullable=True)
     hardcover_status_id = Column(Integer, nullable=True)
     hardcover_audio_edition_id = Column(String(255), nullable=True)
+    journal_sync = Column(String(10), nullable=True)  # 'on', 'off', or None (use global default)
 
     # Relationship
     book = relationship("Book", back_populates="hardcover_details")
@@ -197,7 +198,8 @@ class HardcoverDetails(Base):
                  isbn: str = None, asin: str = None, matched_by: str = None,
                  hardcover_cover_url: str = None,
                  hardcover_user_book_id: int = None, hardcover_user_book_read_id: int = None,
-                 hardcover_status_id: int = None, hardcover_audio_edition_id: str = None):
+                 hardcover_status_id: int = None, hardcover_audio_edition_id: str = None,
+                 journal_sync: str = None):
         self.abs_id = abs_id
         self.hardcover_book_id = hardcover_book_id
         self.hardcover_slug = hardcover_slug
@@ -212,6 +214,7 @@ class HardcoverDetails(Base):
         self.hardcover_user_book_read_id = hardcover_user_book_read_id
         self.hardcover_status_id = hardcover_status_id
         self.hardcover_audio_edition_id = hardcover_audio_edition_id
+        self.journal_sync = journal_sync
 
     def __repr__(self):
         return f"<HardcoverDetails(abs_id='{self.abs_id}', hardcover_book_id='{self.hardcover_book_id}')>"

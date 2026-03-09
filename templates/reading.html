@@ -318,6 +318,7 @@
                     </div>
                     <div class="r-stats-chart" id="stats-chart">
                         {% set monthly = stats.monthly_finished|default([0,0,0,0,0,0,0,0,0,0,0,0]) %}
+                        {% set monthly_labels = stats.monthly_labels|default(['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']) %}
                         {% set max_monthly = (monthly|max) if monthly else 0 %}
                         {% for idx in range(12) %}
                         {% set month_value = monthly[idx] %}
@@ -327,7 +328,7 @@
                                 <span class="r-stats-bar-fill" style="height: {{ '%.1f'|format(month_pct) }}%;"></span>
                             </div>
                             <span class="r-stats-bar-value">{{ month_value }}</span>
-                            <span class="r-stats-bar-label">{{ stats.monthly_labels[idx] }}</span>
+                            <span class="r-stats-bar-label">{{ monthly_labels[idx] }}</span>
                         </div>
                         {% endfor %}
                     </div>

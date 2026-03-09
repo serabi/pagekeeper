@@ -231,7 +231,7 @@ class HardcoverSyncClient(SyncClient):
             return
 
         try:
-            edition_id = self._select_edition_id(book, hardcover_details)
+            edition_id = self.select_edition_id(book, hardcover_details)
             self.hardcover_client.update_status(
                 int(hardcover_details.hardcover_book_id),
                 hc_status_id,
@@ -293,7 +293,7 @@ class HardcoverSyncClient(SyncClient):
             return ub
 
         hc_status_id = LOCAL_TO_HC_STATUS.get(book.status, HC_WANT_TO_READ)
-        edition_id = self._select_edition_id(book, hardcover_details)
+        edition_id = self.select_edition_id(book, hardcover_details)
         created = self.hardcover_client.update_status(
             int(hardcover_details.hardcover_book_id),
             hc_status_id,
@@ -350,13 +350,13 @@ class HardcoverSyncClient(SyncClient):
             hardcover_details.hardcover_user_book_id = result['id']
             hardcover_details.hardcover_status_id = result.get('status_id', hc_status_id)
             self.database_service.save_hardcover_details(hardcover_details)
-        record_write('Hardcover', book.abs_id, {'status': hc_status_id})
-        log_hardcover_action(
-            self.database_service, abs_id=book.abs_id,
-            book_title=sanitize_log_data(book.abs_title),
-            direction='push', action='create_user_book',
-            detail={'status_id': hc_status_id, 'user_book_id': result.get('id') if result else None},
-        )
+            record_write('Hardcover', book.abs_id, {'status': hc_status_id})
+            log_hardcover_action(
+                self.database_service, abs_id=book.abs_id,
+                book_title=sanitize_log_data(book.abs_title),
+                direction='push', action='create_user_book',
+                detail={'status_id': hc_status_id, 'user_book_id': result['id']},
+            )
 
     def _ensure_read_id(self, user_book_id, hardcover_details):
         """Return cached read ID or fetch and cache it.
@@ -372,7 +372,7 @@ class HardcoverSyncClient(SyncClient):
 
     # ── Edition Selection (Step 7) ────────────────────────────────────
 
-    def _select_edition_id(self, book, hardcover_details):
+    def select_edition_id(self, book, hardcover_details):
         """Select the appropriate edition based on sync source."""
         sync_source = getattr(book, 'sync_source', None)
         if sync_source == 'audiobook' and hardcover_details.hardcover_audio_edition_id:
@@ -380,6 +380,15 @@ class HardcoverSyncClient(SyncClient):
         return hardcover_details.hardcover_edition_id
 
     # ── Optional Journal Mirroring (Step 14) ──────────────────────────
+
+    def get_journal_privacy(self) -> int:
+        """Read the user's journal privacy setting (default: 3 = private)."""
+        if not self.database_service:
+            return 3
+        val = self.database_service.get_setting('HARDCOVER_JOURNAL_PRIVACY')
+        if val and val.isdigit() and int(val) in (1, 2, 3):
+            return int(val)
+        return 3
 
     def _mirror_journal_if_enabled(self, book, hardcover_details, hc_status_id):
         """Create a Hardcover reading journal entry if the user has enabled mirroring."""
@@ -396,15 +405,77 @@ class HardcoverSyncClient(SyncClient):
             return
 
         try:
-            edition_id = self._select_edition_id(book, hardcover_details)
-            self.hardcover_client.create_reading_journal(
+            edition_id = self.select_edition_id(book, hardcover_details)
+            privacy = self.get_journal_privacy()
+            success = self.hardcover_client.create_reading_journal(
                 int(hardcover_details.hardcover_book_id),
                 int(edition_id) if edition_id else None,
                 event_name,
+                privacy_setting_id=privacy,
             )
-            logger.info(f"Hardcover journal mirrored: '{event_name}' for '{sanitize_log_data(book.abs_title)}'")
+            if success:
+                logger.info(f"Hardcover journal mirrored: '{event_name}' for '{sanitize_log_data(book.abs_title)}'")
+            else:
+                logger.warning(f"Hardcover journal mirror rejected: '{event_name}' for book {hardcover_details.hardcover_book_id} (edition {edition_id})")
         except Exception as e:
             logger.debug(f"Could not mirror journal to Hardcover: {e}")
+
+    def is_journal_push_enabled(self, hardcover_details) -> bool:
+        """Check if journal note pushing is enabled for this book.
+
+        Per-book override (journal_sync) takes precedence over global default.
+        """
+        per_book = hardcover_details.journal_sync
+        if per_book == 'on':
+            return True
+        if per_book == 'off':
+            return False
+        # None → fall back to global setting
+        if not self.database_service:
+            return False
+        val = self.database_service.get_setting('HARDCOVER_JOURNAL_PUSH_NOTES')
+        return val and val.lower() == 'true'
+
+    def push_journal_note(self, book, entry: str):
+        """Push a journal note to Hardcover (fire-and-forget on creation)."""
+        if not self.is_configured() or not self.database_service:
+            return
+
+        hardcover_details = self.database_service.get_hardcover_details(book.abs_id)
+        if not hardcover_details or not hardcover_details.hardcover_book_id:
+            return
+
+        if not self.is_journal_push_enabled(hardcover_details):
+            return
+
+        try:
+            edition_id = self.select_edition_id(book, hardcover_details)
+            privacy = self.get_journal_privacy()
+            success = self.hardcover_client.create_reading_journal(
+                int(hardcover_details.hardcover_book_id),
+                int(edition_id) if edition_id else None,
+                'note',
+                entry=entry,
+                privacy_setting_id=privacy,
+            )
+            if success:
+                log_hardcover_action(
+                    self.database_service, abs_id=book.abs_id,
+                    book_title=sanitize_log_data(book.abs_title),
+                    direction='push', action='journal_note',
+                    detail={'entry_preview': entry[:80] + ('...' if len(entry) > 80 else ''), 'privacy': privacy},
+                )
+                logger.info(f"Hardcover journal note pushed for '{sanitize_log_data(book.abs_title)}'")
+            else:
+                logger.warning(f"Hardcover journal note rejected for book {hardcover_details.hardcover_book_id} (edition {edition_id})")
+        except Exception as e:
+            log_hardcover_action(
+                self.database_service, abs_id=book.abs_id,
+                book_title=sanitize_log_data(book.abs_title),
+                direction='push', action='journal_note',
+                success=False, error_message=str(e),
+            )
+            logger.debug(f"Could not push journal note to Hardcover: {e}")
 
     def push_local_rating(self, book, rating):
         """Mirror a local rating change to Hardcover when a link exists."""
@@ -635,7 +706,7 @@ class HardcoverSyncClient(SyncClient):
             new_status = HC_CURRENTLY_READING
 
         if new_status != current_status:
-            edition_id = self._select_edition_id(book, hardcover_details)
+            edition_id = self.select_edition_id(book, hardcover_details)
             try:
                 self.hardcover_client.update_status(
                     int(hardcover_details.hardcover_book_id),
@@ -695,7 +766,7 @@ class HardcoverSyncClient(SyncClient):
         is_audiobook = getattr(book, 'sync_source', None) == 'audiobook'
 
         # Edition-aware: select correct edition based on sync source (Step 7)
-        edition_id = self._select_edition_id(book, hardcover_details)
+        edition_id = self.select_edition_id(book, hardcover_details)
 
         if is_audiobook and audio_seconds > 0:
             return self._update_audiobook_progress(book, hardcover_details, ub, percentage, audio_seconds, edition_id)
@@ -721,7 +792,7 @@ class HardcoverSyncClient(SyncClient):
                     hardcover_details.hardcover_audio_edition_id = str(audio_ed['id'])
                     hardcover_details.hardcover_audio_seconds = audio_ed['audio_seconds']
                 self.database_service.save_hardcover_details(hardcover_details)
-                edition_id = self._select_edition_id(book, hardcover_details)
+                edition_id = self.select_edition_id(book, hardcover_details)
             elif audio_ed and audio_ed.get('audio_seconds') and audio_ed['audio_seconds'] > 0:
                 audio_seconds = audio_ed['audio_seconds']
                 hardcover_details.hardcover_audio_seconds = audio_seconds
@@ -729,7 +800,7 @@ class HardcoverSyncClient(SyncClient):
                 hardcover_details.hardcover_edition_id = audio_ed['id']
                 hardcover_details.hardcover_pages = -1
                 self.database_service.save_hardcover_details(hardcover_details)
-                edition_id = self._select_edition_id(book, hardcover_details)
+                edition_id = self.select_edition_id(book, hardcover_details)
                 return self._update_audiobook_progress(book, hardcover_details, ub, percentage, audio_seconds, edition_id)
             else:
                 hardcover_details.hardcover_pages = -1
