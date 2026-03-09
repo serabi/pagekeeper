@@ -1166,9 +1166,9 @@ class HardcoverClient:
 
         result = self.query(query, {"object": obj})
         if result and result.get("insert_reading_journal"):
-            error = result["insert_reading_journal"].get("error")
-            if error:
-                logger.error(f"Hardcover create_reading_journal error: {error}")
+            errors = result["insert_reading_journal"].get("errors")
+            if errors:
+                logger.error(f"Hardcover create_reading_journal error: {errors}")
                 return False
             if result["insert_reading_journal"].get("reading_journal"):
                 return True

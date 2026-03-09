@@ -51,13 +51,12 @@ def _resolve_journal_sync(hardcover_details, database_service):
     """Resolve whether journal sync is enabled for a book (per-book or global)."""
     if not hardcover_details or not hardcover_details.hardcover_book_id:
         return False
-    per_book = hardcover_details.journal_sync
-    if per_book == 'on':
-        return True
-    if per_book == 'off':
+    try:
+        container = get_container()
+        hc_sync = container.hardcover_sync_client()
+        return hc_sync.is_journal_push_enabled(hardcover_details)
+    except Exception:
         return False
-    val = database_service.get_setting('HARDCOVER_JOURNAL_PUSH_NOTES')
-    return val and val.lower() == 'true'
 
 
 def _synthetic_journal(abs_id, event, date_str, percentage=None):
@@ -723,8 +722,8 @@ def add_journal(abs_id):
         hc_sync = container.hardcover_sync_client()
         if hc_sync.is_configured():
             hc_sync.push_journal_note(book, entry)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug(f"Hardcover journal push failed for {abs_id}: {e}")
 
     return jsonify({
         "success": True,
@@ -824,10 +823,10 @@ def push_journal_to_hardcover(journal_id):
             privacy_override = None
 
         hc_sync = container.hardcover_sync_client()
-        edition_id = hc_sync._select_edition_id(
+        edition_id = hc_sync.select_edition_id(
             database_service.get_book(journal.abs_id), hardcover_details
         )
-        privacy = privacy_override if privacy_override in (1, 2, 3) else hc_sync._get_journal_privacy()
+        privacy = privacy_override if privacy_override in (1, 2, 3) else hc_sync.get_journal_privacy()
 
         book = database_service.get_book(journal.abs_id)
         book_title = book.abs_title if book else None

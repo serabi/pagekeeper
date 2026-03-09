@@ -4,8 +4,8 @@ Revision ID: j1s2y3n4c5o6
 Revises:
 Create Date: 2026-03-08
 """
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 
 revision = 'j1s2y3n4c5o6'
 down_revision = 'add_hardcover_sync_log_table'

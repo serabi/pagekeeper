@@ -34,7 +34,7 @@ def upgrade() -> None:
         sa.Column('detail', sa.Text(), nullable=True),
         sa.Column('success', sa.Boolean(), server_default=sa.text('1')),
         sa.Column('error_message', sa.Text(), nullable=True),
-        sa.Column('created_at', sa.DateTime(), server_default=sa.text("(datetime('now'))")),
+        sa.Column('created_at', sa.DateTime(), server_default=sa.text('CURRENT_TIMESTAMP')),
     )
     op.create_index('ix_hardcover_sync_logs_abs_id', 'hardcover_sync_logs', ['abs_id'])
     op.create_index('ix_hardcover_sync_logs_action', 'hardcover_sync_logs', ['action'])
