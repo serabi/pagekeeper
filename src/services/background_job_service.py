@@ -400,11 +400,24 @@ class BackgroundJobService:
         if not book.storyteller_uuid and not self.storyteller_client:
             return None
 
-        # Check for active submission awaiting processing
+        # Check for active submission — refresh its status from Storyteller first
         submission = self.database_service.get_active_storyteller_submission(abs_id)
         if submission and submission.status in ("queued", "processing"):
-            logger.info(f"Storyteller processing not yet complete for '{sanitize_log_data(book.abs_title)}'")
-            return "STORYTELLER_PENDING"
+            if self.storyteller_submission_service:
+                fresh_status = self.storyteller_submission_service.check_status(abs_id)
+                if fresh_status == "ready":
+                    # Storyteller finished! Update the book's storyteller_uuid and proceed to alignment
+                    updated_sub = self.database_service.get_storyteller_submission(abs_id)
+                    if updated_sub and updated_sub.storyteller_uuid and not book.storyteller_uuid:
+                        book.storyteller_uuid = updated_sub.storyteller_uuid
+                        self.database_service.save_book(book)
+                    logger.info(f"Storyteller processing complete for '{sanitize_log_data(book.abs_title)}'")
+                else:
+                    logger.info(f"Storyteller processing not yet complete for '{sanitize_log_data(book.abs_title)}'")
+                    return "STORYTELLER_PENDING"
+            else:
+                logger.info(f"Storyteller processing not yet complete for '{sanitize_log_data(book.abs_title)}'")
+                return "STORYTELLER_PENDING"
 
         if not (
             book.storyteller_uuid and self.storyteller_client and os.environ.get("STORYTELLER_ASSETS_DIR", "").strip()
