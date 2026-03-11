@@ -130,6 +130,9 @@
 
         <div class="r-main-tab-bar" role="tablist" aria-label="Reading sections">
             <button class="r-main-tab-btn active" type="button" id="tab-log" role="tab" data-main-tab="log" aria-selected="true" aria-controls="panel-log">Log</button>
+            <button class="r-main-tab-btn" type="button" id="tab-tbr" role="tab" data-main-tab="tbr" aria-selected="false" aria-controls="panel-tbr">
+                Want to Read{% if tbr_count %} <span class="r-tab-badge">{{ tbr_count }}</span>{% endif %}
+            </button>
             <button class="r-main-tab-btn" type="button" id="tab-stats" role="tab" data-main-tab="stats" aria-selected="false" aria-controls="panel-stats">Stats</button>
         </div>
 
@@ -245,6 +248,79 @@
         </div>
         </div>
 
+        <div class="r-main-panel" id="panel-tbr" data-main-panel="tbr" role="tabpanel" aria-labelledby="tab-tbr" hidden>
+            <div class="r-tbr-header">
+                <div>
+                    <p class="r-page-kicker">To Be Read</p>
+                    <h3 class="r-stats-title">Want to Read</h3>
+                </div>
+                <div class="r-tbr-actions">
+                    {% if hc_configured %}
+                    <div class="r-tbr-import-menu">
+                        <button class="btn btn-secondary" id="tbr-import-btn" type="button">Import from Hardcover</button>
+                        <div class="r-tbr-import-dropdown" id="tbr-import-dropdown">
+                            <button class="r-tbr-import-option" id="tbr-import-wtr" type="button">Import Want to Read</button>
+                            <button class="r-tbr-import-option" id="tbr-import-list" type="button">Import from List...</button>
+                        </div>
+                    </div>
+                    {% endif %}
+                    <button class="btn btn-primary" id="tbr-add-btn" type="button">Add Book</button>
+                </div>
+            </div>
+
+            <div class="r-tbr-grid" id="tbr-grid">
+                <div class="r-tbr-empty" id="tbr-empty">
+                    <p>No books on your list yet. Search and add books you want to read.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- TBR Add Book Modal -->
+        <div id="tbr-add-modal" class="modal-backdrop" style="display: none;">
+            <div class="modal-content r-tbr-modal-content">
+                <div class="modal-header">
+                    <h3>Add Book</h3>
+                    <button class="modal-close" id="tbr-add-close" type="button">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="r-tbr-search-bar">
+                        <input type="text" id="tbr-search-input" placeholder="Search by title or author..." class="search-box" autocomplete="off">
+                        {% if hc_configured %}
+                        <div class="r-tbr-provider-toggle">
+                            <button class="r-tbr-provider-btn active" data-provider="hardcover" type="button">Hardcover</button>
+                            <button class="r-tbr-provider-btn" data-provider="open_library" type="button">Open Library</button>
+                        </div>
+                        {% endif %}
+                    </div>
+                    <div class="r-tbr-search-results" id="tbr-search-results"></div>
+                    <div class="r-tbr-manual-section">
+                        <button class="r-tbr-manual-toggle" id="tbr-manual-toggle" type="button">Or add manually</button>
+                        <div class="r-tbr-manual-form" id="tbr-manual-form" hidden>
+                            <input type="text" id="tbr-manual-title" placeholder="Title" class="search-box">
+                            <input type="text" id="tbr-manual-author" placeholder="Author (optional)" class="search-box">
+                            <textarea id="tbr-manual-notes" placeholder="Notes (optional)" class="search-box" rows="2"></textarea>
+                            <button class="btn btn-primary" id="tbr-manual-add" type="button">Add to List</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- TBR Hardcover List Picker Modal -->
+        <div id="tbr-list-modal" class="modal-backdrop" style="display: none;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Import from Hardcover List</h3>
+                    <button class="modal-close" id="tbr-list-close" type="button">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="r-tbr-list-picker" id="tbr-list-picker">
+                        <p style="color: var(--color-text-muted);">Loading lists...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="r-main-panel" id="panel-stats" data-main-panel="stats" role="tabpanel" aria-labelledby="tab-stats" hidden>
             <section class="r-stats-shell" id="reading-stats-shell"
                      data-current-year="{{ current_year }}"
@@ -356,9 +432,10 @@
         </div>
     </div>
 
-    <script src="/static/js/reading.js?v=4"></script>
+    <script src="/static/js/reading.js?v=6"></script>
     <script>
-        initReadingPage({{ current_year }});
+        initReadingPage({{ current_year }}, '{{ active_tab }}');
+        initTbrTab({{ 'true' if hc_configured else 'false' }});
     </script>
 </body>
 </html>

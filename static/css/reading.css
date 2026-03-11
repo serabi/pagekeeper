@@ -2994,3 +2994,718 @@ a.r-service-row-name:hover { text-decoration: underline; }
   background: rgba(239, 68, 68, 0.1);
   border-color: var(--color-danger, #ef4444);
 }
+
+
+/* ═══════════════════════════════════════════
+   TBR (WANT TO READ) TAB
+   ═══════════════════════════════════════════ */
+
+.r-tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.r-tbr-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.r-tbr-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.r-tbr-import-menu {
+  position: relative;
+}
+
+.r-tbr-import-dropdown {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 200px;
+  flex-direction: column;
+  padding: 6px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(12, 16, 29, 0.96);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+  z-index: 10;
+}
+
+.r-tbr-import-dropdown.open {
+  display: flex;
+}
+
+.r-tbr-import-option {
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+}
+
+.r-tbr-import-option:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-text);
+}
+
+/* TBR Grid */
+.r-tbr-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 16px;
+}
+
+.r-tbr-card {
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.03);
+  transition: background var(--transition);
+  overflow: hidden;
+}
+
+.r-tbr-card:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.r-tbr-card-cover {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2/3;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+  flex-shrink: 0;
+}
+
+.r-tbr-card-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.r-tbr-card-cover-empty {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  color: var(--color-text-faint);
+}
+
+.r-tbr-card-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px 12px;
+}
+
+.r-tbr-card-title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--color-text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.r-tbr-card-author {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.r-tbr-card-info {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--color-text-faint);
+}
+
+.r-tbr-card-info-star {
+  color: #f5a623;
+}
+
+.r-tbr-card-info span:not(:last-child)::after {
+  content: '\00b7';
+  margin-left: 4px;
+  color: var(--color-text-faint);
+}
+
+.r-tbr-card-genres {
+  display: flex;
+  gap: 4px;
+}
+
+.r-tbr-card-genre-pill {
+  display: inline-block;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--color-text-faint);
+  max-width: 120px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.r-tbr-card-meta {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+.r-tbr-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--color-text-faint);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.r-tbr-badge--library {
+  color: var(--color-success);
+  background: var(--color-success-light);
+  border-color: transparent;
+}
+
+.r-tbr-card-actions {
+  display: none;
+}
+
+.r-tbr-action-btn {
+  border: none;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.r-tbr-action-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-text);
+}
+
+.r-tbr-action-btn--start {
+  color: var(--color-success);
+}
+
+.r-tbr-action-btn--start:hover {
+  background: var(--color-success-light);
+}
+
+.r-tbr-action-btn--remove:hover {
+  color: var(--color-error);
+  background: var(--color-error-light);
+}
+
+.r-tbr-empty {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 48px 16px;
+  color: var(--color-text-faint);
+  font-size: 14px;
+  border: 1px dashed rgba(255, 255, 255, 0.08);
+  border-radius: 18px;
+}
+
+/* TBR Add Book Modal */
+.r-tbr-modal-content {
+  max-width: 560px;
+}
+
+.r-tbr-search-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.r-tbr-provider-toggle {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  align-self: flex-start;
+}
+
+.r-tbr-provider-btn {
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 12px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.r-tbr-provider-btn.active {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--color-text);
+}
+
+.r-tbr-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 350px;
+  overflow-y: auto;
+  margin-bottom: 16px;
+}
+
+.r-tbr-result {
+  display: flex;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.r-tbr-result:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.r-tbr-result-cover {
+  width: 40px;
+  min-width: 40px;
+  height: 60px;
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.04);
+  flex-shrink: 0;
+}
+
+.r-tbr-result-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.r-tbr-result-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+
+.r-tbr-result-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.r-tbr-result-author {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.r-tbr-result-added {
+  font-size: 11px;
+  color: var(--color-success);
+  font-weight: 600;
+}
+
+.r-tbr-manual-section {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 12px;
+}
+
+.r-tbr-manual-toggle {
+  border: none;
+  background: none;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 4px 0;
+  transition: color var(--transition);
+}
+
+.r-tbr-manual-toggle:hover {
+  color: var(--color-text);
+}
+
+.r-tbr-manual-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.r-tbr-manual-form textarea {
+  resize: vertical;
+  min-height: 48px;
+}
+
+/* TBR List Picker */
+.r-tbr-list-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.r-tbr-list-option {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.r-tbr-list-option:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.r-tbr-list-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.r-tbr-list-count {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+/* TBR Import feedback toast */
+.r-tbr-toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  padding: 12px 20px;
+  border-radius: 12px;
+  background: rgba(12, 16, 29, 0.96);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 500;
+  z-index: 1100;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+  animation: tbr-toast-in 0.3s ease-out;
+}
+
+@keyframes tbr-toast-in {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* TBR Detail Page — source badges */
+.tbr-source-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--color-text-muted);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.tbr-source-badge--hc {
+  background: rgba(76, 175, 80, 0.12);
+  color: #81c784;
+  border-color: rgba(76, 175, 80, 0.2);
+}
+
+.tbr-source-badge--ol {
+  background: rgba(33, 150, 243, 0.12);
+  color: #64b5f6;
+  border-color: rgba(33, 150, 243, 0.2);
+}
+
+/* TBR Detail Page — genre pills in hero */
+.tbr-genre-pills {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+/* TBR Detail Page — hero action grid */
+.tbr-hero-actions {
+  grid-template-columns: repeat(3, 1fr);
+  margin-top: 12px;
+}
+
+.r-hero-action-btn--start {
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
+}
+
+.r-hero-action-btn--danger {
+  color: var(--color-error);
+}
+
+/* TBR Detail Page — description */
+.tbr-description {
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--color-text-muted);
+}
+
+/* TBR Detail Page — notes */
+.tbr-notes-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.r-tbr-detail-notes {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 10px;
+  color: var(--color-text);
+  font-size: 13px;
+  padding: 10px 12px;
+  resize: vertical;
+  min-height: 60px;
+  font-family: inherit;
+}
+
+.r-tbr-detail-notes:focus {
+  outline: none;
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+/* TBR Detail Page — edit form */
+.tbr-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tbr-edit-row {
+  display: flex;
+  gap: 8px;
+}
+
+.tbr-edit-row input {
+  flex: 1;
+}
+
+.tbr-edit-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+
+/* TBR Detail Page — library link */
+.tbr-linked-book-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  text-decoration: none;
+  color: var(--color-text);
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.tbr-linked-book-card:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+.tbr-linked-book-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tbr-linked-book-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.tbr-linked-book-arrow {
+  font-size: 18px;
+  color: var(--color-text-muted);
+}
+
+.tbr-library-search-row {
+  margin-bottom: 8px;
+}
+
+.tbr-library-result {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  transition: background var(--transition);
+}
+
+.tbr-library-result:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+/* TBR Detail Page — footer */
+.tbr-detail-footer-info {
+  font-size: 11px;
+  color: var(--color-text-faint);
+  margin-top: 8px;
+  padding-bottom: 40px;
+}
+
+@media (max-width: 768px) {
+  .r-tbr-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .r-tbr-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .r-tbr-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .tbr-hero-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 400px) {
+  .r-tbr-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+}
+
+/* ── Up Next: section labels & dividers ── */
+
+.r-tbr-section-label {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  padding: 4px 0;
+}
+
+.r-tbr-section-hint {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--color-text-faint);
+  padding: 8px 0;
+}
+
+.r-tbr-section-divider {
+  grid-column: 1 / -1;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  margin: 4px 0;
+}
+
+/* Card accent for Up Next items */
+.r-tbr-card--upnext {
+  border-color: rgba(245, 166, 35, 0.3);
+}
+
+/* Bookmark toggle overlay on card cover */
+.r-tbr-upnext-toggle {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.15s;
+  z-index: 2;
+  padding: 0;
+}
+
+.r-tbr-card:hover .r-tbr-upnext-toggle,
+.r-tbr-card--upnext .r-tbr-upnext-toggle { opacity: 1; }
+
+.r-tbr-upnext-toggle--active { color: #f5a623; }
+
+@media (hover: none) {
+  .r-tbr-upnext-toggle { opacity: 0.7; }
+}
+
+/* Detail page Up Next button active state */
+.r-hero-action-btn--upnext-active {
+  background: rgba(245, 166, 35, 0.15);
+  border-color: rgba(245, 166, 35, 0.4);
+  color: #f5a623;
+}

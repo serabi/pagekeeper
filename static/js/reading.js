@@ -19,7 +19,7 @@ document.addEventListener('error', function (e) {
   }
 }, true);
 
-function initReadingPage(currentYear) {
+function initReadingPage(currentYear, activeTab) {
   const sectionsRoot = document.getElementById('reading-sections');
   if (!sectionsRoot) return;
 
@@ -60,7 +60,7 @@ function initReadingPage(currentYear) {
   mainTabs.forEach(tab => {
     tab.addEventListener('click', () => setMainTab(tab.dataset.mainTab));
   });
-  setMainTab('log');
+  setMainTab(activeTab || 'log');
 
   function syncSearchInputs(source) {
     const value = source ? source.value : '';
@@ -661,8 +661,8 @@ function initReadingDetail() {
           }
           resetJournalForm();
         })
-        .catch(() => {
-          // Show error feedback to user
+        .catch(err => {
+          console.warn('Journal save failed:', err);
         });
     });
 
@@ -940,4 +940,567 @@ function buildJournalNode(j) {
 
   item.appendChild(body);
   return item;
+}
+
+
+/* ═══════════════════════════════════════════
+   TBR (Want to Read) Tab
+   ═══════════════════════════════════════════ */
+
+function initTbrTab(hcConfigured) {
+  const grid = document.getElementById('tbr-grid');
+  const emptyState = document.getElementById('tbr-empty');
+  if (!grid) return;
+
+  let _searchTimer = null;
+  let _activeProvider = hcConfigured ? 'hardcover' : 'open_library';
+  const _itemsById = {};  // TBR item lookup map
+
+  /** Replace all children of el with a single text message paragraph. */
+  function setStatusMessage(el, text, color) {
+    while (el.firstChild) el.removeChild(el.firstChild);
+    const p = document.createElement('p');
+    p.style.cssText = 'font-size: 13px; padding: 8px; color: ' + (color || 'var(--color-text-muted)');
+    p.textContent = text;
+    el.appendChild(p);
+  }
+
+  // ── Load TBR items ──
+  function loadTbrItems() {
+    fetch('/api/reading/tbr')
+      .then(r => r.json())
+      .then(items => {
+        grid.querySelectorAll('.r-tbr-card, .r-tbr-section-label, .r-tbr-section-divider, .r-tbr-section-hint').forEach(c => c.remove());
+        // Rebuild lookup map
+        Object.keys(_itemsById).forEach(k => delete _itemsById[k]);
+        items.forEach(item => { _itemsById[item.id] = item; });
+
+        if (!items.length) {
+          if (emptyState) emptyState.hidden = false;
+          updateTabBadge(0);
+          return;
+        }
+        if (emptyState) emptyState.hidden = true;
+
+        // Split into Up Next vs normal
+        const upNext = items.filter(i => i.priority > 0);
+        const rest = items.filter(i => !i.priority);
+
+        const upNextLabel = document.createElement('div');
+        upNextLabel.className = 'r-tbr-section-label';
+        upNextLabel.textContent = upNext.length ? 'Up Next (' + upNext.length + ')' : 'Up Next';
+        grid.appendChild(upNextLabel);
+
+        if (upNext.length) {
+          upNext.forEach(item => grid.appendChild(buildTbrCard(item)));
+        } else {
+          const hint = document.createElement('div');
+          hint.className = 'r-tbr-section-hint';
+          hint.textContent = 'Bookmark books to add them here';
+          grid.appendChild(hint);
+        }
+
+        if (rest.length) {
+          const divider = document.createElement('div');
+          divider.className = 'r-tbr-section-divider';
+          grid.appendChild(divider);
+
+          const restLabel = document.createElement('div');
+          restLabel.className = 'r-tbr-section-label';
+          restLabel.textContent = 'Everything Else (' + rest.length + ')';
+          grid.appendChild(restLabel);
+        }
+        rest.forEach(item => grid.appendChild(buildTbrCard(item)));
+        updateTabBadge(items.length);
+
+        // Kick off background enrichment if any items lack metadata
+        const needsEnrich = items.some(i => !i.description && (i.hardcover_book_id || i.ol_work_key));
+        if (needsEnrich) runBackfillEnrichment();
+      })
+      .catch(() => showToast('Failed to load TBR list'));
+  }
+
+  function runBackfillEnrichment() {
+    fetch('/api/reading/tbr/enrich', { method: 'POST' })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success && data.enriched > 0) {
+          // Reload to show enriched data
+          loadTbrItems();
+        }
+      })
+      .catch(e => console.warn('TBR enrichment failed:', e));
+  }
+
+  function updateTabBadge(count) {
+    const tab = document.getElementById('tab-tbr');
+    if (!tab) return;
+    let badge = tab.querySelector('.r-tab-badge');
+    if (count > 0) {
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'r-tab-badge';
+        tab.appendChild(badge);
+      }
+      badge.textContent = count;
+    } else if (badge) {
+      badge.remove();
+    }
+  }
+
+  function buildTbrCard(item) {
+    const card = document.createElement('div');
+    card.className = 'r-tbr-card' + (item.priority ? ' r-tbr-card--upnext' : '');
+    card.dataset.tbrId = item.id;
+
+    const cover = document.createElement('div');
+    cover.className = 'r-tbr-card-cover';
+    if (item.cover_url) {
+      const img = document.createElement('img');
+      img.src = item.cover_url;
+      img.alt = '';
+      img.loading = 'lazy';
+      img.onerror = function() { this.style.display = 'none'; };
+      cover.appendChild(img);
+    } else {
+      const empty = document.createElement('div');
+      empty.className = 'r-tbr-card-cover-empty';
+      empty.textContent = '\u{1F4D6}';
+      cover.appendChild(empty);
+    }
+
+    // Up Next bookmark toggle
+    const bookmarkBtn = document.createElement('button');
+    bookmarkBtn.className = 'r-tbr-upnext-toggle' + (item.priority ? ' r-tbr-upnext-toggle--active' : '');
+    bookmarkBtn.type = 'button';
+    bookmarkBtn.title = item.priority ? 'Remove from Up Next' : 'Mark as Up Next';
+    const bSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    bSvg.setAttribute('viewBox', '0 0 16 16');
+    bSvg.setAttribute('width', '16');
+    bSvg.setAttribute('height', '16');
+    if (item.priority) {
+      bSvg.setAttribute('fill', 'currentColor');
+      bSvg.removeAttribute('stroke');
+    } else {
+      bSvg.setAttribute('fill', 'none');
+      bSvg.setAttribute('stroke', 'currentColor');
+      bSvg.setAttribute('stroke-width', '1.5');
+    }
+    const bPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    bPath.setAttribute('d', 'M4 2h8v12l-4-3-4 3V2z');
+    bSvg.appendChild(bPath);
+    bookmarkBtn.appendChild(bSvg);
+    bookmarkBtn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      const newPriority = item.priority ? 0 : 1;
+      fetch('/api/reading/tbr/' + item.id, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ priority: newPriority }),
+      })
+        .then(r => r.json())
+        .then(data => { if (data.success) loadTbrItems(); })
+        .catch(() => showToast('Failed to update priority'));
+    });
+    cover.appendChild(bookmarkBtn);
+
+    card.appendChild(cover);
+
+    const body = document.createElement('div');
+    body.className = 'r-tbr-card-body';
+
+    const title = document.createElement('div');
+    title.className = 'r-tbr-card-title';
+    title.textContent = item.title;
+    title.title = item.title;
+    body.appendChild(title);
+
+    if (item.author) {
+      const author = document.createElement('div');
+      author.className = 'r-tbr-card-author';
+      author.textContent = item.author;
+      body.appendChild(author);
+    }
+
+    // Compact info row: rating, pages, year
+    const infoParts = [];
+    if (item.rating != null) infoParts.push({ star: true, text: Number(item.rating).toFixed(1) });
+    if (item.page_count) infoParts.push({ text: item.page_count + 'p' });
+    if (item.release_year) infoParts.push({ text: String(item.release_year) });
+    if (infoParts.length) {
+      const infoRow = document.createElement('div');
+      infoRow.className = 'r-tbr-card-info';
+      infoParts.forEach(p => {
+        const span = document.createElement('span');
+        if (p.star) {
+          const s = document.createElement('span');
+          s.className = 'r-tbr-card-info-star';
+          s.textContent = '\u2605';
+          span.appendChild(s);
+          span.appendChild(document.createTextNode(' ' + p.text));
+        } else {
+          span.textContent = p.text;
+        }
+        infoRow.appendChild(span);
+      });
+      body.appendChild(infoRow);
+    }
+
+    // Genre pills (first 2)
+    const genres = item.genres || [];
+    if (genres.length) {
+      const genreRow = document.createElement('div');
+      genreRow.className = 'r-tbr-card-genres';
+      genres.slice(0, 2).forEach(g => {
+        const pill = document.createElement('span');
+        pill.className = 'r-tbr-card-genre-pill';
+        pill.textContent = g;
+        pill.title = g;
+        genreRow.appendChild(pill);
+      });
+      body.appendChild(genreRow);
+    }
+
+    const meta = document.createElement('div');
+    meta.className = 'r-tbr-card-meta';
+
+    if (item.book_abs_id) {
+      const lib = document.createElement('span');
+      lib.className = 'r-tbr-badge r-tbr-badge--library';
+      lib.textContent = 'In Library';
+      meta.appendChild(lib);
+    }
+
+    const sourceBadge = document.createElement('span');
+    sourceBadge.className = 'r-tbr-badge';
+    const sourceLabels = {
+      manual: 'Manual',
+      open_library: 'Open Library',
+      hardcover_search: 'Hardcover',
+      hardcover_wtr: 'Want to Read',
+      hardcover_list: item.hardcover_list_name || 'HC List',
+    };
+    sourceBadge.textContent = sourceLabels[item.source] || item.source;
+    meta.appendChild(sourceBadge);
+    body.appendChild(meta);
+    card.appendChild(body);
+
+    card.style.cursor = 'pointer';
+    card.addEventListener('click', () => {
+      window.location.href = '/reading/tbr/' + item.id;
+    });
+
+    return card;
+  }
+
+  // ── Add Book Modal ──
+  const addModal = document.getElementById('tbr-add-modal');
+  const addBtn = document.getElementById('tbr-add-btn');
+  const addClose = document.getElementById('tbr-add-close');
+  const searchInput = document.getElementById('tbr-search-input');
+  const searchResults = document.getElementById('tbr-search-results');
+  const providerBtns = document.querySelectorAll('.r-tbr-provider-btn');
+
+  function showAddModal() { if (addModal) { addModal.style.display = 'flex'; searchInput?.focus(); } }
+  function hideAddModal() {
+    if (addModal) addModal.style.display = 'none';
+    if (searchResults) while (searchResults.firstChild) searchResults.removeChild(searchResults.firstChild);
+  }
+
+  if (addBtn) addBtn.addEventListener('click', showAddModal);
+  if (addClose) addClose.addEventListener('click', hideAddModal);
+  if (addModal) addModal.addEventListener('click', e => { if (e.target === addModal) hideAddModal(); });
+
+  providerBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+      providerBtns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      _activeProvider = btn.dataset.provider;
+      if (searchInput && searchInput.value.trim().length >= 2) {
+        doSearch(searchInput.value.trim());
+      }
+    });
+  });
+
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      clearTimeout(_searchTimer);
+      const q = searchInput.value.trim();
+      if (q.length < 2) {
+        if (searchResults) while (searchResults.firstChild) searchResults.removeChild(searchResults.firstChild);
+        return;
+      }
+      _searchTimer = setTimeout(() => doSearch(q), 350);
+    });
+  }
+
+  function doSearch(query) {
+    if (searchResults) setStatusMessage(searchResults, 'Searching...');
+
+    fetch('/api/reading/tbr/search', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query, provider: _activeProvider }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (!searchResults) return;
+        while (searchResults.firstChild) searchResults.removeChild(searchResults.firstChild);
+        if (!data.results || !data.results.length) {
+          setStatusMessage(searchResults, 'No results found.', 'var(--color-text-faint)');
+          return;
+        }
+        data.results.forEach(result => {
+          searchResults.appendChild(buildSearchResult(result));
+        });
+      })
+      .catch(() => {
+        if (searchResults) setStatusMessage(searchResults, 'Search failed.', 'var(--color-error)');
+      });
+  }
+
+  function buildSearchResult(result) {
+    const el = document.createElement('div');
+    el.className = 'r-tbr-result';
+
+    const cover = document.createElement('div');
+    cover.className = 'r-tbr-result-cover';
+    if (result.cover_url) {
+      const img = document.createElement('img');
+      img.src = result.cover_url;
+      img.alt = '';
+      img.loading = 'lazy';
+      cover.appendChild(img);
+    }
+    el.appendChild(cover);
+
+    const info = document.createElement('div');
+    info.className = 'r-tbr-result-info';
+
+    const title = document.createElement('div');
+    title.className = 'r-tbr-result-title';
+    title.textContent = result.title;
+    info.appendChild(title);
+
+    if (result.author) {
+      const author = document.createElement('div');
+      author.className = 'r-tbr-result-author';
+      author.textContent = result.author;
+      info.appendChild(author);
+    }
+
+    el.appendChild(info);
+
+    el.addEventListener('click', () => {
+      addFromSearchResult(result, el);
+    });
+
+    return el;
+  }
+
+  function addFromSearchResult(result, el) {
+    fetch('/api/reading/tbr/add', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(result),
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          const added = document.createElement('div');
+          added.className = 'r-tbr-result-added';
+          added.textContent = data.created ? 'Added!' : 'Already on list';
+          el.querySelector('.r-tbr-result-info')?.appendChild(added);
+          el.style.pointerEvents = 'none';
+          el.style.opacity = '0.6';
+          loadTbrItems();
+        }
+      })
+      .catch(() => showToast('Failed to add book'));
+  }
+
+  // ── Manual entry ──
+  const manualToggle = document.getElementById('tbr-manual-toggle');
+  const manualForm = document.getElementById('tbr-manual-form');
+  const manualAdd = document.getElementById('tbr-manual-add');
+
+  if (manualToggle && manualForm) {
+    manualToggle.addEventListener('click', () => {
+      manualForm.hidden = !manualForm.hidden;
+      manualToggle.textContent = manualForm.hidden ? 'Or add manually' : 'Hide manual entry';
+    });
+  }
+
+  if (manualAdd) {
+    manualAdd.addEventListener('click', () => {
+      const title = document.getElementById('tbr-manual-title')?.value.trim();
+      if (!title) return;
+      const author = document.getElementById('tbr-manual-author')?.value.trim();
+      const notes = document.getElementById('tbr-manual-notes')?.value.trim();
+
+      fetch('/api/reading/tbr/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, author, notes }),
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (data.success) {
+            hideAddModal();
+            loadTbrItems();
+            showToast(data.created ? 'Added to list!' : 'Already on list');
+          }
+        })
+        .catch(() => showToast('Failed to add book'));
+    });
+  }
+
+  // ── Hardcover Import ──
+  const importBtn = document.getElementById('tbr-import-btn');
+  const importDropdown = document.getElementById('tbr-import-dropdown');
+  const importWtr = document.getElementById('tbr-import-wtr');
+  const importList = document.getElementById('tbr-import-list');
+
+  if (importBtn && importDropdown) {
+    importBtn.addEventListener('click', () => {
+      importDropdown.classList.toggle('open');
+    });
+    document.addEventListener('click', e => {
+      if (!e.target.closest('.r-tbr-import-menu')) {
+        importDropdown.classList.remove('open');
+      }
+    });
+  }
+
+  if (importWtr) {
+    importWtr.addEventListener('click', () => {
+      importDropdown?.classList.remove('open');
+      importWtr.textContent = 'Importing...';
+      importWtr.disabled = true;
+      fetch('/api/reading/tbr/import-hardcover', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+          importWtr.textContent = 'Import Want to Read';
+          importWtr.disabled = false;
+          if (data.success) {
+            showToast('Imported ' + data.imported + ' books (' + data.skipped + ' already on list)');
+            loadTbrItems();
+          } else {
+            showToast(data.error || 'Import failed');
+          }
+        })
+        .catch(() => {
+          importWtr.textContent = 'Import Want to Read';
+          importWtr.disabled = false;
+          showToast('Import failed');
+        });
+    });
+  }
+
+  if (importList) {
+    importList.addEventListener('click', () => {
+      importDropdown?.classList.remove('open');
+      showListPicker();
+    });
+  }
+
+  // ── Hardcover List Picker ──
+  const listModal = document.getElementById('tbr-list-modal');
+  const listClose = document.getElementById('tbr-list-close');
+  const listPicker = document.getElementById('tbr-list-picker');
+
+  function showListPicker() {
+    if (!listModal || !listPicker) return;
+    listModal.style.display = 'flex';
+    setStatusMessage(listPicker, 'Loading lists...');
+
+    fetch('/api/reading/tbr/hardcover-lists')
+      .then(r => r.json())
+      .then(lists => {
+        while (listPicker.firstChild) listPicker.removeChild(listPicker.firstChild);
+        if (!lists.length) {
+          setStatusMessage(listPicker, 'No lists found on Hardcover.', 'var(--color-text-faint)');
+          return;
+        }
+        lists.forEach(lst => {
+          const option = document.createElement('div');
+          option.className = 'r-tbr-list-option';
+
+          const name = document.createElement('span');
+          name.className = 'r-tbr-list-name';
+          name.textContent = lst.name;
+          option.appendChild(name);
+
+          const count = document.createElement('span');
+          count.className = 'r-tbr-list-count';
+          count.textContent = lst.books_count + ' books';
+          option.appendChild(count);
+
+          option.addEventListener('click', () => importFromList(lst.id, lst.name));
+          listPicker.appendChild(option);
+        });
+      })
+      .catch(() => {
+        setStatusMessage(listPicker, 'Failed to load lists.', 'var(--color-error)');
+      });
+  }
+
+  function hideListModal() { if (listModal) listModal.style.display = 'none'; }
+
+  if (listClose) listClose.addEventListener('click', hideListModal);
+  if (listModal) listModal.addEventListener('click', e => { if (e.target === listModal) hideListModal(); });
+
+  function importFromList(listId, listName) {
+    hideListModal();
+    showToast('Importing from "' + listName + '"...');
+
+    fetch('/api/reading/tbr/import-hardcover-list', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ list_id: listId }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.success) {
+          showToast('Imported ' + data.imported + ' books from "' + data.list_name + '" (' + data.skipped + ' already on list)');
+          loadTbrItems();
+        } else {
+          showToast(data.error || 'Import failed');
+        }
+      })
+      .catch(() => showToast('Import failed'));
+  }
+
+  // ── Toast helper ──
+  function showToast(message) {
+    const existing = document.querySelector('.r-tbr-toast');
+    if (existing) existing.remove();
+
+    const toast = document.createElement('div');
+    toast.className = 'r-tbr-toast';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(() => {
+      toast.style.transition = 'opacity 0.3s';
+      toast.style.opacity = '0';
+      setTimeout(() => toast.remove(), 300);
+    }, 3000);
+  }
+
+  // ── Load on tab activation ──
+  let _loaded = false;
+  const tbrTab = document.getElementById('tab-tbr');
+  if (tbrTab) {
+    tbrTab.addEventListener('click', () => {
+      if (!_loaded) {
+        loadTbrItems();
+        _loaded = true;
+      }
+    });
+    // If TBR tab is already active on page load (e.g. /reading/tbr), load immediately
+    if (tbrTab.classList.contains('active')) {
+      loadTbrItems();
+      _loaded = true;
+    }
+  }
 }
