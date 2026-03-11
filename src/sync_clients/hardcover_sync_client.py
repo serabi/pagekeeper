@@ -220,7 +220,8 @@ class HardcoverSyncClient(SyncClient):
 
         Args:
             book: Book model instance
-            status_label: one of 'active', 'completed', 'paused', 'dnf'
+            status_label: one of the keys in LOCAL_TO_HC_STATUS
+                ('not_started', 'active', 'completed', 'paused', 'dnf')
         """
         if not self.is_configured() or not self.database_service:
             return

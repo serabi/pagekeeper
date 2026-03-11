@@ -119,8 +119,10 @@ class ReadingService:
 
         # Push Booklore read status for active/completed transitions
         if book.ebook_filename:
-            if new_status == 'active' and old_status in ('dnf', 'paused', 'not_started'):
+            if new_status == 'active' and old_status in ('dnf', 'paused', 'not_started', 'completed'):
                 push_booklore_read_status(book, container, 'READING')
+            elif new_status == 'completed':
+                push_booklore_read_status(book, container, 'COMPLETED')
 
         return {'success': True, 'status': new_status, 'previous_status': old_status}
 
@@ -142,10 +144,13 @@ class ReadingService:
 
         for client_name, client in container.sync_clients().items():
             if client.is_configured():
-                if client_name.lower() == 'abs':
-                    client.abs_client.mark_finished(abs_id)
-                else:
-                    client.update_progress(book, update_req)
+                try:
+                    if client_name.lower() == 'abs':
+                        client.abs_client.mark_finished(abs_id)
+                    else:
+                        client.update_progress(book, update_req)
+                except Exception as e:
+                    logger.warning(f"Completion sync to {client_name} failed: {e}")
 
                 state = State(
                     abs_id=abs_id,

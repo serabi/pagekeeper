@@ -38,6 +38,8 @@ class BookRepository(BaseRepository):
 
     def search_books(self, query, limit=10):
         """Search books by title (case-insensitive substring match)."""
+        if not query or not query.strip():
+            return []
         with self.get_session() as session:
             results = (session.query(Book)
                        .filter(Book.abs_title.ilike(f'%{query}%'))

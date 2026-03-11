@@ -119,22 +119,19 @@
             </div>
         </div>
 
-        {% if total_books == 0 %}
-        <div class="empty-state">
-            <div class="empty-state-icon"></div>
-            <h2>No books being tracked</h2>
-            <p>Books will appear here once they are syncing on the dashboard</p>
-            <a href="/" class="btn btn-primary">Go to Dashboard</a>
-        </div>
-        {% else %}
-
         <div class="r-main-tab-bar" role="tablist" aria-label="Reading sections">
+            {% if total_books > 0 %}
             <button class="r-main-tab-btn active" type="button" id="tab-log" role="tab" data-main-tab="log" aria-selected="true" aria-controls="panel-log">Log</button>
-            <button class="r-main-tab-btn" type="button" id="tab-tbr" role="tab" data-main-tab="tbr" aria-selected="false" aria-controls="panel-tbr">
+            {% endif %}
+            <button class="r-main-tab-btn{% if total_books == 0 %} active{% endif %}" type="button" id="tab-tbr" role="tab" data-main-tab="tbr" aria-selected="{% if total_books == 0 %}true{% else %}false{% endif %}" aria-controls="panel-tbr">
                 Want to Read{% if tbr_count %} <span class="r-tab-badge">{{ tbr_count }}</span>{% endif %}
             </button>
+            {% if total_books > 0 %}
             <button class="r-main-tab-btn" type="button" id="tab-stats" role="tab" data-main-tab="stats" aria-selected="false" aria-controls="panel-stats">Stats</button>
+            {% endif %}
         </div>
+
+        {% if total_books > 0 %}
 
         <div class="r-main-panel" id="panel-log" data-main-panel="log" role="tabpanel" aria-labelledby="tab-log">
         <div class="r-toolbar" id="reading-toolbar">
@@ -247,8 +244,9 @@
             <p>No books match the current filters.</p>
         </div>
         </div>
+        {% endif %}
 
-        <div class="r-main-panel" id="panel-tbr" data-main-panel="tbr" role="tabpanel" aria-labelledby="tab-tbr" hidden>
+        <div class="r-main-panel" id="panel-tbr" data-main-panel="tbr" role="tabpanel" aria-labelledby="tab-tbr"{% if total_books > 0 %} hidden{% endif %}>
             <div class="r-tbr-header">
                 <div>
                     <p class="r-page-kicker">To Be Read</p>
@@ -412,7 +410,6 @@
             </section>
         </div>
 
-        {% endif %}
     </div>
 
     <div id="goal-modal" class="modal-backdrop" style="display: none;">
@@ -434,7 +431,7 @@
 
     <script src="/static/js/reading.js?v=6"></script>
     <script>
-        initReadingPage({{ current_year }}, '{{ active_tab }}');
+        initReadingPage({{ current_year }}, '{{ active_tab if total_books > 0 else 'tbr' }}');
         initTbrTab({{ 'true' if hc_configured else 'false' }});
     </script>
 </body>

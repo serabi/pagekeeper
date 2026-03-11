@@ -195,7 +195,7 @@
             Added {{ item.added_at.strftime('%b %d, %Y') }}
             {% endif %}
             {% if item.hardcover_slug %}
-             &middot; <a href="https://hardcover.app/books/{{ item.hardcover_slug|urlencode }}" target="_blank" rel="noopener" style="color: var(--color-text-faint);">View on Hardcover &#8599;</a>
+             &middot; <a href="{{ get_hardcover_book_url(item.hardcover_slug) }}" target="_blank" rel="noopener" style="color: var(--color-text-faint);">View on Hardcover &#8599;</a>
             {% endif %}
         </div>
     </div>

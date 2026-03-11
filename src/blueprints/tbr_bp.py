@@ -266,8 +266,7 @@ def update_tbr_item(item_id):
         return jsonify({"success": False, "error": "No fields to update"}), 400
 
     allowed = {'notes', 'priority', 'title', 'author', 'cover_url', 'description',
-               'page_count', 'release_year', 'subtitle',
-               'hardcover_book_id', 'hardcover_slug'}
+               'page_count', 'release_year', 'subtitle'}
 
     updates = {}
     for key, value in data.items():

@@ -1314,10 +1314,11 @@ class HardcoverClient:
         }
         """
         result = self.query(query, {"listId": list_id})
-        if not result or not result.get("lists"):
+        lists = result.get("lists") if result else None
+        if not lists:
             return None
 
-        lst = result["lists"][0]
+        lst = lists[0]
         books = []
         for lb in lst.get("list_books", []):
             book = lb.get("book") or {}

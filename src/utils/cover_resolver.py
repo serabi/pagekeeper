@@ -34,7 +34,7 @@ def resolve_book_covers(book, abs_service, database_service, book_type,
             cover_url = f"/api/cover-proxy/booklore/{bl_id}"
 
     # Hardcover cover fallback
-    if not cover_url:
+    if not cover_url and book.abs_id:
         hc_details = database_service.get_hardcover_details(book.abs_id)
         if hc_details and hc_details.hardcover_cover_url:
             cover_url = hc_details.hardcover_cover_url

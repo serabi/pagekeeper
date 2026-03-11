@@ -16,6 +16,7 @@ from pathlib import Path
 from flask import current_app
 
 from src.utils.path_utils import is_safe_path_within
+from src.utils.service_url_helper import get_hardcover_book_url, get_service_web_url  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -44,11 +45,6 @@ def get_covers_dir():
 
 def get_abs_service():
     return current_app.config['abs_service']
-
-
-# --------------- Service URL helpers (re-exported from utils) ---------------
-
-from src.utils.service_url_helper import get_hardcover_book_url, get_service_web_url  # noqa: E402, F401
 
 
 # --------------- Booklore helpers ---------------

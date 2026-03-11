@@ -436,7 +436,7 @@
       patchItem(fields).then(function (ok) {
         if (ok) {
           showToast('Linked to Hardcover');
-          fetch('/api/reading/tbr/enrich', { method: 'POST' }).catch(function () {});
+          fetch('/api/reading/tbr/enrich', { method: 'POST' }).catch(function (err) { console.warn('Background enrichment failed:', err); });
           backdrop.remove();
           location.reload();
         }

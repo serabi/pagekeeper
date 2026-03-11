@@ -86,7 +86,7 @@ def build_book_metadata(book, container, database_service, abs_service, booklore
     if book.ebook_filename:
         bl_client = booklore_client or container.booklore_client()
         try:
-            if bl_client.is_configured():
+            if bl_client and bl_client.is_configured():
                 bl_book = bl_client.find_book_by_filename(book.ebook_filename, allow_refresh=False)
                 if not bl_book and getattr(book, 'original_ebook_filename', None):
                     bl_book = bl_client.find_book_by_filename(book.original_ebook_filename, allow_refresh=False)
@@ -144,13 +144,17 @@ def build_service_info(book, states_by_book, container, abs_service, metadata,
     }
 
     # Which services are enabled system-wide (for showing "Link" on unconnected services)
+    storyteller = container.storyteller_client()
+    hardcover = container.hardcover_client()
+    bookfusion = container.bookfusion_client()
+    booklore = booklore_client or container.booklore_client()
     services_enabled = {
-        'abs': abs_service.is_available(),
+        'abs': abs_service is not None and abs_service.is_available(),
         'kosync': True,  # KoSync is always available (built-in server)
-        'storyteller': container.storyteller_client().is_configured(),
-        'hardcover': container.hardcover_client().is_configured(),
-        'bookfusion': container.bookfusion_client().is_configured(),
-        'booklore': (booklore_client or container.booklore_client()).is_configured(),
+        'storyteller': storyteller is not None and storyteller.is_configured(),
+        'hardcover': hardcover is not None and hardcover.is_configured(),
+        'bookfusion': bookfusion is not None and bookfusion.is_configured(),
+        'booklore': booklore is not None and booklore.is_configured(),
     }
 
     return service_states, integrations, services_enabled

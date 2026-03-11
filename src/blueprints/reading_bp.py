@@ -12,6 +12,7 @@ from src.blueprints.helpers import (
     get_abs_service,
     get_container,
     get_database_service,
+    get_hardcover_book_url,
 )
 from src.services.book_metadata_service import build_book_metadata, build_service_info
 from src.services.reading_service import ReadingService
@@ -410,6 +411,7 @@ def tbr_detail(item_id):
         genres=genres,
         linked_book=linked_book,
         hc_configured=hc_configured,
+        get_hardcover_book_url=get_hardcover_book_url,
     )
 
 
