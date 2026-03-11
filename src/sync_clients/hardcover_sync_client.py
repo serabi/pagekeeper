@@ -17,9 +17,11 @@ HC_CURRENTLY_READING = 2
 HC_READ = 3
 HC_PAUSED = 4
 HC_DNF = 5
+HC_IGNORED = 6
 
 # Local status → Hardcover status mapping
 LOCAL_TO_HC_STATUS = {
+    'not_started': HC_WANT_TO_READ,
     'active': HC_CURRENTLY_READING,
     'completed': HC_READ,
     'paused': HC_PAUSED,
@@ -28,6 +30,7 @@ LOCAL_TO_HC_STATUS = {
 
 # Hardcover status → local status mapping
 HC_TO_LOCAL_STATUS = {
+    HC_WANT_TO_READ: 'not_started',
     HC_CURRENTLY_READING: 'active',
     HC_READ: 'completed',
     HC_PAUSED: 'paused',

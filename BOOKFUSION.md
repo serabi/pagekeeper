@@ -21,7 +21,9 @@ Thank you to the BookFusion team for making these plugins open source. I love th
 ## How It Works
 
 PageKeeper contains its own Python implementation of the BookFusion API protocol
-in `src/api/bookfusion_client.py`. No code from either plugin is included — this is a reimplementation built with Python's `requests` library.
+in `src/api/bookfusion_client.py`. No code from either plugin is included or
+vendored — this is an independent reimplementation built with
+Python's `requests` library.
 
 The following technical details were derived from reading the plugin source code:
 
@@ -45,7 +47,7 @@ The following technical details were derived from reading the plugin source code
 
 ## Future Plans
 
-The BookFusion team is hard at work on integrating KoSync compatibility soon, and later this year, OPDS support. Please follow them at r/bookfusion and considering purchasing a monthly plan to give them your support. It's a fantastic product with a great team. 
+The BookFusion team is hard at work on integrating KoSync compatibility soon, and later this year, OPDS support. Please follow them at r/bookfusion and give them your support. It's a fantastic product with a great team. 
 
 ## Licenses
 
