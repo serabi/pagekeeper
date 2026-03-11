@@ -370,7 +370,7 @@ def inject_global_vars():
         return val.lower() in ('true', '1', 'yes', 'on')
 
     def get_header_service_url(service_name):
-        from src.blueprints.helpers import get_service_web_url
+        from src.utils.service_url_helper import get_service_web_url
         prefix = service_name.upper()
         if not get_bool(f'{prefix}_ENABLED'):
             return ''

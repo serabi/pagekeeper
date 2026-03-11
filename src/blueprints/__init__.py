@@ -13,6 +13,7 @@ def register_blueprints(app):
     from src.blueprints.matching_bp import matching_bp
     from src.blueprints.reading_bp import reading_bp
     from src.blueprints.settings_bp import settings_bp
+    from src.blueprints.tbr_bp import tbr_bp
 
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(books_bp)
@@ -24,3 +25,4 @@ def register_blueprints(app):
     app.register_blueprint(bookfusion_bp)
     app.register_blueprint(logs_bp)
     app.register_blueprint(reading_bp)
+    app.register_blueprint(tbr_bp)
