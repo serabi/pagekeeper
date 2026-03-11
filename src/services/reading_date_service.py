@@ -73,7 +73,7 @@ def _is_finished_by_state(abs_id, database_service):
     return _max_state_progress(abs_id, database_service) >= 0.99
 
 
-def _push_completion_to_clients(book, container, database_service):
+def push_completion_to_clients(book, container, database_service):
     """Push 100% progress to all sync clients and set Booklore read status to READ."""
     from src.db.models import State
     from src.sync_clients.sync_client_interface import LocatorResult, UpdateProgressRequest
@@ -104,7 +104,7 @@ def _push_completion_to_clients(book, container, database_service):
 
     # Push READ status to Booklore instances (auto-sets dateFinished)
     if book.ebook_filename:
-        _push_booklore_read_status(book, container, 'READ')
+        push_booklore_read_status(book, container, 'READ')
 
 
 def push_dates_to_hardcover(abs_id, container, database_service, *, force=False):
@@ -214,7 +214,7 @@ def push_dates_to_hardcover(abs_id, container, database_service, *, force=False)
         return False
 
 
-def _push_booklore_read_status(book, container, status):
+def push_booklore_read_status(book, container, status):
     """Push a read status (READING, READ, etc.) to Booklore."""
     try:
         bl_client = container.booklore_client()
@@ -250,7 +250,7 @@ def _mark_completed(book, dates, database_service, stats, reason, container=None
         database_service.update_book_reading_fields(book.abs_id, **updates)
 
     if push_to_clients and container:
-        _push_completion_to_clients(book, container, database_service)
+        push_completion_to_clients(book, container, database_service)
 
     stats['completed'] += 1
     logger.info(f"Marked '{book.abs_title}' as completed ({reason})")

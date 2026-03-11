@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>{{ item.title }} - PageKeeper</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/png" href="/static/icon.png">
+    <link rel="apple-touch-icon" href="/static/icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/variables.css">
+    <link rel="stylesheet" href="/static/css/base.css">
+    <link rel="stylesheet" href="/static/css/layout.css">
+    <link rel="stylesheet" href="/static/css/components.css">
+    <link rel="stylesheet" href="/static/css/reading.css">
+</head>
+
+<body>
+    {% include 'partials/navbar.html' %}
+
+    <div class="container r-detail-container">
+        <a href="/reading/tbr" class="r-back-link">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M10 12L6 8L10 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Want to Read
+        </a>
+
+        {# ── Hero Section ── #}
+        <div class="r-detail-hero">
+            {% if item.cover_url %}
+            <div class="r-hero-bg" style="background-image: url('{{ item.cover_url|e }}')"></div>
+            {% endif %}
+            <div class="r-hero-content">
+                <div class="r-hero-cover">
+                    {% if item.cover_url %}
+                    <img src="{{ item.cover_url|e }}" alt="" id="tbr-cover-img">
+                    <div class="r-cover-placeholder hidden"></div>
+                    {% else %}
+                    <div class="r-cover-placeholder"></div>
+                    {% endif %}
+                    <button type="button" class="r-change-cover-btn" id="change-cover-btn" title="Change cover">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                        Change Cover
+                    </button>
+                </div>
+                <div class="r-hero-info">
+                    <h1 class="r-detail-title">{{ item.title|e }}{% if item.subtitle %}: {{ item.subtitle|e }}{% endif %}</h1>
+                    {% if item.author %}
+                    <div class="r-detail-author">{{ item.author|e }}</div>
+                    {% endif %}
+
+                    <div class="r-detail-badges">
+                        {% set source_labels = {
+                            'manual': 'Manual',
+                            'open_library': 'Open Library',
+                            'hardcover_search': 'Hardcover',
+                            'hardcover_wtr': 'HC Want to Read',
+                            'hardcover_list': item.hardcover_list_name or 'HC List',
+                        } %}
+                        {% set source_colors = {
+                            'hardcover_search': 'hc',
+                            'hardcover_wtr': 'hc',
+                            'hardcover_list': 'hc',
+                            'open_library': 'ol',
+                        } %}
+                        <span class="tbr-source-badge tbr-source-badge--{{ source_colors.get(item.source, 'manual') }}">{{ source_labels.get(item.source, item.source) }}</span>
+                        {% if linked_book %}
+                        <span class="status-badge status-{{ linked_book.status }}">{{ linked_book.status|replace('_', ' ')|title }}</span>
+                        {% endif %}
+                    </div>
+
+                    {# Info row: rating, pages, year #}
+                    {% set info_parts = [] %}
+                    {% if item.rating is not none %}
+                        {% set _ = info_parts.append('<span class="r-tbr-card-info-star">&#9733;</span> ' ~ '%.1f'|format(item.rating)) %}
+                    {% endif %}
+                    {% if item.page_count %}
+                        {% set _ = info_parts.append(item.page_count|string ~ 'p') %}
+                    {% endif %}
+                    {% if item.release_year %}
+                        {% set _ = info_parts.append(item.release_year|string) %}
+                    {% endif %}
+                    {% if info_parts %}
+                    <div class="r-tbr-card-info" style="font-size: 14px; margin-top: 8px;">
+                        {% for part in info_parts %}
+                        <span>{{ part|safe }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+
+                    {% if genres %}
+                    <div class="tbr-genre-pills">
+                        {% for genre in genres %}
+                        <span class="r-tbr-card-genre-pill">{{ genre }}</span>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+
+                    {# Action buttons #}
+                    <div class="r-hero-actions tbr-hero-actions">
+                        <button class="r-hero-action-btn{% if item.priority %} r-hero-action-btn--upnext-active{% endif %}"
+                                type="button" id="up-next-btn" data-priority="{{ item.priority or 0 }}">
+                            {% if item.priority %}★ Up Next{% else %}☆ Up Next{% endif %}
+                        </button>
+                        {% if linked_book %}
+                        <button class="r-hero-action-btn r-hero-action-btn--start" type="button" id="start-reading-btn"
+                                data-item-id="{{ item.id }}" data-abs-id="{{ linked_book.abs_id }}">
+                            Start Reading
+                        </button>
+                        {% else %}
+                        <button class="r-hero-action-btn" type="button" disabled title="Link to a library book first">
+                            Start Reading
+                        </button>
+                        {% endif %}
+                        <button class="r-hero-action-btn" type="button" id="edit-toggle-btn">Edit</button>
+                        <button class="r-hero-action-btn r-hero-action-btn--danger" type="button" id="remove-btn"
+                                data-item-id="{{ item.id }}"
+                                data-is-hc="{{ 'true' if item.source and item.source.startswith('hardcover') and item.hardcover_book_id else 'false' }}">
+                            Remove
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {# ── About Section ── #}
+        {% if item.description %}
+        <section class="r-detail-section">
+            <h3 class="r-section-title">About</h3>
+            <div class="tbr-description">{{ item.description }}</div>
+        </section>
+        {% endif %}
+
+        {# ── Notes Section ── #}
+        <section class="r-detail-section">
+            <h3 class="r-section-title">Notes</h3>
+            <div class="tbr-notes-field">
+                <textarea id="tbr-notes" rows="3" placeholder="Add personal notes..." class="r-tbr-detail-notes">{{ item.notes or '' }}</textarea>
+                <button class="btn btn-secondary" id="save-notes-btn" type="button" style="align-self: flex-end; font-size: 12px; padding: 5px 14px;">Save</button>
+            </div>
+        </section>
+
+        {# ── Edit Section (hidden by default) ── #}
+        <section class="r-detail-section" id="edit-section" style="display: none;">
+            <h3 class="r-section-title">Edit Book</h3>
+            <div class="tbr-edit-form">
+                <input type="text" id="edit-title" class="search-box" placeholder="Title" value="{{ item.title|e }}">
+                <input type="text" id="edit-author" class="search-box" placeholder="Author" value="{{ item.author|default('', true)|e }}">
+                <input type="text" id="edit-subtitle" class="search-box" placeholder="Subtitle" value="{{ item.subtitle|default('', true)|e }}">
+                <textarea id="edit-description" class="search-box" rows="4" placeholder="Description">{{ item.description|default('', true) }}</textarea>
+                <textarea id="edit-notes" class="search-box" rows="2" placeholder="Notes">{{ item.notes|default('', true) }}</textarea>
+                <div class="tbr-edit-row">
+                    <input type="number" id="edit-pages" class="search-box" placeholder="Pages" value="{{ item.page_count or '' }}">
+                    <input type="number" id="edit-year" class="search-box" placeholder="Year" value="{{ item.release_year or '' }}">
+                </div>
+                <div class="tbr-edit-actions">
+                    <button class="btn btn-primary" id="save-edits-btn" type="button">Save Changes</button>
+                    <button class="btn btn-secondary" id="change-cover-edit-btn" type="button">Change Cover</button>
+                    {% if not item.hardcover_book_id and hc_configured %}
+                    <button class="btn btn-secondary" id="link-hc-btn" type="button">Link to Hardcover</button>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
+
+        {# ── Library Link Section ── #}
+        <section class="r-detail-section">
+            <h3 class="r-section-title">Library Link</h3>
+            {% if linked_book %}
+            <div class="tbr-library-linked">
+                <a href="/reading/book/{{ linked_book.abs_id }}" class="tbr-linked-book-card">
+                    <div class="tbr-linked-book-info">
+                        <span class="tbr-linked-book-title">{{ linked_book.abs_title|e }}</span>
+                        <span class="tbr-linked-book-status status-badge status-{{ linked_book.status }}">{{ linked_book.status|replace('_', ' ')|title }}</span>
+                    </div>
+                    <span class="tbr-linked-book-arrow">&#8594;</span>
+                </a>
+                <button class="btn btn-secondary" id="unlink-library-btn" type="button" style="font-size: 12px; margin-top: 8px;">Unlink</button>
+            </div>
+            {% else %}
+            <div class="tbr-library-search" id="library-search-section">
+                <p style="color: var(--color-text-muted); font-size: 13px; margin: 0 0 10px;">Link this TBR item to a book in your library to enable "Start Reading".</p>
+                <div class="tbr-library-search-row">
+                    <input type="text" id="library-search-input" class="search-box" placeholder="Search library by title..." autocomplete="off">
+                </div>
+                <div id="library-search-results" class="tbr-library-results"></div>
+            </div>
+            {% endif %}
+        </section>
+
+        {# ── Footer info ── #}
+        <div class="tbr-detail-footer-info">
+            {% if item.added_at %}
+            Added {{ item.added_at.strftime('%b %d, %Y') }}
+            {% endif %}
+            {% if item.hardcover_slug %}
+             &middot; <a href="{{ get_hardcover_book_url(item.hardcover_slug) }}" target="_blank" rel="noopener" style="color: var(--color-text-faint);">View on Hardcover &#8599;</a>
+            {% endif %}
+        </div>
+    </div>
+
+    <script>
+        var TBR_ITEM_ID = {{ item.id }};
+        var HC_CONFIGURED = {{ 'true' if hc_configured else 'false' }};
+    </script>
+    <script src="/static/js/tbr-detail.js?v=1"></script>
+</body>
+</html>

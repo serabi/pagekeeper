@@ -2,8 +2,6 @@
 
 import logging
 import threading
-import time
-from datetime import date
 
 from flask import Blueprint, flash, jsonify, redirect, request, url_for
 
@@ -15,11 +13,14 @@ from src.blueprints.helpers import (
     get_kosync_id_for_ebook,
     get_manager,
 )
-from src.db.models import State
-from src.sync_clients.sync_client_interface import LocatorResult, UpdateProgressRequest
+from src.services.reading_service import ReadingService
 from src.utils.logging_utils import sanitize_log_data
 
 logger = logging.getLogger(__name__)
+
+
+def _get_reading_service():
+    return ReadingService(get_database_service())
 
 books_bp = Blueprint('books', __name__)
 
@@ -86,168 +87,61 @@ def sync_now(abs_id):
         return jsonify({"success": False, "error": "Book not found"}), 404
 
     if book.status == 'completed':
-        from src.services.reading_date_service import _push_completion_to_clients
+        from src.services.reading_date_service import push_completion_to_clients
         container = get_container()
-        _push_completion_to_clients(book, container, database_service)
+        push_completion_to_clients(book, container, database_service)
         return jsonify({"success": True, "reload": True})
     else:
         threading.Thread(target=manager.sync_cycle, kwargs={'target_abs_id': abs_id}, daemon=True).start()
         return jsonify({"success": True})
 
 
-def _pull_started_at(abs_id, container, database_service):
-    """Try to get the real started_at date from Hardcover or ABS, falling back to today."""
-    from src.services.reading_date_service import pull_reading_dates
-    dates = pull_reading_dates(abs_id, container, database_service)
-    return dates.get('started_at', date.today().isoformat())
-
-
 @books_bp.route('/api/mark-complete/<abs_id>', methods=['POST'])
 def mark_complete(abs_id):
-    container = get_container()
-    database_service = get_database_service()
-    book = database_service.get_book(abs_id)
-    if not book:
-        return jsonify({"success": False, "error": "Book not found"}), 404
-
     perform_delete = request.json.get('delete', False) if request.json else False
-
-    locator = LocatorResult(percentage=1.0)
-    update_req = UpdateProgressRequest(locator_result=locator, txt="Book finished", previous_location=None)
-
-    for client_name, client in container.sync_clients().items():
-        if client.is_configured():
-            if client_name.lower() == 'abs':
-                client.abs_client.mark_finished(abs_id)
-            else:
-                client.update_progress(book, update_req)
-
-            state = State(
-                abs_id=abs_id,
-                client_name=client_name.lower(),
-                percentage=1.0,
-                timestamp=int(time.time()),
-                last_updated=int(time.time())
-            )
-            database_service.save_state(state)
-
-    # Record completion locally (skip if already completed — idempotent)
-    if book.status != 'completed':
-        today = date.today().isoformat()
-        reading_updates = {'finished_at': today}
-        if not book.started_at:
-            reading_updates['started_at'] = _pull_started_at(abs_id, container, database_service)
-        if book.finished_at:
-            # Re-read: increment read_count
-            reading_updates['read_count'] = (book.read_count or 1) + 1
-
-        book.status = 'completed'
-        database_service.save_book(book)
-        database_service.update_book_reading_fields(abs_id, **reading_updates)
-        database_service.add_reading_journal(abs_id, event='finished', percentage=1.0)
-
-    # Push READ status to Booklore instances (auto-sets dateFinished)
-    if book.ebook_filename:
-        from src.services.reading_date_service import _push_booklore_read_status
-        _push_booklore_read_status(book, container, 'READ')
-
-    if perform_delete:
-        cleanup_mapping_resources(book)
-        database_service.delete_book(abs_id)
-
-    return jsonify({"success": True})
+    container = get_container()
+    result = _get_reading_service().mark_complete_with_sync(
+        abs_id, container, perform_delete=perform_delete
+    )
+    if not result['success']:
+        return jsonify(result), 404
+    return jsonify(result)
 
 
 @books_bp.route('/api/pause/<abs_id>', methods=['POST'])
 def pause_book(abs_id):
-    database_service = get_database_service()
-    book = database_service.get_book(abs_id)
-    if not book:
-        return jsonify({"success": False, "error": "Book not found"}), 404
-    if book.status not in ('active', 'not_started'):
-        return jsonify({"success": False, "error": f"Cannot pause a book with status '{book.status}'"}), 400
-
-    book.status = 'paused'
-    database_service.save_book(book)
-    database_service.add_reading_journal(abs_id, event='paused')
-    logger.info(f"Book paused: '{sanitize_log_data(book.abs_title or abs_id)}'")
-
     container = get_container()
-    hc_sync = container.hardcover_sync_client()
-    if hc_sync.is_configured():
-        try:
-            hc_sync.push_local_status(book, 'paused')
-        except Exception as e:
-            logger.warning(f"Failed to push paused status to Hardcover for '{abs_id}': {e}")
-
-    return jsonify({"success": True})
+    result = _get_reading_service().update_status(
+        abs_id, 'paused', container, allowed_from=('active', 'not_started')
+    )
+    if not result['success']:
+        status_code = 404 if result['error'] == 'Book not found' else 400
+        return jsonify(result), status_code
+    return jsonify(result)
 
 
 @books_bp.route('/api/dnf/<abs_id>', methods=['POST'])
 def dnf_book(abs_id):
-    database_service = get_database_service()
-    book = database_service.get_book(abs_id)
-    if not book:
-        return jsonify({"success": False, "error": "Book not found"}), 404
-    if book.status not in ('active', 'paused', 'not_started'):
-        return jsonify({"success": False, "error": f"Cannot mark DNF a book with status '{book.status}'"}), 400
-
-    book.status = 'dnf'
-    database_service.save_book(book)
-    database_service.add_reading_journal(abs_id, event='dnf')
-    logger.info(f"Book marked DNF: '{sanitize_log_data(book.abs_title or abs_id)}'")
-
     container = get_container()
-    hc_sync = container.hardcover_sync_client()
-    if hc_sync.is_configured():
-        try:
-            hc_sync.push_local_status(book, 'dnf')
-        except Exception as e:
-            logger.warning(f"Failed to push DNF status to Hardcover for '{abs_id}': {e}")
-
-    return jsonify({"success": True})
+    result = _get_reading_service().update_status(
+        abs_id, 'dnf', container, allowed_from=('active', 'paused', 'not_started')
+    )
+    if not result['success']:
+        status_code = 404 if result['error'] == 'Book not found' else 400
+        return jsonify(result), status_code
+    return jsonify(result)
 
 
 @books_bp.route('/api/resume/<abs_id>', methods=['POST'])
 def resume_book(abs_id):
-    database_service = get_database_service()
-    book = database_service.get_book(abs_id)
-    if not book:
-        return jsonify({"success": False, "error": "Book not found"}), 404
-    if book.status not in ('paused', 'dnf', 'not_started'):
-        return jsonify({"success": False, "error": f"Cannot resume a book with status '{book.status}'"}), 400
-
-    was_inactive = book.status in ('dnf', 'paused')
-    was_not_started = book.status == 'not_started'
-    book.status = 'active'
-    book.activity_flag = False
-    database_service.save_book(book)
-    if was_not_started:
-        database_service.add_reading_journal(abs_id, event='started')
-    else:
-        database_service.add_reading_journal(abs_id, event='resumed')
     container = get_container()
-    if not book.started_at:
-        database_service.update_book_reading_fields(
-            abs_id, started_at=_pull_started_at(abs_id, container, database_service)
-        )
-    logger.info(f"Book resumed: '{sanitize_log_data(book.abs_title or abs_id)}'")
-
-    # If resuming from DNF or Paused, sync status to external services
-    if was_inactive:
-        hc_sync = container.hardcover_sync_client()
-        if hc_sync.is_configured():
-            try:
-                hc_sync.push_local_status(book, 'active')
-            except Exception as e:
-                logger.warning(f"Failed to push active status to Hardcover for '{abs_id}': {e}")
-
-        # Push READING status to Booklore
-        if book.ebook_filename:
-            from src.services.reading_date_service import _push_booklore_read_status
-            _push_booklore_read_status(book, container, 'READING')
-
-    return jsonify({"success": True})
+    result = _get_reading_service().update_status(
+        abs_id, 'active', container, allowed_from=('paused', 'dnf', 'not_started')
+    )
+    if not result['success']:
+        status_code = 404 if result['error'] == 'Book not found' else 400
+        return jsonify(result), status_code
+    return jsonify(result)
 
 
 @books_bp.route('/update-hash/<abs_id>', methods=['POST'])

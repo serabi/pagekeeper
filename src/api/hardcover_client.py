@@ -189,6 +189,31 @@ class HardcoverClient:
             return cached_image
         return None
 
+    def _normalize_book(self, book: dict) -> dict:
+        """Extract standard book metadata from a Hardcover book object.
+
+        Returns dict with book_id, title, author, cached_image, slug,
+        and optional enrichment fields (pages, rating, release_year).
+        """
+        authors = self._extract_authors_from_cached(book.get("cached_contributors"))
+
+        raw_rating = book.get("rating")
+        try:
+            parsed_rating = round(float(raw_rating), 2) if raw_rating else None
+        except (TypeError, ValueError):
+            parsed_rating = None
+
+        return {
+            "book_id": book.get("id"),
+            "title": book.get("title", ""),
+            "author": authors[0] if authors else "",
+            "cached_image": self._extract_cover_url(book.get("cached_image")),
+            "slug": book.get("slug"),
+            "pages": book.get("pages"),
+            "rating": parsed_rating,
+            "release_year": book.get("release_year"),
+        }
+
     def _extract_authors_from_cached(self, cached_contributors) -> list[str]:
         """
         Parses the JSON list of contributors from Hardcover API.
@@ -866,7 +891,10 @@ class HardcoverClient:
             return False
 
     def get_book_metadata(self, book_id: int) -> dict | None:
-        """Fetch enrichment metadata (description, tags, subtitle, release_year) for a book."""
+        """Fetch enrichment metadata for a book.
+
+        Returns description, genres, tags, release_year, subtitle, pages, rating, ratings_count.
+        """
         query = """
         query ($bookId: Int!) {
             books_by_pk(id: $bookId) {
@@ -874,6 +902,9 @@ class HardcoverClient:
                 cached_tags
                 release_year
                 subtitle
+                pages
+                rating
+                ratings_count
             }
         }
         """
@@ -997,21 +1028,32 @@ class HardcoverClient:
 
         genres = list(dict.fromkeys(t for t in genres if t))
         tags = list(dict.fromkeys(t for t in tags if t))
+
+        # Parse rating to float — HC returns it as numeric/string
+        raw_rating = book.get("rating")
+        try:
+            parsed_rating = round(float(raw_rating), 2) if raw_rating else None
+        except (TypeError, ValueError):
+            parsed_rating = None
+
         return {
             "description": book.get("description"),
             "genres": genres,
             "tags": tags,
             "release_year": book.get("release_year"),
             "subtitle": book.get("subtitle"),
+            "pages": book.get("pages"),
+            "rating": parsed_rating,
+            "ratings_count": book.get("ratings_count"),
         }
 
     def search_books_with_covers(self, query_str: str, limit: int = 5) -> list[dict]:
         """Search for books and return results with cover images (for cover picker)."""
         search_query = """
-        query ($query: String!) {
+        query ($query: String!, $per_page: Int!) {
             search(
                 query: $query,
-                per_page: 10,
+                per_page: $per_page,
                 page: 1,
                 query_type: "Book"
             ) {
@@ -1020,11 +1062,11 @@ class HardcoverClient:
         }
         """
 
-        result = self.query(search_query, {"query": query_str})
+        result = self.query(search_query, {"query": query_str, "per_page": max(limit, 10)})
         if not result or not result.get("search") or not result["search"].get("ids"):
             return []
 
-        book_ids = result["search"]["ids"][:limit]
+        book_ids = [int(bid) for bid in result["search"]["ids"][:limit]]
         if not book_ids:
             return []
 
@@ -1036,6 +1078,9 @@ class HardcoverClient:
                 slug
                 cached_image
                 cached_contributors
+                pages
+                rating
+                release_year
             }
         }
         """
@@ -1047,20 +1092,11 @@ class HardcoverClient:
         # Create lookup for quick access
         books_by_id = {book["id"]: book for book in book_result["books"]}
 
-        results = []
-        for book_id in book_ids:
-            book = books_by_id.get(book_id)
-            if not book:
-                continue
-            authors = self._extract_authors_from_cached(book.get("cached_contributors"))
-            results.append({
-                "book_id": book["id"],
-                "title": book.get("title", ""),
-                "author": authors[0] if authors else "",
-                "cached_image": self._extract_cover_url(book.get("cached_image")),
-                "slug": book.get("slug"),
-            })
-        return results
+        return [
+            self._normalize_book(books_by_id[bid])
+            for bid in book_ids
+            if bid in books_by_id
+        ]
 
     def get_currently_reading(self) -> dict:
         """Bulk-fetch all user_books with Want to Read (1), Currently Reading (2), or Paused (4) status.
@@ -1173,3 +1209,126 @@ class HardcoverClient:
                 return True
             logger.error("Hardcover create_reading_journal: no reading_journal in response")
         return False
+
+    # ── TBR / Want-to-Read methods ──
+
+    def get_want_to_read_books(self) -> list[dict]:
+        """Fetch all user_books with status_id=1 (Want to Read), with book metadata."""
+        query = """
+        query {
+            me {
+                user_books(where: {status_id: {_eq: 1}}) {
+                    id
+                    book_id
+                    book {
+                        id
+                        title
+                        slug
+                        cached_image
+                        cached_contributors
+                        pages
+                        rating
+                        release_year
+                    }
+                }
+            }
+        }
+        """
+        result = self.query(query)
+        if not result or not result.get("me"):
+            return []
+
+        me = result["me"]
+        if isinstance(me, list):
+            me = me[0] if me else {}
+
+        results = []
+        for ub in me.get("user_books", []):
+            book = ub.get("book") or {}
+            normalized = self._normalize_book(book)
+            # Fallback to user_book's book_id if book object lacks it
+            if not normalized["book_id"]:
+                normalized["book_id"] = ub.get("book_id")
+            results.append(normalized)
+        return results
+
+    def get_user_lists(self) -> list[dict]:
+        """Fetch all custom lists for the current user."""
+        user_id = self.get_user_id()
+        if not user_id:
+            return []
+
+        query = """
+        query ($userId: Int!) {
+            lists(
+                where: {user_id: {_eq: $userId}},
+                order_by: {updated_at: desc}
+            ) {
+                id
+                name
+                description
+                books_count
+                public
+                updated_at
+            }
+        }
+        """
+        result = self.query(query, {"userId": user_id})
+        if not result or not result.get("lists"):
+            return []
+
+        return [
+            {
+                "id": lst["id"],
+                "name": lst.get("name", ""),
+                "description": lst.get("description", ""),
+                "books_count": lst.get("books_count", 0),
+                "public": lst.get("public", False),
+                "updated_at": lst.get("updated_at"),
+            }
+            for lst in result["lists"]
+        ]
+
+    def get_list_books(self, list_id: int) -> dict | None:
+        """Fetch all books in a specific Hardcover list with metadata."""
+        query = """
+        query ($listId: Int!) {
+            lists(where: {id: {_eq: $listId}}) {
+                name
+                description
+                list_books {
+                    position
+                    date_added
+                    book {
+                        id
+                        title
+                        slug
+                        cached_image
+                        cached_contributors
+                        pages
+                        rating
+                        release_year
+                    }
+                }
+            }
+        }
+        """
+        result = self.query(query, {"listId": list_id})
+        lists = result.get("lists") if result else None
+        if not lists:
+            return None
+
+        lst = lists[0]
+        books = []
+        for lb in lst.get("list_books", []):
+            book = lb.get("book") or {}
+            normalized = self._normalize_book(book)
+            normalized["position"] = lb.get("position")
+            normalized["date_added"] = lb.get("date_added")
+            books.append(normalized)
+
+        return {
+            "name": lst.get("name", ""),
+            "description": lst.get("description", ""),
+            "books": books,
+        }

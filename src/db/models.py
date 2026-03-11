@@ -495,6 +495,83 @@ class BookfusionBook(Base):
         return f"<BookfusionBook(id={self.id}, title='{self.title}')>"
 
 
+class TbrItem(Base):
+    """A book on the user's To Be Read list. Separate from the Book table —
+    a TBR item may not be owned yet."""
+    __tablename__ = 'tbr_items'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    title = Column(String(500), nullable=False)
+    author = Column(String(500), nullable=True)
+    cover_url = Column(String(500), nullable=True)
+    notes = Column(Text, nullable=True)
+    priority = Column(Integer, default=0)
+    added_at = Column(DateTime, default=datetime.utcnow)
+
+    # Hardcover link (if sourced from or synced to HC)
+    hardcover_book_id = Column(Integer, nullable=True, index=True)
+    hardcover_slug = Column(String(255), nullable=True)
+
+    # Source tracking: 'manual', 'open_library', 'hardcover_search', 'hardcover_wtr', 'hardcover_list'
+    source = Column(String(50), default='manual')
+
+    # Open Library link (if sourced from OL search)
+    ol_work_key = Column(String(255), nullable=True)
+    isbn = Column(String(20), nullable=True)
+
+    # If imported from a Hardcover custom list (Phase 5)
+    hardcover_list_id = Column(Integer, nullable=True)
+    hardcover_list_name = Column(String(500), nullable=True)
+
+    # Enrichment metadata (populated from Hardcover, Open Library, or manual entry)
+    description = Column(Text, nullable=True)
+    page_count = Column(Integer, nullable=True)
+    rating = Column(Float, nullable=True)
+    ratings_count = Column(Integer, nullable=True)
+    release_year = Column(Integer, nullable=True)
+    genres = Column(Text, nullable=True)          # JSON-encoded list of strings
+    subtitle = Column(String(500), nullable=True)
+
+    # Link to owned Book (set when matched/acquired)
+    book_abs_id = Column(String(255), ForeignKey('books.abs_id', ondelete='SET NULL'), nullable=True, index=True)
+    book = relationship("Book")
+
+    def __init__(self, title: str, author: str = None, cover_url: str = None,
+                 notes: str = None, priority: int = 0, source: str = 'manual',
+                 hardcover_book_id: int = None, hardcover_slug: str = None,
+                 ol_work_key: str = None, isbn: str = None,
+                 hardcover_list_id: int = None, hardcover_list_name: str = None,
+                 book_abs_id: str = None,
+                 description: str = None, page_count: int = None,
+                 rating: float = None, ratings_count: int = None,
+                 release_year: int = None, genres: str = None,
+                 subtitle: str = None):
+        self.title = title
+        self.author = author
+        self.cover_url = cover_url
+        self.notes = notes
+        self.priority = priority
+        self.source = source
+        self.hardcover_book_id = hardcover_book_id
+        self.hardcover_slug = hardcover_slug
+        self.ol_work_key = ol_work_key
+        self.isbn = isbn
+        self.hardcover_list_id = hardcover_list_id
+        self.hardcover_list_name = hardcover_list_name
+        self.book_abs_id = book_abs_id
+        self.description = description
+        self.page_count = page_count
+        self.rating = rating
+        self.ratings_count = ratings_count
+        self.release_year = release_year
+        self.genres = genres
+        self.subtitle = subtitle
+        self.added_at = datetime.utcnow()
+
+    def __repr__(self):
+        return f"<TbrItem(id={self.id}, title='{self.title}')>"
+
+
 class BookloreBook(Base):
     """
     Model for caching Booklore search results, replacing local JSON cache.

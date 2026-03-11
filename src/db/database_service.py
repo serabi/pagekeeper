@@ -18,6 +18,7 @@ from .models import (
 from .reading_repository import VALID_JOURNAL_EVENTS, ReadingRepository
 from .settings_repository import SettingsRepository
 from .suggestion_repository import SuggestionRepository
+from .tbr_repository import TbrRepository
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,7 @@ class DatabaseService:
         self._reading = ReadingRepository(self.db_manager)
         self._suggestions = SuggestionRepository(self.db_manager)
         self._integrations = IntegrationRepository(self.db_manager)
+        self._tbr = TbrRepository(self.db_manager)
 
         # One-time data cleanup
         self._cleanup_bookfusion_md_titles()
@@ -210,6 +212,9 @@ class DatabaseService:
 
     def get_books_by_status(self, status):
         return self._books.get_books_by_status(status)
+
+    def search_books(self, query, limit=10):
+        return self._books.search_books(query, limit)
 
     def get_book_by_ebook_filename(self, filename):
         return self._books.get_book_by_ebook_filename(filename)
@@ -402,7 +407,17 @@ class DatabaseService:
         return self._integrations.get_hardcover_details(abs_id)
 
     def save_hardcover_details(self, details):
-        return self._integrations.save_hardcover_details(details)
+        result = self._integrations.save_hardcover_details(details)
+        # Auto-link: if a TBR item has this hardcover_book_id, set its book_abs_id
+        if details.hardcover_book_id:
+            try:
+                hc_id = int(details.hardcover_book_id)
+                tbr_item = self._tbr.find_tbr_by_hardcover_id(hc_id)
+                if tbr_item and not tbr_item.book_abs_id:
+                    self._tbr.link_tbr_to_book(tbr_item.id, details.abs_id)
+            except (TypeError, ValueError):
+                pass
+        return result
 
     def delete_hardcover_details(self, abs_id):
         return self._integrations.delete_hardcover_details(abs_id)
@@ -513,6 +528,32 @@ class DatabaseService:
 
     def get_bookfusion_highlight_counts(self):
         return self._integrations.get_bookfusion_highlight_counts()
+
+    # ── TBR (To Be Read) List (delegates to TbrRepository) ──
+
+    def get_tbr_items(self, source=None):
+        return self._tbr.get_tbr_items(source)
+
+    def get_tbr_item(self, item_id):
+        return self._tbr.get_tbr_item(item_id)
+
+    def add_tbr_item(self, title, **kwargs):
+        return self._tbr.add_tbr_item(title, **kwargs)
+
+    def update_tbr_item(self, item_id, **fields):
+        return self._tbr.update_tbr_item(item_id, **fields)
+
+    def delete_tbr_item(self, item_id):
+        return self._tbr.delete_tbr_item(item_id)
+
+    def link_tbr_to_book(self, item_id, abs_id):
+        return self._tbr.link_tbr_to_book(item_id, abs_id)
+
+    def find_tbr_by_hardcover_id(self, hc_book_id):
+        return self._tbr.find_tbr_by_hardcover_id(hc_book_id)
+
+    def get_tbr_count(self):
+        return self._tbr.get_tbr_count()
 
 
 class DatabaseMigrator:

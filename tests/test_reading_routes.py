@@ -97,8 +97,13 @@ class TestReadingRoutes(unittest.TestCase):
         self.temp_dir = tempfile.mkdtemp()
         original_data_dir = os.environ.get('DATA_DIR')
         original_books_dir = os.environ.get('BOOKS_DIR')
+        original_template_dir = os.environ.get('TEMPLATE_DIR')
+        original_static_dir = os.environ.get('STATIC_DIR')
+        project_root = str(Path(__file__).parent.parent)
         os.environ['DATA_DIR'] = self.temp_dir
         os.environ['BOOKS_DIR'] = self.temp_dir
+        os.environ['TEMPLATE_DIR'] = str(Path(project_root) / 'templates')
+        os.environ['STATIC_DIR'] = str(Path(project_root) / 'static')
         self.mock_container = MockContainer()
 
         original_init_db = src.db.migration_utils.initialize_database
@@ -115,6 +120,14 @@ class TestReadingRoutes(unittest.TestCase):
                 os.environ.pop('BOOKS_DIR', None)
             else:
                 os.environ['BOOKS_DIR'] = original_books_dir
+            if original_template_dir is None:
+                os.environ.pop('TEMPLATE_DIR', None)
+            else:
+                os.environ['TEMPLATE_DIR'] = original_template_dir
+            if original_static_dir is None:
+                os.environ.pop('STATIC_DIR', None)
+            else:
+                os.environ['STATIC_DIR'] = original_static_dir
             shutil.rmtree(self.temp_dir, ignore_errors=True)
             if self._nh3_original is None:
                 sys.modules.pop('nh3', None)

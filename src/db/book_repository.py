@@ -36,6 +36,19 @@ class BookRepository(BaseRepository):
     def get_books_by_status(self, status):
         return self._get_all(Book, Book.status == status)
 
+    def search_books(self, query, limit=10):
+        """Search books by title (case-insensitive substring match)."""
+        if not query or not query.strip():
+            return []
+        with self.get_session() as session:
+            results = (session.query(Book)
+                       .filter(Book.abs_title.ilike(f'%{query}%'))
+                       .limit(limit)
+                       .all())
+            for r in results:
+                session.expunge(r)
+            return results
+
     def get_book_by_ebook_filename(self, filename):
         """Find a book by its ebook filename (current or original)."""
         from sqlalchemy import or_

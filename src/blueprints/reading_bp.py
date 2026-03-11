@@ -1,8 +1,8 @@
 """Reading Tab blueprint — reading tracker pages and API endpoints."""
 
+import json as _json
 import logging
 import math
-import time
 from datetime import date, datetime
 from pathlib import Path
 
@@ -10,29 +10,22 @@ from flask import Blueprint, abort, jsonify, render_template, request
 
 from src.blueprints.helpers import (
     get_abs_service,
-    get_booklore_client,
     get_container,
     get_database_service,
     get_hardcover_book_url,
-    get_service_web_url,
 )
-from src.db.models import State
-from src.services.reading_date_service import pull_reading_dates
+from src.services.book_metadata_service import build_book_metadata, build_service_info
+from src.services.reading_service import ReadingService
 from src.services.reading_stats_service import ReadingStatsService
+from src.utils.cover_resolver import resolve_book_covers
 
 logger = logging.getLogger(__name__)
 
 reading_bp = Blueprint('reading', __name__)
 
 
-def _pull_started_at(abs_id):
-    """Pull started_at from Hardcover/ABS before falling back to today."""
-    try:
-        container = get_container()
-        dates = pull_reading_dates(abs_id, container, get_database_service())
-        return dates.get('started_at', date.today().isoformat())
-    except Exception:
-        return date.today().isoformat()
+def _get_reading_service():
+    return ReadingService(get_database_service())
 
 
 def _get_reading_stats_service():
@@ -85,21 +78,7 @@ def _build_book_reading_data(book, database_service, abs_service, states_by_book
 
     # Get unified progress from states
     states = states_by_book.get(book.abs_id, [])
-    max_progress = 0
-    for state in states:
-        if state.percentage:
-            max_progress = max(max_progress, round(state.percentage * 100, 1))
-
-    custom_cover_url = book.custom_cover_url or None
-    abs_cover_url = None
-    if book.abs_id and book_type != 'ebook-only':
-        abs_cover_url = abs_service.get_cover_proxy_url(book.abs_id)
-
-    # Cover URL — preserve custom override, otherwise prefer ABS/audiobook cover on linked books.
-    cover_url = custom_cover_url
-    fallback_cover_url = None
-    if not cover_url and book.kosync_doc_id:
-        cover_url = f'/covers/{book.kosync_doc_id}.jpg'
+    max_progress = ReadingService.max_progress(states, as_percent=True)
 
     # Enrich title/author from Booklore or ABS metadata when available
     display_title = book.abs_title or ''
@@ -132,24 +111,8 @@ def _build_book_reading_data(book, database_service, abs_service, states_by_book
     if not display_author:
         display_author = book.ebook_filename or ''
 
-    # Booklore cover fallback
-    if not cover_url and bl_meta:
-        bl_id = (bl_meta.raw_metadata_dict or {}).get('id')
-        if bl_id:
-            cover_url = f"/api/cover-proxy/booklore/{bl_id}"
-
-    # Hardcover cover fallback
-    if not cover_url:
-        hc_details = database_service.get_hardcover_details(book.abs_id)
-        if hc_details and hc_details.hardcover_cover_url:
-            cover_url = hc_details.hardcover_cover_url
-
-    non_abs_cover_url = cover_url
-    if not custom_cover_url and abs_cover_url:
-        fallback_cover_url = non_abs_cover_url if non_abs_cover_url != abs_cover_url else None
-        cover_url = abs_cover_url
-    elif custom_cover_url:
-        fallback_cover_url = None
+    covers = resolve_book_covers(book, abs_service, database_service, book_type,
+                                 booklore_meta=bl_meta)
 
     return {
         'abs_id': book.abs_id,
@@ -159,11 +122,11 @@ def _build_book_reading_data(book, database_service, abs_service, states_by_book
         'kosync_doc_id': book.kosync_doc_id,
         'status': book.status,
         'book_type': book_type,
-        'unified_progress': min(max_progress, 100.0),
-        'cover_url': cover_url,
-        'custom_cover_url': custom_cover_url,
-        'abs_cover_url': abs_cover_url,
-        'fallback_cover_url': fallback_cover_url,
+        'unified_progress': max_progress,
+        'cover_url': covers['cover_url'],
+        'custom_cover_url': covers['custom_cover_url'],
+        'abs_cover_url': covers['abs_cover_url'],
+        'fallback_cover_url': covers['fallback_cover_url'],
         'started_at': book.started_at,
         'finished_at': book.finished_at,
         'rating': book.rating,
@@ -186,6 +149,8 @@ def _is_genuinely_reading(book_data):
 
 
 @reading_bp.route('/reading')
+@reading_bp.route('/reading/tbr')
+@reading_bp.route('/reading/stats')
 def reading_index():
     """Render the main reading tab page."""
     database_service = get_database_service()
@@ -315,6 +280,19 @@ def reading_index():
         },
     ]
 
+    # TBR count for tab badge
+    tbr_count = database_service.get_tbr_count()
+
+    # Check if Hardcover is configured (for TBR import/search toggle)
+    try:
+        hc_configured = get_container().hardcover_client().is_configured()
+    except Exception:
+        hc_configured = False
+
+    # Determine active tab from route
+    path_to_tab = {'/reading/tbr': 'tbr', '/reading/stats': 'stats'}
+    active_tab = path_to_tab.get(request.path, 'log')
+
     return render_template(
         'reading.html',
         all_books=currently_reading + finished + paused + dnf + not_started,
@@ -325,6 +303,9 @@ def reading_index():
         goal=goal,
         current_year=current_year,
         total_books=len(all_book_data),
+        tbr_count=tbr_count,
+        hc_configured=hc_configured,
+        active_tab=active_tab,
     )
 
 
@@ -374,129 +355,13 @@ def reading_detail(abs_id):
         or database_service.is_bookfusion_linked(abs_id)
     )
 
-    # ── Build enriched metadata from all linked services ──
-    metadata = {}
-
-    # ABS metadata (subtitle, author, narrator, duration, genres, description)
-    sync_mode = getattr(book, 'sync_mode', 'audiobook')
-    if sync_mode != 'ebook_only':
-        try:
-            abs_item = abs_service.get_item_details(abs_id)
-            if abs_item:
-                abs_meta = abs_item.get('media', {}).get('metadata', {})
-                metadata['author'] = abs_meta.get('authorName') or ''
-                metadata['narrator'] = abs_meta.get('narratorName') or ''
-                metadata['subtitle'] = abs_meta.get('subtitle') or ''
-                metadata['description'] = abs_meta.get('description') or ''
-                metadata['genres'] = abs_meta.get('genres') or []
-                duration = abs_item.get('media', {}).get('duration')
-                if duration:
-                    hrs = int(duration // 3600)
-                    mins = int((duration % 3600) // 60)
-                    metadata['duration'] = f"{hrs}h {mins}m" if hrs else f"{mins}m"
-        except Exception as e:
-            logger.debug("abs_service.get_item_details failed for abs_id=%s: %s", abs_id, e, exc_info=True)
-
-    # Fallback duration from stored book data (in case ABS API call failed or was skipped)
-    if not metadata.get('duration') and book.duration and book.duration > 0:
-        hrs = int(book.duration // 3600)
-        mins = int((book.duration % 3600) // 60)
-        metadata['duration'] = f"{hrs}h {mins}m" if hrs else f"{mins}m"
-
-    # Hardcover details (ISBN, ASIN, pages, slug)
-    hardcover = database_service.get_hardcover_details(abs_id)
-    if hardcover:
-        metadata['isbn'] = hardcover.isbn
-        metadata['asin'] = hardcover.asin
-        if hardcover.hardcover_pages and hardcover.hardcover_pages > 0:
-            metadata['pages'] = hardcover.hardcover_pages
-        metadata['hardcover_slug'] = hardcover.hardcover_slug
-        hardcover_ref = hardcover.hardcover_slug or hardcover.hardcover_book_id
-        metadata['hardcover_url'] = get_hardcover_book_url(hardcover_ref)
-        # Map HC status ID to a human-readable label for the detail page
-        hc_status_labels = {1: 'Want to Read', 2: 'Currently Reading', 3: 'Read', 4: 'Paused', 5: 'DNF'}
-        if hardcover.hardcover_status_id:
-            metadata['hardcover_status'] = hc_status_labels.get(hardcover.hardcover_status_id)
-            metadata['hardcover_status_id'] = hardcover.hardcover_status_id
-
-    # Hardcover metadata enrichment (description, tags, subtitle, release_year)
-    # Only use description/tags from user-verified matches to avoid wrong-book data
-    if hardcover and hardcover.hardcover_book_id:
-        hc_verified = hardcover.matched_by in ('manual', 'cover_picker')
-        try:
-            hc_client = get_container().hardcover_client()
-            if hc_client and hc_client.is_configured():
-                hc_meta = hc_client.get_book_metadata(int(hardcover.hardcover_book_id))
-                if hc_meta:
-                    if hc_verified:
-                        if not metadata.get('description') and hc_meta.get('description'):
-                            metadata['description'] = hc_meta['description']
-                        if not metadata.get('genres') and hc_meta.get('genres'):
-                            metadata['genres'] = hc_meta['genres']
-                        if hc_meta.get('tags'):
-                            metadata['hc_tags'] = hc_meta['tags']
-                        if not metadata.get('subtitle') and hc_meta.get('subtitle'):
-                            metadata['subtitle'] = hc_meta['subtitle']
-                    if hc_meta.get('release_year'):
-                        metadata['release_year'] = hc_meta['release_year']
-        except Exception as e:
-            logger.debug("Hardcover metadata fetch failed: %s", e)
-
-    # Booklore metadata (description, publisher, language)
-    if book.ebook_filename:
-        bl_client = get_booklore_client()
-        try:
-            if bl_client.is_configured():
-                bl_book = bl_client.find_book_by_filename(book.ebook_filename, allow_refresh=False)
-                if not bl_book and getattr(book, 'original_ebook_filename', None):
-                    bl_book = bl_client.find_book_by_filename(book.original_ebook_filename, allow_refresh=False)
-                if bl_book:
-                    if not metadata.get('description') and bl_book.get('description'):
-                        metadata['description'] = bl_book['description']
-                    bl_base = get_service_web_url('BOOKLORE') or bl_client.base_url
-                    bl_url = f"{bl_base}/book/{bl_book.get('id')}?tab=view"
-                    metadata['booklore_url'] = bl_url
-        except Exception as e:
-            logger.debug("Booklore lookup failed for ebook_filename=%s, original=%s, client=%s: %s",
-                         book.ebook_filename, getattr(book, 'original_ebook_filename', None),
-                         bl_client.base_url, e)
-
-    # BookFusion catalog entry (tags, series)
-    bf_book = database_service.get_bookfusion_book_by_abs_id(abs_id)
-    if bf_book:
-        metadata['bf_tags'] = bf_book.tags or ''
-        metadata['bf_series'] = bf_book.series or ''
-
-    # ABS item URL
-    if sync_mode != 'ebook_only':
-        abs_base = get_service_web_url('ABS') or (abs_service.abs_client.base_url if abs_service.is_available() else '')
-        metadata['abs_url'] = f"{abs_base}/item/{abs_id}" if abs_base else None
-
-    # Build per-service state data for the Services tab
-    service_states = {}
-    for state in states_by_book.get(abs_id, []):
-        pct = round(state.percentage * 100, 1) if state.percentage else 0
-        service_states[state.client_name] = {'percentage': pct, 'timestamp': state.timestamp}
-
-    integrations = {
-        'abs': sync_mode != 'ebook_only',
-        'kosync': book.kosync_doc_id is not None,
-        'storyteller': book.storyteller_uuid is not None,
-        'hardcover': hardcover is not None,
-        'bookfusion': has_bookfusion_link,
-        'booklore': bool(metadata.get('booklore_url')),
-    }
-
-    # Which services are enabled system-wide (for showing "Link" on unconnected services)
     container = get_container()
-    services_enabled = {
-        'abs': abs_service.is_available(),
-        'kosync': True,  # KoSync is always available (built-in server)
-        'storyteller': container.storyteller_client().is_configured(),
-        'hardcover': container.hardcover_client().is_configured(),
-        'bookfusion': container.bookfusion_client().is_configured(),
-        'booklore': get_booklore_client().is_configured(),
-    }
+    metadata = build_book_metadata(book, container, database_service, abs_service)
+    hardcover = metadata.get('_hardcover')
+
+    service_states, integrations, services_enabled = build_service_info(
+        book, states_by_book, container, abs_service, metadata, has_bookfusion_link,
+    )
 
     return render_template(
         'reading_detail.html',
@@ -514,6 +379,39 @@ def reading_detail(abs_id):
         hardcover_linked=bool(hardcover and hardcover.hardcover_book_id),
         journal_sync_enabled=_resolve_journal_sync(hardcover, database_service),
         journal_privacy_default=_safe_privacy(database_service.get_setting('HARDCOVER_JOURNAL_PRIVACY')),
+    )
+
+
+@reading_bp.route('/reading/tbr/<int:item_id>')
+def tbr_detail(item_id):
+    """Render the TBR book detail page."""
+    database_service = get_database_service()
+
+    item = database_service.get_tbr_item(item_id)
+    if not item:
+        abort(404)
+
+    # Deserialize genres
+    genres = _json.loads(item.genres) if item.genres else []
+
+    # Resolve linked library book
+    linked_book = None
+    if item.book_abs_id:
+        linked_book = database_service.get_book(item.book_abs_id)
+
+    # Check HC configuration
+    try:
+        hc_configured = get_container().hardcover_client().is_configured()
+    except Exception:
+        hc_configured = False
+
+    return render_template(
+        'tbr_detail.html',
+        item=item,
+        genres=genres,
+        linked_book=linked_book,
+        hc_configured=hc_configured,
+        get_hardcover_book_url=get_hardcover_book_url,
     )
 
 
@@ -564,7 +462,6 @@ def update_rating(abs_id):
 @reading_bp.route('/api/reading/book/<abs_id>/progress', methods=['POST'])
 def update_progress(abs_id):
     """Manually set reading progress for a book (e.g. BookFusion books without auto-sync)."""
-    database_service = get_database_service()
     data = request.json or {}
     percentage = data.get('percentage')
 
@@ -579,42 +476,10 @@ def update_progress(abs_id):
     if not math.isfinite(percentage) or percentage < 0 or percentage > 1:
         return jsonify({"success": False, "error": "percentage must be between 0 and 1"}), 400
 
-    book = database_service.get_book(abs_id)
-    if not book:
-        return jsonify({"success": False, "error": "Book not found"}), 404
-
-    # Mark book as active if it hasn't been started yet
-    if percentage > 0 and book.status not in ('active', 'paused', 'dnf', 'completed'):
-        book.status = 'active'
-        if not book.started_at:
-            book.started_at = _pull_started_at(abs_id)
-        database_service.save_book(book)
-
-    state = State(
-        abs_id=abs_id,
-        client_name='manual',
-        percentage=percentage,
-        last_updated=time.time(),
-        timestamp=time.time(),
-    )
-    database_service.save_state(state)
-
-    # Trigger sync to propagate progress to other linked services
-    try:
-        from src.blueprints.helpers import get_container
-        from src.sync_clients.sync_client_interface import LocatorResult, UpdateProgressRequest
-        container = get_container()
-        sync_clients = container.sync_clients()
-        locator = LocatorResult(percentage=percentage)
-        req = UpdateProgressRequest(locator_result=locator)
-        for client_name, client in sync_clients.items():
-            if client.is_configured():
-                try:
-                    client.update_progress(book, req)
-                except Exception as e:
-                    logger.debug(f"Progress sync to {client_name} failed: {e}")
-    except Exception as e:
-        logger.debug(f"Could not propagate progress: {e}")
+    container = get_container()
+    result = _get_reading_service().set_progress(abs_id, percentage, container)
+    if not result['success']:
+        return jsonify(result), 404
 
     return jsonify({"success": True, "percentage": percentage})
 
@@ -707,10 +572,7 @@ def add_journal(abs_id):
 
     # Get current progress for the journal entry
     book_states = database_service.get_states_for_book(abs_id)
-    max_pct = 0
-    for state in book_states:
-        if state.percentage:
-            max_pct = max(max_pct, state.percentage)
+    max_pct = ReadingService.max_progress(book_states)
 
     journal = database_service.add_reading_journal(
         abs_id, event='note', entry=entry, percentage=max_pct if max_pct > 0 else None
@@ -911,10 +773,7 @@ def get_reading_books():
     result = []
     for book in books:
         states = states_by_book.get(book.abs_id, [])
-        max_progress = 0
-        for state in states:
-            if state.percentage:
-                max_progress = max(max_progress, round(state.percentage * 100, 1))
+        max_progress = ReadingService.max_progress(states, as_percent=True)
 
         result.append({
             'abs_id': book.abs_id,
@@ -940,10 +799,7 @@ def get_reading_book(abs_id):
         return jsonify({"error": "Book not found"}), 404
 
     states = database_service.get_states_for_book(abs_id)
-    max_progress = 0
-    for state in states:
-        if state.percentage:
-            max_progress = max(max_progress, round(state.percentage * 100, 1))
+    max_progress = ReadingService.max_progress(states, as_percent=True)
 
     journals = database_service.get_reading_journals(abs_id)
     journal_list = [{
@@ -973,64 +829,16 @@ def update_status(abs_id):
 
     Accepts: {"status": "active"|"completed"|"paused"|"dnf"|"not_started"}
     """
-    database_service = get_database_service()
     data = request.json or {}
     new_status = data.get('status')
 
-    valid_statuses = {'active', 'completed', 'paused', 'dnf', 'not_started'}
-    if new_status not in valid_statuses:
-        return jsonify({"success": False, "error": f"Invalid status. Must be one of: {', '.join(sorted(valid_statuses))}"}), 400
+    container = get_container()
+    result = _get_reading_service().update_status(abs_id, new_status, container)
+    if not result['success']:
+        code = 404 if result.get('error') == 'Book not found' else 400
+        return jsonify(result), code
 
-    book = database_service.get_book(abs_id)
-    if not book:
-        return jsonify({"success": False, "error": "Book not found"}), 404
-
-    old_status = book.status
-    if old_status == new_status:
-        return jsonify({"success": True, "status": new_status})
-
-    book.status = new_status
-    if new_status == 'active':
-        book.activity_flag = False
-    database_service.save_book(book)
-
-    # Auto-create journal entries for transitions
-    event_map = {
-        'completed': 'finished',
-        'paused': 'paused',
-        'dnf': 'dnf',
-    }
-    event = event_map.get(new_status)
-    if event:
-        pct = None
-        if event == 'finished':
-            pct = 1.0
-        database_service.add_reading_journal(abs_id, event=event, percentage=pct)
-
-    # Auto-set dates (pull from external sources before falling back to today)
-    today = date.today().isoformat()
-    if new_status == 'active':
-        if not book.started_at:
-            database_service.update_book_reading_fields(abs_id, started_at=_pull_started_at(abs_id))
-            database_service.add_reading_journal(abs_id, event='started')
-        else:
-            database_service.add_reading_journal(abs_id, event='resumed')
-    elif new_status == 'completed' and not book.finished_at:
-        updates = {'finished_at': today}
-        if not book.started_at:
-            updates['started_at'] = _pull_started_at(abs_id)
-        database_service.update_book_reading_fields(abs_id, **updates)
-
-    # Push status to Hardcover (Step 11)
-    try:
-        container = get_container()
-        hc_sync = container.hardcover_sync_client()
-        if hc_sync.is_configured():
-            hc_sync.push_local_status(book, new_status)
-    except Exception as e:
-        logger.debug(f"Could not push status to Hardcover: {e}")
-
-    return jsonify({"success": True, "status": new_status, "previous_status": old_status})
+    return jsonify(result)
 
 
 @reading_bp.route('/api/reading/stats/<int:year>', methods=['GET'])
