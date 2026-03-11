@@ -15,10 +15,17 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import ModuleType
 from unittest.mock import MagicMock, Mock, patch
 
 # Add the project root to the path
 sys.path.insert(0, str(Path(__file__).parent.parent))
+
+# Stub native modules that are only available inside Docker (epubcfi, ffmpeg)
+# so StorytellerSyncClient can be imported for unit testing.
+for _mod_name in ('epubcfi',):
+    if _mod_name not in sys.modules:
+        sys.modules[_mod_name] = ModuleType(_mod_name)
 
 
 class TestBookModelStorytellerUUID(unittest.TestCase):
