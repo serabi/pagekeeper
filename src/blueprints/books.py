@@ -16,7 +16,6 @@ from src.blueprints.helpers import (
 from src.services.reading_service import ReadingService
 from src.utils.logging_utils import sanitize_log_data
 
-
 logger = logging.getLogger(__name__)
 
 
