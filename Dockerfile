@@ -1,5 +1,6 @@
 FROM python:3.13-slim
 
+# LD_LIBRARY_PATH includes CUDA paths — ignored when NVIDIA/CUDA libs are not installed
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     FLASK_APP=web_server.py \

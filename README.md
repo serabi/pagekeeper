@@ -63,7 +63,21 @@ When a position change is detected, PageKeeper converts it to every other format
 
 ---
 
-## App Infrastructure 
+## Raspberry Pi / ARM64
+
+The core app — sync, dashboard, reading tracker, database — runs on ARM64 (including Raspberry Pi 4/5) with no changes. Expect **~80–150 MB RAM** for normal use.
+
+The one caveat is **audio↔text alignment via local transcription**. PageKeeper bundles `faster-whisper` for speech-to-text, which depends on `ctranslate2` — a library that can be difficult to build on ARM. If you run into build failures on ARM, you have three alternatives:
+
+- **Storyteller native alignment** — If your audiobooks are in [Storyteller](https://storyteller-platform.gitlab.io/storyteller/), PageKeeper can read its pre-computed word-level timelines directly. No local transcription needed.
+- **Whisper.cpp server** — Run a [whisper.cpp](https://github.com/ggerganov/whisper.cpp) HTTP server on a more capable machine on your network, then point PageKeeper at it in Settings → Transcription Provider.
+- **Deepgram** — Use [Deepgram](https://deepgram.com/) as a cloud transcription provider (configured in Settings). This offloads the work to an API and avoids the ARM build issue entirely.
+
+If you do manage to get `faster-whisper` running on ARM, note that local Whisper transcription is memory-intensive: the `base` model needs **~1 GB RAM**, while `large-v3` can require **4–8 GB**.
+
+---
+
+## App Infrastructure
 
 This app is built with Python 3.13 and Flask, using SQLAlchemy with SQLite for persistence and Alembic for database migrations. It runs in a Docker container based on `python:3.13-slim`, with ffmpeg for audio processing and faster-whisper installed in-container for speech-to-text transcription. The frontend uses vanilla JavaScript, HTML, and CSS. Dependency injection is handled by dependency-injector, and real-time communication with Audiobookshelf uses python-socketio.
 

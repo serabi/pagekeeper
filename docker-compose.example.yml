@@ -35,14 +35,14 @@ services:
     networks:
       - your-network
     # ============================================
-    # GPU SUPPORT (OPTIONAL)
+    # RESOURCE LIMITS & GPU (OPTIONAL)
     # ============================================
-    # Uncomment below to enable NVIDIA GPU acceleration for Whisper.
-    # Requires: docker with nvidia-container-toolkit installed.
-    # See: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
-    #
     # deploy:
     #   resources:
+    #     limits:
+    #       memory: 512M  # Bump to 2G+ if using local Whisper transcription
+    #     # NVIDIA GPU acceleration for Whisper (requires nvidia-container-toolkit)
+    #     # See: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html
     #     reservations:
     #       devices:
     #         - driver: nvidia
