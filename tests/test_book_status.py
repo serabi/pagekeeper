@@ -35,6 +35,9 @@ class MockContainer:
     def booklore_client(self):
         return Mock(is_configured=Mock(return_value=False))
 
+    def booklore_client_group(self):
+        return Mock(is_configured=Mock(return_value=False))
+
     def hardcover_client(self):
         return self._hardcover_client
 

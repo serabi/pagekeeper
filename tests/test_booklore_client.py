@@ -98,15 +98,19 @@ def test_save_to_db_on_fetch(mock_db):
         # Mock dependencies
         mock_response = MagicMock()
         mock_response.status_code = 200
-        # First call returns list, second empty to stop loop
+        # First call returns list with full Book DTO, second empty to stop loop
         mock_response.json.side_effect = [
             [
                 {
                     "id": "new1",
-                    "fileName": "NewBook.epub", # Booklore sends camelCase
                     "title": "New Book",
+                    "primaryFile": {
+                        "id": 42,
+                        "fileName": "newbook.epub",
+                        "bookType": "EPUB"
+                    },
                     "metadata": {
-                        "authors": ["New Author"] # Booklore sends list of strings or dicts
+                        "authors": ["New Author"]
                     }
                 }
             ],
@@ -117,27 +121,150 @@ def test_save_to_db_on_fetch(mock_db):
         client._get_fresh_token = MagicMock(return_value="fake_token")
         client._make_request = MagicMock(side_effect=[mock_response, mock_response])
 
-        # Mock _fetch_book_detail to return valid detailed info
-        detailed_info = {
-            "id": "new1",
-            "fileName": "newbook.epub", # normalized
-            "title": "New Book",
-            "metadata": {
-                "authors": ["New Author"]
-            }
+        client._refresh_book_cache()
+
+        # Verify processing happened
+        mock_db.save_booklore_book.assert_called()
+        saved_book = mock_db.save_booklore_book.call_args[0][0]
+        assert saved_book.filename == "newbook.epub"
+
+
+def test_extract_progress_epub(booklore_client):
+    book_info = {
+        'epubProgress': {'percentage': 45.5, 'cfi': 'epubcfi(/6/4)'},
+        'pdfProgress': None,
+        'cbxProgress': None,
+    }
+    pct, cfi = booklore_client.extract_progress(book_info)
+    assert pct == pytest.approx(0.455)
+    assert cfi == 'epubcfi(/6/4)'
+
+
+def test_extract_progress_pdf(booklore_client):
+    book_info = {
+        'epubProgress': None,
+        'pdfProgress': {'percentage': 30.0},
+        'cbxProgress': None,
+    }
+    pct, cfi = booklore_client.extract_progress(book_info)
+    assert pct == pytest.approx(0.30)
+    assert cfi is None
+
+
+def test_extract_progress_none(booklore_client):
+    book_info = {
+        'epubProgress': None,
+        'pdfProgress': None,
+        'cbxProgress': None,
+    }
+    pct, cfi = booklore_client.extract_progress(book_info)
+    assert pct is None
+    assert cfi is None
+
+
+def test_extract_progress_zero(booklore_client):
+    """percentage=0 should return 0.0, not None."""
+    book_info = {
+        'epubProgress': {'percentage': 0, 'cfi': None},
+        'pdfProgress': None,
+        'cbxProgress': None,
+    }
+    pct, cfi = booklore_client.extract_progress(book_info)
+    assert pct == 0.0
+    assert cfi is None
+
+
+def test_update_progress_file_progress(booklore_client):
+    """When bookFileId is present, use modern fileProgress payload."""
+    from src.sync_clients.sync_client_interface import LocatorResult
+
+    booklore_client._book_cache = {
+        'test.epub': {
+            'id': 10, 'fileName': 'test.epub', 'bookType': 'EPUB',
+            'bookFileId': 42,
+            'epubProgress': None, 'pdfProgress': None, 'cbxProgress': None,
         }
+    }
+    booklore_client._book_id_cache = {10: booklore_client._book_cache['test.epub']}
+    booklore_client._cache_timestamp = 9999999999
 
-        with patch.object(client, '_fetch_book_detail', return_value=detailed_info):
-            # Also mock thread pool to run synchronously or just trust the loop calls it?
-            # ThreadPoolExecutor is used. mocking it or _fetch_book_detail is fine.
-            # But the loop calls executor.submit(fetch_one, bid)
-            # We can mock ThreadPoolExecutor too to be safe, OR just let it run since fetch_detail is mocked.
-            # Since fetch_detail is mocked, it won't hit network.
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    booklore_client._make_request = MagicMock(return_value=mock_resp)
 
-             client._refresh_book_cache()
+    locator = LocatorResult(percentage=0.5, cfi='epubcfi(/6/4)', href='chapter2.xhtml')
+    result = booklore_client.update_progress('test.epub', 0.5, locator)
 
-             # Verify processing happened
-             # Check if save_booklore_book was called
-             mock_db.save_booklore_book.assert_called()
-             saved_book = mock_db.save_booklore_book.call_args[0][0]
-             assert saved_book.filename == "newbook.epub"
+    assert result is True
+    call_args = booklore_client._make_request.call_args
+    payload = call_args[0][2]
+    assert 'fileProgress' in payload
+    assert payload['fileProgress']['bookFileId'] == 42
+    assert payload['fileProgress']['progressPercent'] == 50.0
+    assert payload['fileProgress']['positionData'] == 'epubcfi(/6/4)'
+    assert payload['fileProgress']['positionHref'] == 'chapter2.xhtml'
+
+
+def test_update_progress_legacy_fallback(booklore_client):
+    """When bookFileId is missing, fall back to legacy format."""
+    booklore_client._book_cache = {
+        'test.epub': {
+            'id': 10, 'fileName': 'test.epub', 'bookType': 'EPUB',
+            'epubProgress': None, 'pdfProgress': None, 'cbxProgress': None,
+        }
+    }
+    booklore_client._book_id_cache = {10: booklore_client._book_cache['test.epub']}
+    booklore_client._cache_timestamp = 9999999999
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    booklore_client._make_request = MagicMock(return_value=mock_resp)
+
+    result = booklore_client.update_progress('test.epub', 0.5)
+    assert result is True
+    payload = booklore_client._make_request.call_args[0][2]
+    assert 'epubProgress' in payload
+    assert 'fileProgress' not in payload
+    assert payload['epubProgress']['percentage'] == 50.0
+
+
+def test_update_progress_no_page_field(booklore_client):
+    """PDF/CBX legacy payload must not include page field."""
+    booklore_client._book_cache = {
+        'test.pdf': {
+            'id': 20, 'fileName': 'test.pdf', 'bookType': 'PDF',
+            'epubProgress': None, 'pdfProgress': None, 'cbxProgress': None,
+        }
+    }
+    booklore_client._book_id_cache = {20: booklore_client._book_cache['test.pdf']}
+    booklore_client._cache_timestamp = 9999999999
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    booklore_client._make_request = MagicMock(return_value=mock_resp)
+
+    result = booklore_client.update_progress('test.pdf', 0.75)
+    assert result is True
+    payload = booklore_client._make_request.call_args[0][2]
+    assert 'pdfProgress' in payload
+    assert 'page' not in payload['pdfProgress']
+    assert payload['pdfProgress']['percentage'] == 75.0
+
+
+def test_fetch_bulk_state():
+    """BookloreSyncClient.fetch_bulk_state keys by lowercase filename."""
+    from src.sync_clients.booklore_sync_client import BookloreSyncClient
+
+    mock_client = MagicMock()
+    mock_client.is_configured.return_value = True
+    mock_client.get_all_books.return_value = [
+        {'fileName': 'Book1.epub', 'id': 1, 'epubProgress': {'percentage': 50}},
+        {'fileName': 'Book2.PDF', 'id': 2, 'pdfProgress': {'percentage': 30}},
+    ]
+
+    sync_client = BookloreSyncClient(booklore_client=mock_client, ebook_parser=MagicMock())
+    bulk = sync_client.fetch_bulk_state()
+
+    assert 'book1.epub' in bulk
+    assert 'book2.pdf' in bulk
+    assert bulk['book1.epub']['id'] == 1

@@ -422,6 +422,79 @@
                         </div>
                     </div>
 
+                    <!-- Booklore 2 -->
+                    {% set booklore2_configured = get_val('BOOKLORE_2_SERVER') != '' %}
+                    {% set booklore2_enabled = get_bool('BOOKLORE_2_ENABLED') or (booklore2_configured and get_val('BOOKLORE_2_ENABLED') == '') %}
+                    <div class="sub-section">
+                        <div class="sub-section-header">
+                            <h3><span class="accent-dot accent-dot-booklore"></span> Booklore 2</h3>
+                            <div class="toggle-switch-wrapper">
+                                <button type="button" class="btn btn-sm" onclick="testConnection('booklore2', this)">Test</button>
+                                <span class="toggle-label">Enable</span>
+                                <label class="toggle-switch">
+                                    <input type="checkbox" id="toggle_booklore2" name="BOOKLORE_2_ENABLED"
+                                        onchange="toggleSection('booklore2_body', this.checked)" {% if booklore2_enabled %}checked{% endif %}>
+                                    <span class="slider"></span>
+                                </label>
+                            </div>
+                        </div>
+                        <div id="booklore2_body" class="sub-section-body {% if not booklore2_enabled %}collapsed{% endif %}">
+                            <div class="form-group full-width">
+                                <label>Display Label</label>
+                                <input type="text" name="BOOKLORE_2_LABEL" value="{{ get_val('BOOKLORE_2_LABEL') }}"
+                                    placeholder="Booklore 2">
+                                <div class="help-text">Custom name shown on dashboard for the second server.</div>
+                            </div>
+                            <div class="form-group full-width">
+                                <label>Server URL</label>
+                                <input type="text" name="BOOKLORE_2_SERVER" value="{{ get_val('BOOKLORE_2_SERVER') }}">
+                            </div>
+                            <div class="form-group full-width">
+                                <label>Service URLs</label>
+                                <div class="field-grid">
+                                    <div class="form-group">
+                                        <label>Internal URL</label>
+                                        <input type="text" name="BOOKLORE_2_WEB_URL_INTERNAL" value="{{ get_val('BOOKLORE_2_WEB_URL_INTERNAL') }}"
+                                            placeholder="{{ get_val('BOOKLORE_2_SERVER') or 'http://10.0.0.97:6061' }}">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>External URL</label>
+                                        <input type="text" name="BOOKLORE_2_WEB_URL_EXTERNAL" value="{{ get_val('BOOKLORE_2_WEB_URL_EXTERNAL') or get_val('BOOKLORE_2_WEB_URL') }}"
+                                            placeholder="https://booklore2.example.com">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Preferred URL</label>
+                                        <select name="BOOKLORE_2_HEADER_URL_MODE">
+                                            <option value="internal" {% if get_val('BOOKLORE_2_HEADER_URL_MODE', 'external') == 'internal' %}selected{% endif %}>Use Internal</option>
+                                            <option value="external" {% if get_val('BOOKLORE_2_HEADER_URL_MODE', 'external') != 'internal' %}selected{% endif %}>Use External</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label>Username</label>
+                                <input type="text" name="BOOKLORE_2_USER" value="{{ get_val('BOOKLORE_2_USER') }}">
+                            </div>
+                            <div class="form-group">
+                                <label>Password</label>
+                                <input type="password" name="BOOKLORE_2_PASSWORD" placeholder="{{ '(unchanged)' if get_val('BOOKLORE_2_PASSWORD') else '' }}">
+                            </div>
+                            <div class="form-group">
+                                <label>Shelf Name</label>
+                                <input type="text" name="BOOKLORE_2_SHELF_NAME" value="{{ get_val('BOOKLORE_2_SHELF_NAME') }}">
+                            </div>
+                            <div class="form-group full-width">
+                                <label>Booklore 2 Library ID (Optional)</label>
+                                <div class="input-row">
+                                    <input type="text" name="BOOKLORE_2_LIBRARY_ID" value="{{ get_val('BOOKLORE_2_LIBRARY_ID') }}"
+                                        placeholder="e.g. 1" class="input-flex">
+                                    <button class="btn" type="button" onclick="checkBooklore2Libs(event)">Find IDs</button>
+                                </div>
+                                <div class="help-text">Restricts sync to a specific library. Leave empty to sync all.</div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- CWA -->
                     {% set cwa_configured = get_val('CWA_SERVER') != '' %}
                     {% set cwa_enabled = get_bool('CWA_ENABLED') %}
@@ -1013,6 +1086,23 @@
                             </div>
                             {% endif %}
 
+                            {% if get_bool('BOOKLORE_2_ENABLED') %}
+                            <div class="form-group">
+                                <label>{{ get_val('BOOKLORE_2_LABEL', 'Booklore 2') or 'Booklore 2' }} Poll Mode</label>
+                                <select name="BOOKLORE_2_POLL_MODE" id="booklore2_poll_mode"
+                                        onchange="togglePollSeconds('booklore2_poll_seconds_row', this.value)">
+                                    <option value="global" {% if get_val('BOOKLORE_2_POLL_MODE', 'global') == 'global' %}selected{% endif %}>Global</option>
+                                    <option value="custom" {% if get_val('BOOKLORE_2_POLL_MODE') == 'custom' %}selected{% endif %}>Custom</option>
+                                </select>
+                            </div>
+                            <div class="form-group poll-settings-row {% if get_val('BOOKLORE_2_POLL_MODE') != 'custom' %}is-disabled{% endif %}" id="booklore2_poll_seconds_row">
+                                <label>{{ get_val('BOOKLORE_2_LABEL', 'Booklore 2') or 'Booklore 2' }} Poll Interval (seconds)</label>
+                                <input type="number" name="BOOKLORE_2_POLL_SECONDS" min="10"
+                                       value="{{ get_val('BOOKLORE_2_POLL_SECONDS', '300') }}">
+                                <div class="help-text">Recommended: 300s for Booklore.</div>
+                            </div>
+                            {% endif %}
+
                         </div>
                     </div>
 
@@ -1185,6 +1275,13 @@
                     password: getInputValue('BOOKLORE_PASSWORD')
                 };
             }
+            if (service === 'booklore2') {
+                return {
+                    server: getInputValue('BOOKLORE_2_SERVER'),
+                    user: getInputValue('BOOKLORE_2_USER'),
+                    password: getInputValue('BOOKLORE_2_PASSWORD')
+                };
+            }
             if (service === 'cwa') {
                 return {
                     server: getInputValue('CWA_SERVER'),
@@ -1272,6 +1369,10 @@
 
         function checkBookloreLibs(event) {
             _fetchBookloreLibs('/api/booklore/libraries', event);
+        }
+
+        function checkBooklore2Libs(event) {
+            _fetchBookloreLibs('/api/booklore2/libraries', event);
         }
 
 

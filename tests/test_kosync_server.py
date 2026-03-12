@@ -171,6 +171,9 @@ class _KosyncMockContainer:
     def booklore_client(self):
         return self.mock_booklore_client
 
+    def booklore_client_group(self):
+        return self.mock_booklore_client
+
     def ebook_parser(self):
         return Mock()
 

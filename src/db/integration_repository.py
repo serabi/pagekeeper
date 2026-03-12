@@ -191,15 +191,32 @@ class IntegrationRepository(BaseRepository):
 
     # ── Booklore ──
 
-    def get_booklore_book(self, filename):
-        return self._get_one(BookloreBook, BookloreBook.filename == filename)
+    def get_booklore_book(self, filename, server_id='default'):
+        return self._get_one(
+            BookloreBook,
+            BookloreBook.filename == filename,
+            BookloreBook.server_id == server_id,
+        )
 
-    def get_all_booklore_books(self):
-        return self._get_all(BookloreBook)
+    def get_all_booklore_books(self, server_id=None):
+        if server_id is None:
+            return self._get_all(BookloreBook)
+        with self.get_session() as session:
+            rows = session.query(BookloreBook).filter(BookloreBook.server_id == server_id).all()
+            for r in rows:
+                session.expunge(r)
+            return rows
 
     def save_booklore_book(self, booklore_book):
         with self.get_session() as session:
-            existing = session.query(BookloreBook).filter(BookloreBook.filename == booklore_book.filename).first()
+            existing = (
+                session.query(BookloreBook)
+                .filter(
+                    BookloreBook.server_id == booklore_book.server_id,
+                    BookloreBook.filename == booklore_book.filename,
+                )
+                .first()
+            )
 
             if existing:
                 for attr in ["title", "authors", "raw_metadata"]:
@@ -216,7 +233,12 @@ class IntegrationRepository(BaseRepository):
                 except IntegrityError:
                     session.rollback()
                     existing = (
-                        session.query(BookloreBook).filter(BookloreBook.filename == booklore_book.filename).first()
+                        session.query(BookloreBook)
+                        .filter(
+                            BookloreBook.server_id == booklore_book.server_id,
+                            BookloreBook.filename == booklore_book.filename,
+                        )
+                        .first()
                     )
                     if existing:
                         for attr in ["title", "authors", "raw_metadata"]:
@@ -231,12 +253,15 @@ class IntegrationRepository(BaseRepository):
                 session.expunge(booklore_book)
                 return booklore_book
 
-    def delete_booklore_book(self, filename):
+    def delete_booklore_book(self, filename, server_id='default'):
         try:
             with self.get_session() as session:
                 deleted = (
                     session.query(BookloreBook)
-                    .filter(BookloreBook.filename == filename)
+                    .filter(
+                        BookloreBook.server_id == server_id,
+                        BookloreBook.filename == filename,
+                    )
                     .delete(synchronize_session=False)
                 )
                 return deleted > 0

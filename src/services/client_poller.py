@@ -22,6 +22,7 @@ class ClientPoller:
     _POLLABLE = [
         ('Storyteller', 'STORYTELLER'),
         ('BookLore', 'BOOKLORE'),
+        ('BookLore2', 'BOOKLORE_2'),
         ('Hardcover', 'HARDCOVER'),
     ]
 

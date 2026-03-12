@@ -22,6 +22,7 @@ class MockContainer:
     def sync_manager(self): return self.mock_sync_manager
     def abs_client(self): return Mock()
     def booklore_client(self): return Mock()
+    def booklore_client_group(self): return Mock()
     def storyteller_client(self): return Mock()
     def hardcover_client(self): return Mock()
     def transcriber(self): return Mock()

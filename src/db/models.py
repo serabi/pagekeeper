@@ -5,7 +5,7 @@ SQLAlchemy ORM models for PageKeeper database.
 from datetime import datetime
 
 import sqlalchemy as sa
-from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, Numeric, String, Text, create_engine
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker
 
@@ -579,11 +579,16 @@ class BookloreBook(Base):
     __tablename__ = 'booklore_books'
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    filename = Column(String(500), nullable=False, unique=True)
+    server_id = Column(String(50), nullable=False, default='default')
+    filename = Column(String(500), nullable=False)
     title = Column(String(500))
     authors = Column(String(500))
     raw_metadata = Column(Text)  # JSON blob of full booklore response
     last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint('server_id', 'filename', name='uq_booklore_server_filename'),
+    )
 
     @property
     def raw_metadata_dict(self):
@@ -594,7 +599,8 @@ class BookloreBook(Base):
             return {}
 
     def __init__(self, filename: str, title: str | None = None, authors: str | None = None,
-                 raw_metadata: str | None = None):
+                 raw_metadata: str | None = None, server_id: str = 'default'):
+        self.server_id = server_id
         self.filename = filename
         self.title = title
         self.authors = authors

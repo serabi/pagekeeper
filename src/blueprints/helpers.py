@@ -50,25 +50,47 @@ def get_abs_service():
 # --------------- Booklore helpers ---------------
 
 def get_booklore_client():
-    """Return the configured Booklore client from the container."""
-    return get_container().booklore_client()
+    """Return the Booklore client group (facade over all instances)."""
+    return get_container().booklore_client_group()
 
 
 def find_in_booklore(filename):
-    """Search Booklore for a book by filename, return (book_info, client) or (None, None)."""
+    """Search Booklore for a book by filename, return (book_info, client) or (None, None).
+
+    When found via the group facade, resolves the owning single-instance client
+    so callers can use per-instance operations (e.g. download_book with a bare ID).
+    """
     if not filename:
         return None, None
-    client = get_booklore_client()
-    if client.is_configured():
-        book = client.find_book_by_filename(filename)
+    group = get_booklore_client()
+    if group.is_configured():
+        book = group.find_book_by_filename(filename)
         if book:
+            # Resolve the specific client that owns this book
+            instance_id = book.get('_instance_id', 'default')
+            client = _resolve_booklore_instance(instance_id)
             return book, client
     return None, None
 
 
+def _resolve_booklore_instance(instance_id):
+    """Return the single BookloreClient for the given instance_id."""
+    container = get_container()
+    if instance_id == '2':
+        return container.booklore_client_2()
+    return container.booklore_client()
+
+
 def any_booklore_configured():
-    """Return True if Booklore is configured."""
+    """Return True if any Booklore server is configured."""
     return get_booklore_client().is_configured()
+
+
+def _booklore_label(instance_id):
+    """Return the user-facing label for a Booklore instance."""
+    if instance_id == '2':
+        return os.environ.get("BOOKLORE_2_LABEL", "Booklore 2")
+    return os.environ.get("BOOKLORE_LABEL", "Booklore")
 
 
 # --------------- Helper functions ---------------
@@ -275,12 +297,11 @@ def get_searchable_ebooks(search_term):
     found_filenames = set()
     found_stems = set()
 
-    # 1. Booklore
-    bl_client = get_booklore_client()
-    if bl_client.is_configured():
+    # 1. Booklore (all configured servers)
+    bl_group = get_booklore_client()
+    if bl_group.is_configured():
         try:
-            label = os.environ.get("BOOKLORE_LABEL", "Booklore")
-            books = bl_client.search_books(search_term)
+            books = bl_group.search_books(search_term)
             if books:
                 for b in books:
                     fname = b.get('fileName', '')
@@ -290,7 +311,10 @@ def get_searchable_ebooks(search_term):
                         found_filenames.add(fname.lower())
                         found_stems.add(Path(fname).stem.lower())
                         bl_id = b.get('id')
-                        cover = f"/api/cover-proxy/booklore/{bl_id}" if bl_id else None
+                        instance_id = b.get('_instance_id', 'default')
+                        label = _booklore_label(instance_id)
+                        cover_prefix = "booklore2" if instance_id == "2" else "booklore"
+                        cover = f"/api/cover-proxy/{cover_prefix}/{bl_id}" if bl_id else None
                         results.append(EbookResult(
                             name=fname,
                             title=b.get('title'),

@@ -18,6 +18,12 @@
         </a>
         {% endif %}
 
+        {% if booklore2_url %}
+        <a href="{{ booklore2_url }}" class="nav-icon-link" target="_blank" rel="noopener noreferrer" title="{{ get_val('BOOKLORE_2_LABEL') or 'Booklore 2' }}">
+            <img src="/static/booklore.png" alt="Booklore 2" class="nav-service-icon">
+        </a>
+        {% endif %}
+
         {% if cwa_url %}
         <a href="{{ cwa_url }}" class="nav-icon-link" target="_blank" rel="noopener noreferrer" title="Calibre-Web Automated">
             <img src="/static/cwa.svg" alt="CWA" class="nav-service-icon">
@@ -50,11 +56,12 @@
     {% set abs_url = get_header_service_url('ABS') %}
     {% set storyteller_url = get_header_service_url('STORYTELLER') %}
     {% set booklore_url = get_header_service_url('BOOKLORE') %}
+    {% set booklore2_url = get_header_service_url('BOOKLORE_2') %}
     {% set cwa_url = get_header_service_url('CWA') %}
     {% set hardcover_url = get_header_service_url('HARDCOVER') %}
     {% set show_bookfusion_page = get_bool('BOOKFUSION_ENABLED') and (get_val('BOOKFUSION_API_KEY') or get_val('BOOKFUSION_UPLOAD_API_KEY')) %}
     {% set show_bookfusion_icon = get_bool('BOOKFUSION_ENABLED') %}
-    {% set has_any_link = abs_url or storyteller_url or booklore_url or cwa_url or hardcover_url or show_bookfusion_icon %}
+    {% set has_any_link = abs_url or storyteller_url or booklore_url or booklore2_url or cwa_url or hardcover_url or show_bookfusion_icon %}
 
     {% if has_any_link %}
     {{ service_links('library-links-desktop') }}

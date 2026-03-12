@@ -48,8 +48,19 @@ def serve_cover(filename):
 @covers_bp.route('/api/cover-proxy/booklore/<int:book_id>')
 def proxy_booklore_cover(book_id):
     """Proxy cover access to Booklore (requires Bearer token auth)."""
+    return _proxy_booklore_cover_for(get_booklore_client(), book_id)
+
+
+@covers_bp.route('/api/cover-proxy/booklore2/<int:book_id>')
+def proxy_booklore2_cover(book_id):
+    """Proxy cover access to Booklore 2nd instance."""
+    container = get_container()
+    return _proxy_booklore_cover_for(container.booklore_client_2(), book_id)
+
+
+def _proxy_booklore_cover_for(bl_client, book_id):
+    """Shared cover proxy logic for any BookloreClient instance."""
     try:
-        bl_client = get_booklore_client()
         if not bl_client.is_configured():
             return "Booklore not configured", 404
 

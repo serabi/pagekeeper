@@ -178,6 +178,9 @@ class _MockContainer:
     def booklore_client(self):
         return Mock()
 
+    def booklore_client_group(self):
+        return Mock()
+
     def storyteller_client(self):
         return Mock()
 

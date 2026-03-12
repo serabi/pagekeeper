@@ -41,6 +41,7 @@ class MockContainer:
     def sync_manager(self): return self.mock_sync_manager
     def abs_client(self): return self.mock_abs_client
     def booklore_client(self): return self.mock_booklore_client
+    def booklore_client_group(self): return self.mock_booklore_client
     def storyteller_client(self): return self.mock_storyteller_client
     def bookfusion_client(self): return self.mock_bookfusion_client
     def ebook_parser(self): return self.mock_ebook_parser

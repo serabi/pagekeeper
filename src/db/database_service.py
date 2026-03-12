@@ -458,17 +458,17 @@ class DatabaseService:
 
     # ── Integrations: Booklore (delegates to IntegrationRepository) ──
 
-    def get_booklore_book(self, filename):
-        return self._integrations.get_booklore_book(filename)
+    def get_booklore_book(self, filename, server_id='default'):
+        return self._integrations.get_booklore_book(filename, server_id=server_id)
 
-    def get_all_booklore_books(self):
-        return self._integrations.get_all_booklore_books()
+    def get_all_booklore_books(self, server_id=None):
+        return self._integrations.get_all_booklore_books(server_id=server_id)
 
     def save_booklore_book(self, booklore_book):
         return self._integrations.save_booklore_book(booklore_book)
 
-    def delete_booklore_book(self, filename):
-        return self._integrations.delete_booklore_book(filename)
+    def delete_booklore_book(self, filename, server_id='default'):
+        return self._integrations.delete_booklore_book(filename, server_id=server_id)
 
     # ── Integrations: BookFusion (delegates to IntegrationRepository) ──
 

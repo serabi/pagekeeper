@@ -15,18 +15,19 @@ logger = logging.getLogger(__name__)
 settings_bp = Blueprint('settings_page', __name__)
 
 URL_SETTING_KEYS = {
-    'ABS_SERVER', 'BOOKLORE_SERVER', 'STORYTELLER_API_URL', 'CWA_SERVER', 'KOSYNC_SERVER',
-    'ABS_WEB_URL', 'BOOKLORE_WEB_URL', 'STORYTELLER_WEB_URL', 'CWA_WEB_URL', 'HARDCOVER_WEB_URL',
+    'ABS_SERVER', 'BOOKLORE_SERVER', 'BOOKLORE_2_SERVER', 'STORYTELLER_API_URL', 'CWA_SERVER', 'KOSYNC_SERVER',
+    'ABS_WEB_URL', 'BOOKLORE_WEB_URL', 'BOOKLORE_2_WEB_URL', 'STORYTELLER_WEB_URL', 'CWA_WEB_URL', 'HARDCOVER_WEB_URL',
     'ABS_WEB_URL_INTERNAL', 'ABS_WEB_URL_EXTERNAL',
     'STORYTELLER_WEB_URL_INTERNAL', 'STORYTELLER_WEB_URL_EXTERNAL',
     'BOOKLORE_WEB_URL_INTERNAL', 'BOOKLORE_WEB_URL_EXTERNAL',
+    'BOOKLORE_2_WEB_URL_INTERNAL', 'BOOKLORE_2_WEB_URL_EXTERNAL',
     'CWA_WEB_URL_INTERNAL', 'CWA_WEB_URL_EXTERNAL',
     'HARDCOVER_WEB_URL_EXTERNAL',
     'KOSYNC_PUBLIC_URL',
 }
 
 SECRET_SETTING_KEYS = {
-    'ABS_KEY', 'STORYTELLER_PASSWORD', 'BOOKLORE_PASSWORD',
+    'ABS_KEY', 'STORYTELLER_PASSWORD', 'BOOKLORE_PASSWORD', 'BOOKLORE_2_PASSWORD',
     'CWA_PASSWORD', 'KOSYNC_KEY', 'TELEGRAM_BOT_TOKEN', 'HARDCOVER_TOKEN',
     'DEEPGRAM_API_KEY', 'BOOKFUSION_API_KEY', 'BOOKFUSION_UPLOAD_API_KEY',
 }
@@ -130,6 +131,7 @@ def settings():
             'STORYTELLER_ENABLED',
             'STORYTELLER_FORCE_MODE',
             'BOOKLORE_ENABLED',
+            'BOOKLORE_2_ENABLED',
             'CWA_ENABLED',
             'HARDCOVER_ENABLED',
             'TELEGRAM_ENABLED',
@@ -226,6 +228,7 @@ def test_connection(service):
         'kosync': _test_kosync,
         'storyteller': _test_storyteller,
         'booklore': _test_booklore,
+        'booklore2': _test_booklore2,
         'cwa': _test_cwa,
         'hardcover': _test_hardcover,
         'telegram': _test_telegram,
@@ -340,6 +343,10 @@ def _test_storyteller() -> tuple[bool, str]:
 
 def _test_booklore() -> tuple[bool, str]:
     return _test_booklore_instance('BOOKLORE')
+
+
+def _test_booklore2() -> tuple[bool, str]:
+    return _test_booklore_instance('BOOKLORE_2')
 
 
 def _test_booklore_instance(prefix: str) -> tuple[bool, str]:
