@@ -71,6 +71,7 @@ When a position change is detected, PageKeeper converts it to every other format
 
 ```bash
 mkdir pagekeeper && cd pagekeeper
+mkdir data
 curl -O https://raw.githubusercontent.com/serabi/pagekeeper/main/docker-compose.example.yml
 cp docker-compose.example.yml docker-compose.yml
 ```

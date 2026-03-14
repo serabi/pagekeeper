@@ -7,11 +7,10 @@ This guide walks you through installing, configuring, and running PageKeeper fro
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)
-- [1. Clone and Build](#1-clone-and-build)
-- [2. Docker Compose Setup](#2-docker-compose-setup)
-- [3. First Launch](#3-first-launch)
-- [4. Core Configuration (Settings Page)](#4-core-configuration-settings-page)
-- [5. Integration Setup](#5-integration-setup)
+- [1. Download and Configure](#1-download-and-configure)
+- [2. First Launch](#2-first-launch)
+- [3. Core Configuration (Settings Page)](#3-core-configuration-settings-page)
+- [4. Integration Setup](#4-integration-setup)
   - [Audiobookshelf](#audiobookshelf)
   - [KOReader (KoSync)](#koreader-kosync)
   - [Storyteller](#storyteller)
@@ -19,63 +18,50 @@ This guide walks you through installing, configuring, and running PageKeeper fro
   - [Calibre-Web Automated (CWA)](#calibre-web-automated-cwa)
   - [Hardcover](#hardcover)
   - [BookFusion](#bookfusion)
-- [6. Cross-Format Sync (Alignment)](#6-cross-format-sync-alignment)
+- [5. Cross-Format Sync (Alignment)](#5-cross-format-sync-alignment)
   - [Ebook Sources](#ebook-sources)
   - [Whisper Transcription](#whisper-transcription)
   - [GPU Acceleration](#gpu-acceleration)
   - [Deepgram (Cloud Transcription)](#deepgram-cloud-transcription)
   - [Whisper.cpp (External Server)](#whispercpp-external-server)
   - [Storyteller Native Alignment](#storyteller-native-alignment)
-- [7. Split-Port Mode (Exposing KoSync)](#7-split-port-mode-exposing-kosync)
-- [8. Telegram Notifications](#8-telegram-notifications)
-- [9. Environment Variable Reference](#9-environment-variable-reference)
-- [10. Volume Reference](#10-volume-reference)
-- [11. Updating](#11-updating)
-- [12. Troubleshooting](#12-troubleshooting)
-- [13. Local Development (Non-Docker)](#13-local-development-non-docker)
+- [6. Split-Port Mode (Exposing KoSync)](#6-split-port-mode-exposing-kosync)
+- [7. Telegram Notifications](#7-telegram-notifications)
+- [8. Environment Variable Reference](#8-environment-variable-reference)
+- [9. Volume Reference](#9-volume-reference)
+- [10. Updating](#10-updating)
+- [11. Troubleshooting](#11-troubleshooting)
+- [12. Local Development (Non-Docker)](#12-local-development-non-docker)
 
 ---
 
 ## Prerequisites
 
-- **Docker** and **Docker Compose** (v2+)
+- **Docker** and **Docker Compose** (v2+) (or similar - I personally use OrbStack on a Mac Mini as my main Docker setup)
 - A machine on your local network (Linux, macOS, or Windows with WSL2)
-- (Optional) An NVIDIA GPU with [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) for Whisper acceleration
+- (Optional) An NVIDIA GPU with [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) for Whisper acceleration (**note:** I do not currently have access to an NVIDIA GPU, so I cannot test this feature thoroughly. If you test it and run into bugs, please let me know!)
 
-> **Security note:** PageKeeper's dashboard has no built-in authentication. Do not expose port 4477 to the internet. See [Split-Port Mode](#7-split-port-mode-exposing-kosync) if you need to expose the KoSync API.
-
----
-
-## 1. Clone and Build
-
-```bash
-git clone https://github.com/serabi/pagekeeper.git
-cd pagekeeper
-docker build -t pagekeeper .
-```
-
-To tag with a specific version:
-
-```bash
-docker build --build-arg APP_VERSION=0.1.2 -t pagekeeper .
-```
+> **Security note:** PageKeeper's dashboard currently has no built-in authentication. Do not expose port 4477 to the internet. See [Split-Port Mode](#6-split-port-mode-exposing-kosync) if you need to expose the KoSync API.
 
 ---
 
-## 2. Docker Compose Setup
+## 1. Download and Configure
 
-Copy the example compose file and edit it:
+Create a directory for PageKeeper and download the example compose file:
 
 ```bash
+mkdir pagekeeper && cd pagekeeper
+mkdir data
+curl -O https://raw.githubusercontent.com/serabi/pagekeeper/main/docker-compose.example.yml
 cp docker-compose.example.yml docker-compose.yml
 ```
 
-Here is a minimal working configuration:
+Here is the minimal configuration (what the example file provides):
 
 ```yaml
 services:
   pagekeeper:
-    build: .
+    image: ghcr.io/serabi/pagekeeper:latest
     container_name: pagekeeper
     restart: unless-stopped
     environment:
@@ -91,11 +77,9 @@ And here is a full-featured configuration with all optional volumes and settings
 ```yaml
 services:
   pagekeeper:
-    build:
-      context: .
-      args:
-        INSTALL_GPU: "false"       # Set to "true" for NVIDIA GPU support
-        APP_VERSION: "0.2.0"       # Version shown in dashboard
+    image: ghcr.io/serabi/pagekeeper:latest
+    # To pin a specific version:
+    # image: ghcr.io/serabi/pagekeeper:0.1.3
     container_name: pagekeeper
     restart: unless-stopped
 
@@ -132,9 +116,11 @@ services:
     #           capabilities: [gpu]
 ```
 
+Available image tags are listed on the [packages page](https://github.com/serabi/pagekeeper/pkgs/container/pagekeeper).
+
 ---
 
-## 3. First Launch
+## 2. First Launch
 
 ```bash
 docker compose up -d
@@ -157,7 +143,7 @@ curl http://localhost:4477/healthcheck   # Quick health check
 
 ---
 
-## 4. Core Configuration (Settings Page)
+## 3. Core Configuration (Settings Page)
 
 Navigate to **Settings** (`http://your-server:4477/settings`) to configure everything. Settings are saved to the database and persist across restarts — you don't need to set environment variables for most things.
 
@@ -182,7 +168,7 @@ These control how much a position must change before PageKeeper pushes an update
 
 ---
 
-## 5. Integration Setup
+## 4. Integration Setup
 
 Each integration is configured from the Settings page. None are required — use as many or as few as you like.
 
@@ -244,7 +230,7 @@ volumes:
 
 Then set **Import Directory** to `/storyteller-import` and **Assets Directory** to `/storyteller-data` in Settings.
 
-**How submission works:** When matching a book, check "Submit to Storyteller" (or enable Force Storyteller mode). PageKeeper copies the EPUB and audio files to Storyteller's import directory, waits for Storyteller to detect them, then triggers processing via the API. The book defers local Whisper transcription until Storyteller finishes.
+**How submission works:** When matching a book, check "Submit to Storyteller" (or enable Force Storyteller mode). PageKeeper copies the EPUB and audio files to Storyteller's import directory, waits for Storyteller to detect them, then triggers processing via the API. Once Storyteller finishes, PageKeeper uses its word-level timeline for alignment — Whisper does not run locally.
 
 ### Booklore
 
@@ -285,20 +271,20 @@ Configure in **Settings > Hardcover**:
 
 ### BookFusion
 
-An eBook reader with EPUB3 support. Limited integration — PageKeeper can import highlights and reading data.
+An eBook reader with EPUB3 support. Limited integration — PageKeeper can import highlights and reading data. BookFusion does not support bidirectional sync. They are working to bring KoSync to BookFusion so hopefully this will change in the future. 
 
 Configure in **Settings > BookFusion**:
 
 | Field | Description |
 |---|---|
-| **API Key** | BookFusion API key |
-| **Upload API Key** | BookFusion upload API key (if applicable) |
+| **Highlights API Key** | From BookFusion's [Obsidian plugin page](https://www.bookfusion.com/obsidian) — used to sync highlights |
+| **Upload API Key** | From BookFusion's [Calibre plugin page](https://www.bookfusion.com/calibre) — used to upload books |
 
 ---
 
-## 6. Cross-Format Sync (Alignment)
+## 5. Cross-Format Sync (Alignment)
 
-The core feature: syncing your position between audiobooks and ebooks. This requires an **alignment map** — a lookup table that converts between audio timestamps and ebook character positions.
+The cross-format sync aligns your position between audiobooks and ebooks. This process requires an **alignment map** — a lookup table that converts between audio timestamps and ebook character positions.
 
 ### Ebook Sources
 
@@ -306,9 +292,9 @@ PageKeeper needs access to your EPUB files to build alignment maps. Three option
 
 1. **Booklore** — PageKeeper fetches EPUBs through the Booklore API. No volume mount needed. Just configure the Booklore integration.
 
-2. **CWA** — Same idea, fetches EPUBs through CWA's OPDS API.
+2. **CWA** — Same idea as Booklore - PageKeeper fetches EPUBs through CWA's OPDS API.
 
-3. **Mount a volume** — Point `/books` at your EPUB directory:
+3. **Mount a volume** — If you don't want to run a book server, you can point `/books` at your EPUB directory:
    ```yaml
    volumes:
      - /path/to/your/ebooks:/books:ro
@@ -342,13 +328,7 @@ To use an NVIDIA GPU for Whisper transcription:
 
 1. Install [nvidia-container-toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) on your host
 
-2. Build the image with GPU support:
-   ```bash
-   docker build --build-arg INSTALL_GPU=true -t pagekeeper .
-   ```
-   This adds ~800 MB to the image for CUDA libraries.
-
-3. Uncomment the GPU section in your `docker-compose.yml`:
+2. Uncomment the GPU section in your `docker-compose.yml`:
    ```yaml
    deploy:
      resources:
@@ -359,7 +339,9 @@ To use an NVIDIA GPU for Whisper transcription:
              capabilities: [gpu]
    ```
 
-4. Set the device to `cuda` in Settings, or let `auto` detect it.
+3. Set the device to `cuda` in Settings, or let `auto` detect it.
+
+> **Note:** The published Docker image does not include NVIDIA CUDA libraries. For GPU support, you'll need to build the image yourself with `docker build --build-arg INSTALL_GPU=true -t ghcr.io/serabi/pagekeeper:latest .` (adds ~800 MB).
 
 ### Deepgram (Cloud Transcription)
 
@@ -396,7 +378,7 @@ PageKeeper checks for Storyteller data first, then SMIL data in the EPUB, and on
 
 ---
 
-## 7. Split-Port Mode (Exposing KoSync)
+## 6. Split-Port Mode (Exposing KoSync)
 
 By default, PageKeeper serves everything on port 4477. If you want to expose the KoSync sync API to the internet (so your e-reader can sync from anywhere), use split-port mode to separate the sync endpoint from the dashboard.
 
@@ -462,7 +444,7 @@ server {
 
 ---
 
-## 8. Telegram Notifications
+## 7. Telegram Notifications
 
 PageKeeper can send log notifications to a Telegram chat.
 
@@ -476,7 +458,7 @@ Configure in **Settings > Telegram**:
 
 ---
 
-## 9. Environment Variable Reference
+## 8. Environment Variable Reference
 
 All settings are configurable from the web UI and persist in the database. Environment variables are **optional overrides** — if set, they take precedence over database values.
 
@@ -607,7 +589,7 @@ All settings are configurable from the web UI and persist in the database. Envir
 
 ---
 
-## 10. Volume Reference
+## 9. Volume Reference
 
 | Container Path | Purpose | Required | Mode |
 |---|---|---|---|
@@ -631,12 +613,11 @@ All settings are configurable from the web UI and persist in the database. Envir
 
 ---
 
-## 11. Updating
+## 10. Updating
 
 ```bash
 cd pagekeeper
-git pull
-docker compose build
+docker compose pull
 docker compose up -d
 ```
 
@@ -644,7 +625,7 @@ Database migrations run automatically on startup. Your data in `./data` is prese
 
 ---
 
-## 12. Troubleshooting
+## 11. Troubleshooting
 
 ### Container won't start
 
@@ -695,7 +676,7 @@ This will lose all settings and data. Migrations will recreate the schema on nex
 
 ---
 
-## 13. Local Development (Non-Docker)
+## 12. Local Development (Non-Docker)
 
 For development without Docker:
 
