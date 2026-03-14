@@ -4,7 +4,7 @@
 
 <img src="static/icon.png" alt="PageKeeper" width="128">
 
-**Keep your place across every book, every app, every format - and keep a record of everything you read, too!**
+**Track your reading history across every app and every book format!**
 
 [![License](https://img.shields.io/github/license/serabi/pagekeeper?cacheSeconds=3600)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/serabi/pagekeeper)](https://github.com/serabi/pagekeeper/releases)
@@ -17,9 +17,9 @@
 
 ## What is PageKeeper?
 
-PageKeeper is a self-hosted reading companion that keeps your place across platforms, tracks what you read, and also acts as a reading journal for your notes. Whether you listen to an audiobook during your commute on [Audiobookshelf](https://www.audiobookshelf.org/) and pick up the same book on your e-reader before bed, or just want a single place to see your reading progress across services — PageKeeper handles it.
+PageKeeper is a self-hosted reading companion that aligns your books across multiple self-hosted platforms, tracks what you read, and also acts as a reading journal for your notes. PageKeeper is a **reading tracker**: it knows which books you're reading, how far along you are in those books, when you started and finished, and keeps a journal of your progress. On top of that, PageKeeper can **sync your position** between audiobook and ebook platforms by building an alignment map between the audio and the text. Once that map is built, jumping between formats is seamless.
 
-At its core, PageKeeper is a **reading tracker**: it knows which books you're reading, how far along you are in those books, when you started and finished, and keeps a journal of your progress. On top of that, PageKeeper can **sync your position** between audiobook and ebook platforms by building an alignment map between the audio and the text. Once that map is built, jumping between formats is seamless.
+Right now, PageKeeper is managed by one person. Contributions are welcome - you can read more about how to contribute [here](CONTRIBUTING.md).
 
 <div align="center">
 <img src="static/2026-03-05 - PageKeeper Preview.png" alt="PageKeeper dashboard preview" width="700">
@@ -30,7 +30,7 @@ At its core, PageKeeper is a **reading tracker**: it knows which books you're re
 
 This project started as a fork of [abs-kosync-bridge](https://github.com/cporcellijr/abs-kosync-bridge), a neat project that syncs Audiobookshelf positions across ebooks. Major kudos to [cporcellijr](https://github.com/cporcellijr) for the original idea and implementation.
 
-The goal of PageKeeper is to be a full fledged reading tracking and journaling system that includes a BookFusion integration. At this point it's essentially a new application, but  it would not have existed without the original project. If you find PageKeeper useful, contributions and suggestions are always welcome - and if you're only looking to sync your audio and ebooks across platforms, and don't care about tracking your reading, you might find abs-kosync-bridge to be a better fit for you!
+The goal of PageKeeper is to be a full fledged reading tracking and journaling system that includes a BookFusion integration. While PageKeeper has greatly diverged from the original project, it would not have existed without abs-kosync-bridge. If you're only looking to sync your audio and ebooks across platforms, and don't care about tracking your reading, you might find abs-kosync-bridge to be a better fit for you!
 
 ---
 
@@ -45,7 +45,7 @@ The goal of PageKeeper is to be a full fledged reading tracking and journaling s
 | [Hardcover](https://hardcover.app/) | Book tracking service (write-only) |
 | [BookFusion](https://bookfusion.com/) | eBook reader, includes excellent EPUB3 support (limited integration) |
 
-You can use as few or as many of the above services as you want. None are required to use the app.
+You can use as few or as many of the above services as you want. None are required to use the app. If there's another platform you'd liek to see integrated, please open an issue or PR. 
 
 ---
 
