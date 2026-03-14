@@ -394,39 +394,6 @@ def tbr_detail(item_id):
     )
 
 
-@reading_bp.route('/reading/tbr/<int:item_id>')
-def tbr_detail(item_id):
-    """Render the TBR book detail page."""
-    database_service = get_database_service()
-
-    item = database_service.get_tbr_item(item_id)
-    if not item:
-        abort(404)
-
-    # Deserialize genres
-    genres = _json.loads(item.genres) if item.genres else []
-
-    # Resolve linked library book
-    linked_book = None
-    if item.book_abs_id:
-        linked_book = database_service.get_book(item.book_abs_id)
-
-    # Check HC configuration
-    try:
-        hc_configured = get_container().hardcover_client().is_configured()
-    except Exception:
-        hc_configured = False
-
-    return render_template(
-        'tbr_detail.html',
-        item=item,
-        genres=genres,
-        linked_book=linked_book,
-        hc_configured=hc_configured,
-        get_hardcover_book_url=get_hardcover_book_url,
-    )
-
-
 # ─── API Endpoints ───────────────────────────────────────────────────
 
 
