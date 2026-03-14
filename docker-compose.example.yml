@@ -7,10 +7,7 @@
 
 services:
   pagekeeper:
-    build: .
-    # args:
-    #   # Set to "true" to download NVIDIA CUDA libraries (adds ~800MB to image)
-    #   INSTALL_GPU: "false"
+    image: ghcr.io/serabi/pagekeeper:latest
     container_name: pagekeeper
     restart: unless-stopped
 

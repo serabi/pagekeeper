@@ -25,6 +25,20 @@ For larger changes, please open an issue first so we can discuss the approach be
 git clone https://github.com/<your-username>/pagekeeper.git
 cd pagekeeper
 cp docker-compose.example.yml docker-compose.yml
+```
+
+The example compose file uses `image: ghcr.io/serabi/pagekeeper:latest` for end users. For development, replace it with a local build:
+
+```yaml
+services:
+  pagekeeper:
+    build: .
+    # image: ghcr.io/serabi/pagekeeper:latest  # commented out for dev
+```
+
+Then start the app:
+
+```bash
 docker compose up --build
 ```
 

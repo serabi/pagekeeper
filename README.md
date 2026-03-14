@@ -63,6 +63,47 @@ When a position change is detected, PageKeeper converts it to every other format
 
 ---
 
+## Installation
+
+### Quick Start
+
+1. Create a directory for PageKeeper and download the example compose file:
+
+```bash
+mkdir pagekeeper && cd pagekeeper
+curl -O https://raw.githubusercontent.com/serabi/pagekeeper/main/docker-compose.example.yml
+cp docker-compose.example.yml docker-compose.yml
+```
+
+2. Edit `docker-compose.yml` to set your timezone and configure any volumes you need (see comments in the file).
+
+3. Start PageKeeper:
+
+```bash
+docker compose up -d
+```
+
+4. Open the dashboard at `http://localhost:4477` and configure your integrations in **Settings**.
+
+### Updating
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+### Pinning a Version
+
+By default, `docker-compose.example.yml` uses the `latest` tag. To pin to a specific release:
+
+```yaml
+image: ghcr.io/serabi/pagekeeper:0.1.3
+```
+
+Available tags are listed on the [packages page](https://github.com/serabi/pagekeeper/pkgs/container/pagekeeper).
+
+---
+
 ## Raspberry Pi / ARM64
 
 The core app — sync, dashboard, reading tracker, database — runs on ARM64 (including Raspberry Pi 4/5) with no changes. Expect **~80–150 MB RAM** for normal use.
