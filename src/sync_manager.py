@@ -678,7 +678,7 @@ class SyncManager:
             if sync_type in client.get_supported_sync_types()
         }
         if is_audio_only:
-            audio_only_clients = {'ABS'}
+            audio_only_clients = {'ABS', 'Hardcover'}
             active_clients = {name: client for name, client in active_clients.items() if name in audio_only_clients}
             logger.debug(f"'{abs_id}' '{title_snip}' Audio-only mode - using clients: {list(active_clients.keys())}")
         elif sync_type == 'ebook':

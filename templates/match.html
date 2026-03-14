@@ -69,7 +69,7 @@
             {# ── Selected audiobook chip (Match mode phase 2) ── #}
             {% if not attach_to and not link_to %}
             <div class="match-selected-chip" id="selectedChip" style="display:none">
-                <img class="match-selected-chip-cover" id="chipCover" src="" alt="">
+                <img class="match-selected-chip-cover" id="chipCover" alt="" style="display:none">
                 <div class="match-selected-chip-info">
                     <span class="match-selected-chip-title" id="chipTitle"></span>
                 </div>
@@ -292,10 +292,9 @@
 
     <script>
         function showRemoveModal(absId, title) {
-            const searchParam = new URLSearchParams(window.location.search).get('search') || '';
-            let nextUrl = '/match';
-            if (searchParam) nextUrl += '?search=' + encodeURIComponent(searchParam);
-            document.getElementById('remove-modal-form').action = '/delete/' + absId + '?next=' + encodeURIComponent(nextUrl);
+            const nextUrl = window.location.pathname + window.location.search;
+            document.getElementById('remove-modal-form').action =
+                '/delete/' + encodeURIComponent(String(absId)) + '?next=' + encodeURIComponent(nextUrl);
             document.getElementById('remove-modal-message').textContent = 'Remove "' + title + '" and all its cached files from your library?';
             document.getElementById('remove-modal').style.display = '';
         }
@@ -349,6 +348,14 @@
             if (stSubmitOption) stSubmitOption.style.display = (mode === 'ebook') ? 'none' : '';
             if (stSubmitDetail) stSubmitDetail.style.display = (mode === 'ebook') ? 'none' : '';
             if (stDivider) stDivider.style.display = (mode === 'ebook') ? 'none' : '';
+
+            const stSubmitCheckbox = document.querySelector('input[type="checkbox"][name="storyteller_submit"]');
+            const stSubmitHidden = document.querySelector('input[type="hidden"][name="storyteller_submit"]');
+            if (stSubmitCheckbox && !storytellerForceMode) {
+                stSubmitCheckbox.disabled = (mode === 'ebook');
+                if (mode === 'ebook') stSubmitCheckbox.checked = false;
+            }
+            if (stSubmitHidden) stSubmitHidden.disabled = (mode === 'ebook');
 
             updateLayout();
             updateFooter();
