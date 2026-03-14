@@ -600,12 +600,14 @@
                 chipChange.addEventListener('click', () => {
                     clearSelections('ebook_filename');
                     clearSelections('storyteller_uuid');
-                    // Restore storyteller skip
+                    // Restore storyteller skip and clear stale title
                     const skipRadio = document.querySelector('.st-option.ghost-card input[type="radio"]');
                     if (skipRadio) {
                         skipRadio.checked = true;
                         skipRadio.closest('.st-option').classList.add('selected');
                     }
+                    const stTitleInput = document.getElementById('input_storyteller_title');
+                    if (stTitleInput) stTitleInput.value = '';
                     setPhase('select-audio');
                 });
             }

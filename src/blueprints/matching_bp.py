@@ -633,9 +633,12 @@ def batch_match():
                         )
                         database_service.save_book(book, is_new=True)
                         abs_service.add_to_collection(item["abs_id"], current_app.config["ABS_COLLECTION_NAME"])
-                        hc_service = container.hardcover_service()
-                        if hc_service.is_configured():
-                            hc_service.automatch_hardcover(book, hardcover_sync_client=container.hardcover_sync_client())
+                        try:
+                            hc_service = container.hardcover_service()
+                            if hc_service.is_configured():
+                                hc_service.automatch_hardcover(book, hardcover_sync_client=container.hardcover_sync_client())
+                        except Exception as e:
+                            logger.warning(f"Hardcover automatch failed (book saved): {e}")
                         database_service.resolve_suggestion(item["abs_id"])
                         continue
 
@@ -722,9 +725,12 @@ def batch_match():
                         logger.info(f"Successfully merged {migration_source_id} into {item['abs_id']}")
 
                     # Trigger Hardcover Automatch
-                    hc_service = container.hardcover_service()
-                    if hc_service.is_configured():
-                        hc_service.automatch_hardcover(book, hardcover_sync_client=container.hardcover_sync_client())
+                    try:
+                        hc_service = container.hardcover_service()
+                        if hc_service.is_configured():
+                            hc_service.automatch_hardcover(book, hardcover_sync_client=container.hardcover_sync_client())
+                    except Exception as e:
+                        logger.warning(f"Hardcover automatch failed (book saved): {e}")
 
                     if not migration_source_id:
                         abs_service.add_to_collection(item["abs_id"], current_app.config["ABS_COLLECTION_NAME"])
