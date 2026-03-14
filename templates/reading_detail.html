@@ -497,7 +497,7 @@
                                 {% if journal.entry %}
                                 <p class="r-tl-text">{{ journal.entry }}</p>
                                 {% endif %}
-                                {% if journal.event in ['note', 'highlight', 'progress'] or (journal.event in ['started', 'finished'] and journal.id) %}
+                                {% if journal.event in ['note', 'highlight', 'progress', 'resumed', 'paused', 'dnf'] or (journal.event in ['started', 'finished'] and journal.id) %}
                                 <div class="r-tl-menu" data-journal-id="{{ journal.id }}" data-journal-event="{{ journal.event }}">
                                     <button class="r-tl-menu-trigger" title="More actions" aria-label="More actions" aria-expanded="false" type="button">⋯</button>
                                     <div class="r-tl-menu-dropdown">
