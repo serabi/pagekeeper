@@ -290,10 +290,7 @@ def reading_index():
 @reading_bp.route('/reading/book/<abs_id>')
 def reading_detail(abs_id):
     """Render the book detail view with journal."""
-    valid_tabs = ('overview', 'journal', 'highlights', 'alignment')
     active_tab = request.args.get('tab', 'overview')
-    if active_tab not in valid_tabs:
-        active_tab = 'overview'
 
     database_service = get_database_service()
     abs_service = get_abs_service()
@@ -345,6 +342,15 @@ def reading_detail(abs_id):
     # Alignment tab data
     alignment_info = None
     show_alignment_tab = book.sync_mode != 'ebook_only'
+
+    # Validate active_tab against actually available tabs
+    valid_tabs = {'overview', 'journal'}
+    if bf_highlights:
+        valid_tabs.add('highlights')
+    if show_alignment_tab:
+        valid_tabs.add('alignment')
+    if active_tab not in valid_tabs:
+        active_tab = 'overview'
     if show_alignment_tab:
         try:
             alignment_service = container.alignment_service()
