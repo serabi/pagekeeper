@@ -13,7 +13,7 @@ if [ "$TOOL" != "Edit" ] && [ "$TOOL" != "Write" ]; then
 fi
 
 # Check if the edited file is in a source directory
-if echo "$FILE_PATH" | grep -qE '/(src|templates|static|alembic)/'; then
+if echo "$FILE_PATH" | grep -qE '/(src|templates|static|alembic|scripts)/'; then
     echo "Restart the dev container to pick up changes: docker compose -f docker-compose.dev.yml restart"
 fi
 
