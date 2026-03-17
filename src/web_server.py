@@ -354,8 +354,25 @@ def sync_daemon():
 
         logger.info(f"Sync daemon started (period: {SYNC_PERIOD_MINS} minutes)")
 
-        # Wait for split-port server and other services to initialize
-        time.sleep(5)
+        # Wait for the built-in KoSync split-port server to be ready
+        def _wait_for_local_services(timeout=30):
+            kosync_port = os.environ.get('KOSYNC_PORT')
+            if not kosync_port or kosync_port == '4477':
+                return  # No split-port server to wait for
+
+            import urllib.request
+            url = f"http://127.0.0.1:{kosync_port}/healthcheck"
+            deadline = time.time() + timeout
+            while time.time() < deadline:
+                try:
+                    urllib.request.urlopen(url, timeout=2)
+                    logger.info(f"Split-port KoSync server ready on port {kosync_port}")
+                    return
+                except Exception:
+                    time.sleep(1)
+            logger.warning(f"Split-port KoSync server not ready after {timeout}s — proceeding anyway")
+
+        _wait_for_local_services()
 
         # Run initial sync cycle
         try:

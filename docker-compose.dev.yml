@@ -1,0 +1,37 @@
+# PageKeeper - Development Docker Compose
+#
+# Usage:
+#   docker compose -f docker-compose.dev.yml up --build -d
+#   docker compose -f docker-compose.dev.yml logs -f
+#   docker compose -f docker-compose.dev.yml down
+#
+# Ports: 4478 (web), 5759 (sync) — different from prod to allow simultaneous use.
+# Source is mounted from host, so code changes take effect on container restart.
+
+services:
+  pagekeeper-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: pagekeeper-dev
+    restart: unless-stopped
+
+    environment:
+      - TZ=America/New_York
+      - LOG_LEVEL=DEBUG
+      - KOSYNC_PORT=5758
+
+    volumes:
+      # Data (separate from prod)
+      - ./data:/data
+
+      # Source mounts — overlay baked-in code with local files
+      - ./src:/app/src:ro
+      - ./templates:/app/templates:ro
+      - ./static:/app/static:ro
+      - ./alembic:/app/alembic:ro
+      - ./scripts:/app/scripts:ro
+
+    ports:
+      - "4478:4477"   # Dev web UI
+      - "5759:5758"   # Dev sync protocol

@@ -24,25 +24,15 @@ For larger changes, please open an issue first so we can discuss the approach be
 # Fork the repo on GitHub first, then:
 git clone https://github.com/<your-username>/pagekeeper.git
 cd pagekeeper
-cp docker-compose.example.yml docker-compose.yml
 ```
 
-The example compose file uses `image: ghcr.io/serabi/pagekeeper:latest` for end users. For development, replace it with a local build:
-
-```yaml
-services:
-  pagekeeper:
-    build: .
-    # image: ghcr.io/serabi/pagekeeper:latest  # commented out for dev
-```
-
-Then start the app:
+The repo includes a `docker-compose.dev.yml` that builds from source and mounts your local code into the container, so changes take effect on restart without a full rebuild:
 
 ```bash
-docker compose up --build
+docker compose -f docker-compose.dev.yml up --build -d
 ```
 
-The dashboard is available at `http://localhost:4477`. All settings — integrations, API keys, sync configuration — are managed through the web dashboard. No environment variables are required beyond `TZ`.
+The dev dashboard is available at `http://localhost:4478` (port 4478, not 4477 — this avoids conflicts if you're also running a production instance). All settings — integrations, API keys, sync configuration — are managed through the web dashboard. No environment variables are required beyond `TZ`.
 
 ## Running Tests
 

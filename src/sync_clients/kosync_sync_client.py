@@ -37,12 +37,11 @@ class KoSyncSyncClient(SyncClient):
             logger.debug(f"'{title_snip}' KoSync skipped — no kosync_doc_id (audio-only book)")
             return None
         ko_pct, ko_xpath = self.kosync_client.get_progress(ko_id)
+        if ko_pct is None:
+            logger.warning(f"'{title_snip}' KoSync percentage is None - returning None for service state")
+            return None
         if ko_xpath is None:
             logger.warning(f"'{title_snip}' KoSync xpath is None - will use fallback text extraction")
-
-        if ko_pct is None:
-            logger.warning("KoSync percentage is None - returning None for service state")
-            return None
 
         # Get previous KoSync state
         prev_kosync_pct = prev_state.percentage if prev_state else 0
