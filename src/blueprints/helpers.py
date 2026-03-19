@@ -511,6 +511,35 @@ def restart_server():
     os.kill(os.getpid(), signal.SIGTERM)
 
 
+def serialize_suggestion(s):
+    """Shared serializer for PendingSuggestion → JSON-ready dict."""
+    matches = []
+    for m in s.matches:
+        evidence = m.get("evidence") or []
+        has_bookfusion = m.get("source_family") == "bookfusion" or any(ev.startswith("bookfusion") for ev in evidence)
+        matches.append({
+            **m,
+            "evidence": evidence,
+            "has_bookfusion": has_bookfusion,
+        })
+
+    has_bookfusion_evidence = any(m.get("has_bookfusion") for m in matches)
+    return {
+        "id": s.id,
+        "source_id": s.source_id,
+        "source": s.source or "unknown",
+        "title": s.title,
+        "author": s.author,
+        "cover_url": s.cover_url,
+        "matches": matches,
+        "created_at": s.created_at.isoformat() if s.created_at else None,
+        "has_bookfusion_evidence": has_bookfusion_evidence,
+        "top_match": matches[0] if matches else None,
+        "status": s.status,
+        "hidden": s.status == 'hidden',
+    }
+
+
 def safe_folder_name(name: str) -> str:
     """Sanitize folder name for file system safe usage."""
     invalid = '<>:"/\\|?*'

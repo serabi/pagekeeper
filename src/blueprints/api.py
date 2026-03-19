@@ -3,7 +3,6 @@
 ABS-specific routes (/api/abs/*, /api/cover-proxy/*) are in abs_bp.py.
 """
 
-import json
 import logging
 
 from flask import Blueprint, current_app, jsonify, request
@@ -15,41 +14,13 @@ from src.blueprints.helpers import (
     get_container,
     get_database_service,
     get_kosync_id_for_ebook,
+    serialize_suggestion,
 )
 from src.db.models import Book
 
 logger = logging.getLogger(__name__)
 
 api_bp = Blueprint('api', __name__)
-
-
-def _serialize_suggestion(s):
-    try:
-        matches = json.loads(s.matches_json) if s.matches_json else []
-    except Exception as e:
-        logger.debug(f"Failed to parse matches_json for suggestion '{s.source_id}': {e}")
-        matches = []
-
-    for m in matches:
-        evidence = m.get('evidence') or []
-        m['has_bookfusion'] = (
-            m.get('source_family') == 'bookfusion'
-            or any(ev.startswith('bookfusion') for ev in evidence)
-        )
-
-    return {
-        "id": s.id,
-        "source_id": s.source_id,
-        "source": s.source or "abs",
-        "title": s.title,
-        "author": s.author,
-        "cover_url": s.cover_url,
-        "matches": matches,
-        "has_bookfusion_evidence": any(m.get('has_bookfusion') for m in matches),
-        "created_at": s.created_at.isoformat() if s.created_at else None,
-        "status": 'hidden' if s.status == 'dismissed' else s.status,
-        "hidden": s.status in ('hidden', 'dismissed'),
-    }
 
 
 # ---------------- Status ----------------
@@ -142,7 +113,7 @@ def api_processing_status():
 def get_suggestions():
     database_service = get_database_service()
     suggestions = database_service.get_all_actionable_suggestions()
-    return jsonify([_serialize_suggestion(s) for s in suggestions if s.matches])
+    return jsonify([serialize_suggestion(s) for s in suggestions if s.matches])
 
 
 @api_bp.route('/api/suggestions/rescan', methods=['POST'])

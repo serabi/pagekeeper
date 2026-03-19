@@ -20,6 +20,7 @@ from src.blueprints.helpers import (
     get_kosync_id_for_ebook,
     get_manager,
     get_searchable_ebooks,
+    serialize_suggestion,
 )
 from src.db.models import Book, StorytellerSubmission
 from src.utils.logging_utils import sanitize_log_data
@@ -95,36 +96,6 @@ def _copy_book_merge_metadata(existing_book, overrides=None):
     if overrides:
         metadata.update({key: value for key, value in overrides.items() if value is not None})
     return metadata
-
-
-def _serialize_suggestion(s):
-    matches = []
-    for m in s.matches:
-        evidence = m.get("evidence") or []
-        has_bookfusion = m.get("source_family") == "bookfusion" or any(ev.startswith("bookfusion") for ev in evidence)
-        matches.append(
-            {
-                **m,
-                "evidence": evidence,
-                "has_bookfusion": has_bookfusion,
-            }
-        )
-
-    has_bookfusion_evidence = any(m.get("has_bookfusion") for m in matches)
-    return {
-        "id": s.id,
-        "source_id": s.source_id,
-        "source": s.source or "unknown",
-        "title": s.title,
-        "author": s.author,
-        "cover_url": s.cover_url,
-        "matches": matches,
-        "created_at": s.created_at.isoformat() if s.created_at else None,
-        "has_bookfusion_evidence": has_bookfusion_evidence,
-        "top_match": matches[0] if matches else None,
-        "status": "hidden" if s.status == "dismissed" else s.status,
-        "hidden": s.status in ("hidden", "dismissed"),
-    }
 
 
 def _create_book_mapping(container, abs_id, title, ebook_filename, duration,
@@ -298,7 +269,7 @@ def suggestions():
     container = get_container()
     database_service = get_database_service()
     raw_suggestions = database_service.get_all_actionable_suggestions()
-    suggestions_list = [_serialize_suggestion(s) for s in raw_suggestions if s.matches]
+    suggestions_list = [serialize_suggestion(s) for s in raw_suggestions if s.matches]
     visible_count = sum(1 for s in suggestions_list if not s.get("hidden"))
     hidden_count = sum(1 for s in suggestions_list if s.get("hidden"))
     suggestions_enabled = current_app.config.get("SUGGESTIONS_ENABLED", False)
@@ -560,6 +531,7 @@ def match():
         pass
 
     storyteller_force_mode = os.environ.get("STORYTELLER_FORCE_MODE", "false").lower() == "true"
+    storyteller_configured = container.storyteller_client().is_configured()
 
     # Detect available services for smart mode defaults
     abs_configured = abs_service.is_available()
@@ -593,6 +565,7 @@ def match():
         preselect_abs_id=preselect_abs_id,
         storyteller_submit_available=storyteller_submit_available,
         storyteller_force_mode=storyteller_force_mode,
+        storyteller_configured=storyteller_configured,
         library_abs_ids=library_abs_ids,
         library_ebook_filenames=library_ebook_filenames,
         abs_configured=abs_configured,
@@ -772,6 +745,7 @@ def batch_match():
         pass
 
     storyteller_force_mode = os.environ.get("STORYTELLER_FORCE_MODE", "false").lower() == "true"
+    storyteller_configured = container.storyteller_client().is_configured()
 
     queue_view = _build_batch_queue_view(session.get("queue", []))
     return render_template(
@@ -785,4 +759,5 @@ def batch_match():
         get_title=manager.get_audiobook_title,
         storyteller_submit_available=storyteller_submit_available,
         storyteller_force_mode=storyteller_force_mode,
+        storyteller_configured=storyteller_configured,
     )
