@@ -128,6 +128,7 @@ class SuggestionRepository(BaseRepository):
     def clear_stale_suggestions(self):
         """Delete suggestions whose source_id is not in the books table."""
         from sqlalchemy import not_
+
         from .models import Book
         with self.get_session() as session:
             count = session.query(PendingSuggestion).filter(
