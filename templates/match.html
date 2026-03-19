@@ -23,7 +23,7 @@
             <p class="subtitle">Choose an ebook source to attach to <strong>{{ attach_title }}</strong>.</p>
             {% elif link_to %}
             <h2>Attach Audiobook</h2>
-            <p class="subtitle">Choose an audiobook from your ABS library to link to <strong>{{ link_title }}</strong>.</p>
+            <p class="subtitle">Choose an audiobook from your audiobook library to link to <strong>{{ link_title }}</strong>.</p>
             {% else %}
             <h2>Add Book</h2>
             {% endif %}
@@ -44,10 +44,15 @@
         </section>
 
         {% if not attach_to and not link_to %}
+        {% set abs_ok = abs_configured|default(true) %}
+        {% set ebook_ok = has_ebook_sources|default(true) %}
         <div class="r-match-mode-bar" id="match-mode-bar">
-            <button class="r-match-mode-btn active" data-mode="match" type="button">Match</button>
-            <button class="r-match-mode-btn" data-mode="audio" type="button">Audio Only</button>
-            <button class="r-match-mode-btn" data-mode="ebook" type="button">Ebook Only</button>
+            <button class="r-match-mode-btn{% if abs_ok %} active{% endif %}" data-mode="match" type="button"
+                {% if not abs_ok %}disabled title="Requires an audiobook source"{% endif %}>Match</button>
+            <button class="r-match-mode-btn" data-mode="audio" type="button"
+                {% if not abs_ok %}disabled title="Requires an audiobook source"{% endif %}>Audio Only</button>
+            <button class="r-match-mode-btn{% if not abs_ok and ebook_ok %} active{% endif %}" data-mode="ebook" type="button"
+                {% if not ebook_ok %}disabled title="No ebook sources configured"{% endif %}>Ebook Only</button>
         </div>
         {% endif %}
 
@@ -309,8 +314,10 @@
         const hasStorytellerSection = !!document.getElementById('storytellerSection');
         const storytellerForceMode = {{ 'true' if storyteller_force_mode else 'false' }};
 
-        let currentMode = 'match';
-        let currentPhase = 'select-audio';
+        const absConfigured = {{ 'true' if abs_configured|default(true) else 'false' }};
+        const hasEbookSources = {{ 'true' if has_ebook_sources|default(true) else 'false' }};
+        let currentMode = absConfigured ? 'match' : (hasEbookSources ? 'ebook' : 'match');
+        let currentPhase = (currentMode === 'match') ? 'select-audio' : 'done';
 
         function setMode(mode) {
             currentMode = mode;

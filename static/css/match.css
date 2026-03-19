@@ -328,10 +328,15 @@ input[type="radio"] {
 }
 
 .r-match-mode-btn.active,
-.r-match-mode-btn:hover {
+.r-match-mode-btn:hover:not(:disabled) {
   color: var(--color-text);
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.08);
+}
+
+.r-match-mode-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 /* ── Match page workspace (single-column progressive layout) ── */

@@ -9,12 +9,14 @@ from pathlib import Path
 from flask import Blueprint, current_app, flash, redirect, render_template, request, session, url_for
 
 from src.blueprints.helpers import (
+    any_booklore_configured,
     audiobook_matches_search,
     find_in_booklore,
     get_abs_service,
     get_audiobooks_conditionally,
     get_container,
     get_database_service,
+    get_ebook_dir,
     get_kosync_id_for_ebook,
     get_manager,
     get_searchable_ebooks,
@@ -544,6 +546,15 @@ def match():
 
     storyteller_force_mode = os.environ.get("STORYTELLER_FORCE_MODE", "false").lower() == "true"
 
+    # Detect available services for smart mode defaults
+    abs_configured = abs_service.is_available()
+    has_ebook_sources = (
+        any_booklore_configured()
+        or container.cwa_client().is_configured()
+        or abs_service.has_ebook_libraries()
+        or get_ebook_dir().exists()
+    )
+
     # Build sets of IDs already in the library for "In Library" badges
     library_abs_ids = set()
     library_ebook_filenames = set()
@@ -569,6 +580,8 @@ def match():
         storyteller_force_mode=storyteller_force_mode,
         library_abs_ids=library_abs_ids,
         library_ebook_filenames=library_ebook_filenames,
+        abs_configured=abs_configured,
+        has_ebook_sources=has_ebook_sources,
     )
 
 
