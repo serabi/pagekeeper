@@ -354,6 +354,13 @@ select:focus {
   font-size: 36px;
 }
 
+.book-cover-placeholder-logo {
+  width: 40%;
+  max-width: 48px;
+  opacity: 0.3;
+  filter: grayscale(1);
+}
+
 /* Info Section */
 .book-info {
   flex: 1;

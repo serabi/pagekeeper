@@ -2,7 +2,7 @@
 
 
 def resolve_book_covers(book, abs_service, database_service, book_type,
-                        booklore_meta=None):
+                        booklore_meta=None, hardcover_details=None):
     """Resolve cover URLs for a book using the priority waterfall.
 
     Priority chain:
@@ -17,7 +17,7 @@ def resolve_book_covers(book, abs_service, database_service, book_type,
     """
     custom_cover_url = book.custom_cover_url or None
     abs_cover_url = None
-    if book.abs_id and book_type != 'ebook-only':
+    if book.abs_id and book_type != 'ebook-only' and not book.abs_id.startswith('bf-'):
         abs_cover_url = abs_service.get_cover_proxy_url(book.abs_id)
 
     # Cover URL -- preserve custom override, otherwise walk the waterfall.
@@ -37,9 +37,9 @@ def resolve_book_covers(book, abs_service, database_service, book_type,
 
     # Hardcover cover fallback
     if not cover_url and book.id:
-        hc_details = database_service.get_hardcover_details(book.id)
-        if hc_details and hc_details.hardcover_cover_url:
-            cover_url = hc_details.hardcover_cover_url
+        hc = hardcover_details if hardcover_details is not None else database_service.get_hardcover_details(book.id)
+        if hc and hc.hardcover_cover_url:
+            cover_url = hc.hardcover_cover_url
 
     non_abs_cover_url = cover_url
     if not custom_cover_url and abs_cover_url:

@@ -31,12 +31,17 @@ else 0 %}
     <div class="book-cover-section">
         <a href="/reading/book/{{ mapping.id }}?from=dashboard" class="book-cover-link">
             <div class="book-cover-inner">
+                {% set is_bf = mapping.abs_id and mapping.abs_id[:3] == 'bf-' %}
                 {% if mapping.cover_url %}
                 <img src="{{ mapping.cover_url }}" alt="Cover" class="book-cover" loading="lazy"
-                    onerror="{% if mapping.kosync_doc_id %}this.onerror=null; this.src='/covers/{{ mapping.kosync_doc_id }}.jpg';{% else %}this.style.display='none'; this.nextElementSibling.classList.remove('hidden');{% endif %}">
-                <div class="book-cover-placeholder hidden"></div>
+                    onerror="{% if mapping.kosync_doc_id %}this.onerror=function(){this.style.display='none'; this.nextElementSibling.classList.remove('hidden');}; this.src='/covers/{{ mapping.kosync_doc_id }}.jpg';{% else %}this.style.display='none'; this.nextElementSibling.classList.remove('hidden');{% endif %}">
+                <div class="book-cover-placeholder hidden">
+                    {% if is_bf %}<img src="/static/bookfusion-logo.svg" alt="" class="book-cover-placeholder-logo">{% endif %}
+                </div>
                 {% else %}
-                <div class="book-cover-placeholder"></div>
+                <div class="book-cover-placeholder">
+                    {% if is_bf %}<img src="/static/bookfusion-logo.svg" alt="" class="book-cover-placeholder-logo">{% endif %}
+                </div>
                 {% endif %}
             </div>
         </a>

@@ -8,8 +8,8 @@ from pathlib import Path
 
 from flask import Blueprint, render_template
 
+from src.utils.cover_resolver import resolve_book_covers
 from src.blueprints.helpers import (
-    booklore_cover_proxy_prefix,
     get_abs_service,
     get_container,
     get_database_service,
@@ -329,27 +329,11 @@ def index():
         else:
             mapping["last_sync"] = "Never"
 
-        if book.abs_id and book_type != "ebook-only":
-            mapping["cover_url"] = abs_service.get_cover_proxy_url(book.abs_id)
-        else:
-            mapping["cover_url"] = None
-
-        # Custom cover URL override (user-pasted) takes precedence over auto-discovered sources
-        if book.custom_cover_url:
-            mapping["cover_url"] = book.custom_cover_url
-
-        # Booklore cover fallback for books without an ABS or custom cover
-        if not mapping["cover_url"] and mapping.get("booklore_id") and bl_meta:
-            prefix = booklore_cover_proxy_prefix(bl_meta.server_id)
-            mapping["cover_url"] = f"{prefix}/{mapping['booklore_id']}"
-
-        # KOSync cover fallback (lazy extraction — covers endpoint extracts on demand)
-        if not mapping["cover_url"] and book.kosync_doc_id:
-            mapping["cover_url"] = f'/covers/{book.kosync_doc_id}.jpg'
-
-        # Hardcover cover fallback
-        if not mapping["cover_url"] and mapping.get("hardcover_cover_url"):
-            mapping["cover_url"] = mapping["hardcover_cover_url"]
+        covers = resolve_book_covers(
+            book, abs_service, database_service, book_type,
+            booklore_meta=bl_meta, hardcover_details=hardcover_details,
+        )
+        mapping["cover_url"] = covers['cover_url']
 
         duration = mapping.get("duration", 0)
         progress_pct = mapping.get("unified_progress", 0)
