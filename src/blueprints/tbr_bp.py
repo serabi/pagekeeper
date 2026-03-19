@@ -132,7 +132,7 @@ def add_tbr_from_library():
 
     item, created = database_service.add_tbr_item(
         title=book.title or book_ref,
-        author=getattr(book, 'author', None),
+        author=book.author,
         source='library',
         book_abs_id=book.abs_id,
         book_id=book.id,

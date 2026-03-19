@@ -481,7 +481,7 @@ def cleanup_mapping_resources(book):
                 except Exception as e:
                     logger.warning(f"Failed to delete cached ebook {book.ebook_filename}: {e}")
 
-    if getattr(book, 'sync_mode', 'audiobook') == 'ebook_only' and book.kosync_doc_id:
+    if book.sync_mode == 'ebook_only' and book.kosync_doc_id:
         logger.info(f"Deleting KOSync document record for ebook-only mapping: '{book.kosync_doc_id[:8]}'")
         database_service.delete_kosync_document(book.kosync_doc_id)
 
@@ -538,6 +538,27 @@ def serialize_suggestion(s):
         "status": s.status,
         "hidden": s.status == 'hidden',
     }
+
+
+def find_booklore_metadata(book, booklore_by_filename):
+    """Find best Booklore metadata entry for a book by filename."""
+    for fn in (book.ebook_filename, book.original_ebook_filename):
+        if fn:
+            candidates = booklore_by_filename.get(fn.lower(), [])
+            match = next((b for b in candidates if b.title), candidates[0] if candidates else None)
+            if match:
+                return match
+    return None
+
+
+def attempt_hardcover_automatch(container, book):
+    """Best-effort Hardcover automatch after book creation."""
+    try:
+        hc_service = container.hardcover_service()
+        if hc_service.is_configured():
+            hc_service.automatch_hardcover(book, hardcover_sync_client=container.hardcover_sync_client())
+    except Exception as e:
+        logger.warning(f"Hardcover automatch failed (book saved): {e}")
 
 
 def safe_folder_name(name: str) -> str:

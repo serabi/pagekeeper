@@ -49,7 +49,7 @@ def api_status():
             'kosync_doc_id': book.kosync_doc_id,
             'transcript_file': book.transcript_file,
             'status': book.status,
-            'sync_mode': getattr(book, 'sync_mode', 'audiobook'),
+            'sync_mode': book.sync_mode,
             'duration': book.duration,
             'storyteller_uuid': book.storyteller_uuid,
             'states': {}

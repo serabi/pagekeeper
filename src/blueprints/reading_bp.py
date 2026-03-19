@@ -9,6 +9,7 @@ from pathlib import Path
 from flask import Blueprint, abort, jsonify, render_template, request
 
 from src.blueprints.helpers import (
+    find_booklore_metadata,
     get_abs_service,
     get_book_or_404,
     get_container,
@@ -50,7 +51,7 @@ def _synthetic_journal(abs_id, event, date_str, percentage=None):
 def _build_book_reading_data(book, database_service, abs_service, states_by_book,
                              booklore_by_filename=None, abs_metadata_by_id=None):
     """Build a reading-focused data dict for a single book."""
-    sync_mode = getattr(book, 'sync_mode', 'audiobook')
+    sync_mode = book.sync_mode
     if sync_mode == 'ebook_only':
         book_type = 'ebook-only'
     elif not book.ebook_filename:
@@ -65,20 +66,14 @@ def _build_book_reading_data(book, database_service, abs_service, states_by_book
     # Enrich title/author from Booklore or ABS metadata when available
     display_title = book.title or ''
     display_author = ''
-    bl_meta = None
-    if booklore_by_filename:
-        for fn in (book.ebook_filename, getattr(book, 'original_ebook_filename', None)):
-            if fn:
-                candidates = booklore_by_filename.get(fn.lower(), [])
-                bl_meta = next((b for b in candidates if b.title), candidates[0] if candidates else None)
-                if bl_meta and bl_meta.title:
-                    stems = set()
-                    for check_fn in (book.ebook_filename, getattr(book, 'original_ebook_filename', None)):
-                        if check_fn:
-                            stems.add(Path(check_fn).stem)
-                    if display_title in stems or display_title == book.ebook_filename:
-                        display_title = bl_meta.title
-                    break
+    bl_meta = find_booklore_metadata(book, booklore_by_filename) if booklore_by_filename else None
+    if bl_meta and bl_meta.title:
+        stems = set()
+        for check_fn in (book.ebook_filename, book.original_ebook_filename):
+            if check_fn:
+                stems.add(Path(check_fn).stem)
+        if display_title in stems or display_title == book.ebook_filename:
+            display_title = bl_meta.title
 
     if bl_meta and bl_meta.authors:
         display_author = bl_meta.authors
@@ -87,7 +82,7 @@ def _build_book_reading_data(book, database_service, abs_service, states_by_book
         abs_meta = (abs_metadata_by_id or {}).get(book.abs_id, {})
         display_author = abs_meta.get('author') or ''
 
-    if not display_author and getattr(book, 'author', None):
+    if not display_author and book.author:
         display_author = book.author
 
     if not display_author:

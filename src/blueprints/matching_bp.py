@@ -10,9 +10,11 @@ from flask import Blueprint, current_app, flash, redirect, render_template, requ
 
 from src.blueprints.helpers import (
     any_booklore_configured,
+    attempt_hardcover_automatch,
     audiobook_matches_search,
     find_in_booklore,
     get_abs_service,
+    get_audiobook_author,
     get_audiobooks_conditionally,
     get_container,
     get_database_service,
@@ -99,7 +101,8 @@ def _copy_book_merge_metadata(existing_book, overrides=None):
 
 
 def _create_book_mapping(container, abs_id, title, ebook_filename, duration,
-                         storyteller_uuid=None, storyteller_submit=False):
+                         storyteller_uuid=None, storyteller_submit=False,
+                         author=None, subtitle=None):
     """Create a book mapping with full pipeline: Booklore, KOSync, merge, Hardcover, etc.
 
     Returns (book, error_message). On success error_message is None.
@@ -162,6 +165,8 @@ def _create_book_mapping(container, abs_id, title, ebook_filename, duration,
         transcript_file=None,
         status="pending",
         duration=duration,
+        author=author,
+        subtitle=subtitle,
         **merge_metadata,
     )
     database_service.save_book(book, is_new=True)
@@ -182,12 +187,7 @@ def _create_book_mapping(container, abs_id, title, ebook_filename, duration,
             raise
 
     # Hardcover automatch
-    try:
-        hc_service = container.hardcover_service()
-        if hc_service.is_configured():
-            hc_service.automatch_hardcover(book, hardcover_sync_client=container.hardcover_sync_client())
-    except Exception as e:
-        logger.warning(f"Hardcover automatch failed (book saved): {e}")
+    attempt_hardcover_automatch(container, book)
 
     # ABS collection add
     if not migration_source_id:
@@ -318,15 +318,12 @@ def match():
                 status="not_started",
                 duration=manager.get_duration(selected_ab),
                 sync_mode="audiobook",
+                author=get_audiobook_author(selected_ab),
+                subtitle=selected_ab.get("media", {}).get("metadata", {}).get("subtitle") or None,
             )
             database_service.save_book(book, is_new=True)
             abs_service.add_to_collection(abs_id, current_app.config["ABS_COLLECTION_NAME"])
-            try:
-                hc_service = container.hardcover_service()
-                if hc_service.is_configured():
-                    hc_service.automatch_hardcover(book, hardcover_sync_client=container.hardcover_sync_client())
-            except Exception as e:
-                logger.warning(f"Hardcover automatch failed (book saved): {e}")
+            attempt_hardcover_automatch(container, book)
             database_service.resolve_suggestion(abs_id)
             return redirect(url_for("dashboard.index"))
 
@@ -423,6 +420,8 @@ def match():
                 status=book.status or "not_started",
                 duration=manager.get_duration(selected_ab),
                 sync_mode="audiobook",
+                author=get_audiobook_author(selected_ab),
+                subtitle=selected_ab.get("media", {}).get("metadata", {}).get("subtitle") or None,
                 **_copy_book_merge_metadata(
                     book,
                     {
@@ -440,12 +439,7 @@ def match():
             except Exception as e:
                 logger.error(f"Failed to merge book data: {e}")
                 raise
-            try:
-                hc_service = container.hardcover_service()
-                if hc_service.is_configured():
-                    hc_service.automatch_hardcover(new_book, hardcover_sync_client=container.hardcover_sync_client())
-            except Exception as e:
-                logger.warning(f"Hardcover automatch failed (book saved): {e}")
+            attempt_hardcover_automatch(container, new_book)
             database_service.resolve_suggestion(abs_id)
             if new_book.kosync_doc_id:
                 database_service.resolve_suggestion(new_book.kosync_doc_id)
@@ -463,6 +457,7 @@ def match():
         if not selected_ab:
             return "Audiobook not found", 404
 
+        _ab_meta = selected_ab.get("media", {}).get("metadata", {})
         book, error = _create_book_mapping(
             container, abs_id,
             title=manager.get_audiobook_title(selected_ab),
@@ -470,6 +465,8 @@ def match():
             duration=manager.get_duration(selected_ab),
             storyteller_uuid=storyteller_uuid,
             storyteller_submit=bool(storyteller_submit),
+            author=get_audiobook_author(selected_ab),
+            subtitle=_ab_meta.get("subtitle") or None,
         )
         if error:
             return error, 404
@@ -611,6 +608,7 @@ def batch_match():
                     else ebook_display_name or Path(ebook_filename).stem if ebook_filename
                     else "Storyteller Book"
                 )
+                _ab_meta = (selected_ab or {}).get("media", {}).get("metadata", {})
                 session["queue"].append(
                     {
                         "queue_key": queue_key,
@@ -624,6 +622,8 @@ def batch_match():
                         "cover_url": abs_service.get_cover_proxy_url(abs_id) if abs_id else None,
                         "audio_only": is_audio_only,
                         "ebook_only": is_ebook_only,
+                        "author": get_audiobook_author(selected_ab) if selected_ab else None,
+                        "subtitle": _ab_meta.get("subtitle") or None,
                     }
                 )
                 session.modified = True
@@ -652,15 +652,12 @@ def batch_match():
                             status="not_started",
                             duration=item["duration"],
                             sync_mode="audiobook",
+                            author=item.get("author"),
+                            subtitle=item.get("subtitle"),
                         )
                         database_service.save_book(book, is_new=True)
                         abs_service.add_to_collection(item["abs_id"], current_app.config["ABS_COLLECTION_NAME"])
-                        try:
-                            hc_service = container.hardcover_service()
-                            if hc_service.is_configured():
-                                hc_service.automatch_hardcover(book, hardcover_sync_client=container.hardcover_sync_client())
-                        except Exception as e:
-                            logger.warning(f"Hardcover automatch failed (book saved): {e}")
+                        attempt_hardcover_automatch(container, book)
                         database_service.resolve_suggestion(item["abs_id"])
                         continue
 
@@ -704,6 +701,8 @@ def batch_match():
                         duration=item["duration"],
                         storyteller_uuid=item.get("storyteller_uuid", ""),
                         storyteller_submit=bool(item.get("storyteller_submit")),
+                        author=item.get("author"),
+                        subtitle=item.get("subtitle"),
                     )
                     if error:
                         failed_items.append(item.get("ebook_display_name") or item["ebook_filename"])

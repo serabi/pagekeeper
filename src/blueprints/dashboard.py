@@ -10,6 +10,7 @@ from flask import Blueprint, render_template
 
 from src.utils.cover_resolver import resolve_book_covers
 from src.blueprints.helpers import (
+    find_booklore_metadata,
     get_abs_service,
     get_container,
     get_database_service,
@@ -132,7 +133,7 @@ def index():
         states = states_by_book.get(book.id, [])
         state_by_client = {state.client_name: state for state in states}
 
-        sync_mode = getattr(book, "sync_mode", "audiobook")
+        sync_mode = book.sync_mode
         if sync_mode == "ebook_only":
             book_type = "ebook-only"
         elif not book.ebook_filename:
@@ -140,26 +141,11 @@ def index():
         else:
             book_type = "linked"
 
-        # Look up Booklore metadata by ebook_filename or original_ebook_filename
-        # Prefer entries that have a title, since we use this for display enrichment
         # bl_meta: filtered to enabled instances (used for covers/deep-links)
-        bl_meta = None
-        for fn in (book.ebook_filename, getattr(book, "original_ebook_filename", None)):
-            if fn:
-                candidates = booklore_by_filename.get(fn.lower(), [])
-                bl_meta = next((b for b in candidates if b.title), candidates[0] if candidates else None)
-                if bl_meta:
-                    break
+        bl_meta = find_booklore_metadata(book, booklore_by_filename)
 
         # bl_meta_enrichment: unfiltered fallback for title/author (stale metadata is fine)
-        bl_meta_enrichment = bl_meta
-        if not bl_meta_enrichment:
-            for fn in (book.ebook_filename, getattr(book, "original_ebook_filename", None)):
-                if fn:
-                    candidates = booklore_by_filename_all.get(fn.lower(), [])
-                    bl_meta_enrichment = next((b for b in candidates if b.title), candidates[0] if candidates else None)
-                    if bl_meta_enrichment:
-                        break
+        bl_meta_enrichment = bl_meta or find_booklore_metadata(book, booklore_by_filename_all)
 
         # Skip ABS metadata enrichment for ebook-only books (synthetic ID won't resolve)
         if book_type == "ebook-only":
@@ -167,24 +153,38 @@ def index():
             abs_author = (bl_meta_enrichment.authors or "") if bl_meta_enrichment else ""
         else:
             _abs_meta = abs_metadata_by_id.get(book.abs_id, {})
-            abs_subtitle = _abs_meta.get("subtitle", "")
-            abs_author = _abs_meta.get("author", "")
+            abs_subtitle = _abs_meta.get("subtitle", "") or book.subtitle or ""
+            abs_author = _abs_meta.get("author", "") or book.author or ""
 
         # Enrich title from Booklore if stored title looks like a filename
         enriched_title = book.title
         if bl_meta_enrichment and bl_meta_enrichment.title:
             stems = set()
-            for fn in (book.ebook_filename, getattr(book, "original_ebook_filename", None)):
+            for fn in (book.ebook_filename, book.original_ebook_filename):
                 if fn:
                     stems.add(Path(fn).stem)
             if book.title in stems or book.title in (
                 book.ebook_filename,
-                getattr(book, "original_ebook_filename", None),
+                book.original_ebook_filename,
             ):
                 enriched_title = bl_meta_enrichment.title
                 # Persist the improved title so it sticks (batched after loop)
                 book.title = bl_meta_enrichment.title
                 books_needing_title_save.append(book)
+
+        # Opportunistic refresh: cache author/subtitle from live ABS data
+        if book_type != "ebook-only" and book.abs_id in abs_metadata_by_id:
+            _live = abs_metadata_by_id[book.abs_id]
+            _live_author = _live.get("author", "")
+            _live_subtitle = _live.get("subtitle", "")
+            if _live_author and _live_author != book.author:
+                book.author = _live_author
+                if book not in books_needing_title_save:
+                    books_needing_title_save.append(book)
+            if _live_subtitle and _live_subtitle != book.subtitle:
+                book.subtitle = _live_subtitle
+                if book not in books_needing_title_save:
+                    books_needing_title_save.append(book)
 
         mapping = {
             "id": book.id,
@@ -198,7 +198,7 @@ def index():
             "status": book.status,
             "sync_mode": sync_mode,
             "book_type": book_type,
-            "activity_flag": getattr(book, "activity_flag", False),
+            "activity_flag": book.activity_flag,
             "unified_progress": 0,
             "duration": book.duration or 0,
             "storyteller_uuid": book.storyteller_uuid,

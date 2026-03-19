@@ -18,7 +18,7 @@ def resolve_book_covers(book, abs_service, database_service, book_type,
     custom_cover_url = book.custom_cover_url or None
     abs_cover_url = None
     if book.abs_id and book_type != 'ebook-only' and not book.abs_id.startswith('bf-'):
-        abs_cover_url = abs_service.get_cover_proxy_url(book.abs_id)
+        abs_cover_url = f"/api/cover-proxy/{book.abs_id}"
 
     # Cover URL -- preserve custom override, otherwise walk the waterfall.
     cover_url = custom_cover_url
