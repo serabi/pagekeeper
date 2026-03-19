@@ -40,6 +40,7 @@ def _serialize_suggestion(s):
     return {
         "id": s.id,
         "source_id": s.source_id,
+        "source": s.source or "abs",
         "title": s.title,
         "author": s.author,
         "cover_url": s.cover_url,
@@ -163,7 +164,8 @@ def rescan_suggestions_status():
 @api_bp.route('/api/suggestions/<source_id>/hide', methods=['POST'])
 def hide_suggestion(source_id):
     database_service = get_database_service()
-    if database_service.hide_suggestion(source_id):
+    source = request.args.get('source', 'abs')
+    if database_service.hide_suggestion(source_id, source=source):
         return jsonify({"success": True})
     return jsonify({"success": False, "error": "Not found"}), 404
 
@@ -171,7 +173,8 @@ def hide_suggestion(source_id):
 @api_bp.route('/api/suggestions/<source_id>/unhide', methods=['POST'])
 def unhide_suggestion(source_id):
     database_service = get_database_service()
-    if database_service.unhide_suggestion(source_id):
+    source = request.args.get('source', 'abs')
+    if database_service.unhide_suggestion(source_id, source=source):
         return jsonify({"success": True})
     return jsonify({"success": False, "error": "Not found"}), 404
 
@@ -179,7 +182,8 @@ def unhide_suggestion(source_id):
 @api_bp.route('/api/suggestions/<source_id>/ignore', methods=['POST'])
 def ignore_suggestion(source_id):
     database_service = get_database_service()
-    if database_service.ignore_suggestion(source_id):
+    source = request.args.get('source', 'abs')
+    if database_service.ignore_suggestion(source_id, source=source):
         return jsonify({"success": True})
     return jsonify({"success": False, "error": "Not found"}), 404
 
@@ -196,11 +200,15 @@ def clear_stale_suggestions():
 def link_suggestion_bookfusion(source_id):
     database_service = get_database_service()
     container = get_container()
-    suggestion = database_service.get_pending_suggestion(source_id)
+    data = request.get_json(silent=True) or {}
+    source = data.get('source', 'abs')
+    if source != 'abs':
+        return jsonify({"success": False, "error": "BookFusion linking only supported for ABS suggestions"}), 400
+
+    suggestion = database_service.get_pending_suggestion(source_id, source=source)
     if not suggestion:
         return jsonify({"success": False, "error": "Suggestion not found"}), 404
 
-    data = request.get_json(silent=True) or {}
     match_index = data.get('match_index')
     matches = suggestion.matches or []
     if match_index is None or not isinstance(match_index, int) or match_index < 0 or match_index >= len(matches):
@@ -231,9 +239,11 @@ def link_suggestion_bookfusion(source_id):
             except Exception as e:
                 logger.warning(f"Failed to add '{source_id}' to ABS collection during BookFusion link: {e}")
 
+    # Re-fetch to get the auto-assigned book ID
+    abs_book = database_service.get_book_by_ref(source_id)
     for bid in bookfusion_ids:
-        database_service.set_bookfusion_book_match(bid, source_id)
-        database_service.link_bookfusion_book(bid, source_id)
+        database_service.set_bookfusion_book_match_by_book_id(bid, abs_book.id)
+        database_service.link_bookfusion_highlights_by_book_id(bid, abs_book.id)
 
     database_service.resolve_suggestion(source_id)
     return jsonify({"success": True, "abs_id": source_id})

@@ -151,7 +151,7 @@ class ProgressResetService:
             return
 
         book = self.database_service.get_book_by_ref(book_id)
-        has_alignment = bool(book and self.alignment_service and self.alignment_service.has_alignment(book.abs_id))
+        has_alignment = bool(book and self.alignment_service and self.alignment_service.has_alignment(book.id))
         if has_alignment:
             logger.info(f"   Alignment map exists for '{sanitize_log_data(str(book_id))}' — no re-transcription needed")
         else:

@@ -131,12 +131,12 @@ class TestStorytellerAlignment(unittest.TestCase):
         self.service = AlignmentService(self.mock_db, self.polisher)
 
     def test_empty_chapters_returns_false(self):
-        result = self.service.align_storyteller_and_store('abs-1', [], 'Some ebook text here')
+        result = self.service.align_storyteller_and_store(1, [], 'Some ebook text here')
         self.assertFalse(result)
 
     def test_empty_words_returns_false(self):
         chapters = [{'words': []}]
-        result = self.service.align_storyteller_and_store('abs-1', chapters, 'Some text')
+        result = self.service.align_storyteller_and_store(1, chapters, 'Some text')
         self.assertFalse(result)
 
     def test_builds_segments_and_aligns(self):
@@ -149,7 +149,7 @@ class TestStorytellerAlignment(unittest.TestCase):
 
         chapters = [{'words': words}]
 
-        result = self.service.align_storyteller_and_store('abs-test', chapters, text)
+        result = self.service.align_storyteller_and_store(42, chapters, text)
         self.assertTrue(result)
 
         # Verify _save_alignment was called
@@ -165,7 +165,7 @@ class TestStorytellerAlignment(unittest.TestCase):
         # Ebook text has completely different content
         ebook_text = "Completely different content that shares no words with the transcript"
 
-        result = self.service.align_storyteller_and_store('abs-fallback', chapters, ebook_text)
+        result = self.service.align_storyteller_and_store(99, chapters, ebook_text)
         self.assertTrue(result)
 
 

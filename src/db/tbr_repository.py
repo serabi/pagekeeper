@@ -102,14 +102,13 @@ class TbrRepository(BaseRepository):
         """Remove a TBR item. Returns True if deleted."""
         return self._delete_one(TbrItem, TbrItem.id == item_id)
 
-    def link_tbr_to_book(self, item_id, book_id, book_abs_id=None):
+    def link_tbr_to_book(self, item_id, book_id):
         """Set book_id on a TBR item (linking it to an owned book)."""
         with self.get_session() as session:
             item = session.query(TbrItem).filter(TbrItem.id == item_id).first()
             if not item:
                 return None
             item.book_id = book_id
-            item.book_abs_id = book_abs_id
             session.flush()
             session.refresh(item)
             session.expunge(item)
@@ -128,20 +127,10 @@ class TbrRepository(BaseRepository):
         """Find a TBR item linked to a given library book."""
         return self._get_one(TbrItem, TbrItem.book_id == book_id)
 
-    def find_by_abs_id(self, abs_id):
-        """Find a TBR item linked to a given abs_id (legacy)."""
-        return self._get_one(TbrItem, TbrItem.book_abs_id == abs_id)
-
     def delete_by_book_id(self, book_id):
         """Delete any TBR items linked to the given book_id. Returns count deleted."""
         with self.get_session() as session:
             count = session.query(TbrItem).filter(TbrItem.book_id == book_id).delete()
-            return count
-
-    def delete_by_abs_id(self, abs_id):
-        """Delete any TBR items linked to the given abs_id (legacy). Returns count deleted."""
-        with self.get_session() as session:
-            count = session.query(TbrItem).filter(TbrItem.book_abs_id == abs_id).delete()
             return count
 
     def get_unlinked_items(self):
@@ -156,6 +145,8 @@ class TbrRepository(BaseRepository):
 
     def auto_link_by_title(self, book):
         """Auto-link unlinked TBR items by normalized title match."""
+        if not book.title:
+            return
         try:
             unlinked = self.get_unlinked_items()
             if not unlinked:
@@ -163,8 +154,8 @@ class TbrRepository(BaseRepository):
             norm_title = book.title.lower().strip()
             for item in unlinked:
                 if item.title and item.title.lower().strip() == norm_title:
-                    self.link_tbr_to_book(item.id, book.id, book_abs_id=book.abs_id)
+                    self.link_tbr_to_book(item.id, book.id)
                     logger.info(f"Auto-linked TBR item '{item.title}' to book {book.id}")
                     break
-        except Exception as e:
+        except (AttributeError, TypeError) as e:
             logger.warning(f"TBR auto-link failed: {e}")

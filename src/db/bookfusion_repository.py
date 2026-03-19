@@ -89,45 +89,26 @@ class BookFusionRepository(BaseRepository):
         with self.get_session() as session:
             highlights = (
                 session.query(BookfusionHighlight)
-                .filter(BookfusionHighlight.matched_abs_id.is_(None))
+                .filter(BookfusionHighlight.matched_book_id.is_(None))
                 .order_by(BookfusionHighlight.book_title, BookfusionHighlight.id)
                 .all()
             )
             session.expunge_all()
             return highlights
 
-    def link_bookfusion_highlight(self, highlight_id, abs_id):
-        """Link by abs_id (backward compat). Also sets matched_book_id if possible."""
+    def link_bookfusion_highlights_by_book_id(self, bookfusion_book_id, book_id):
+        """Link all highlights for a BookFusion book to a library book by book_id."""
         with self.get_session() as session:
-            hl = session.query(BookfusionHighlight).filter(BookfusionHighlight.id == highlight_id).first()
-            if hl:
-                hl.matched_abs_id = abs_id
-                # Also set book_id from the books table
-                from .models import Book
-                book = session.query(Book).filter(Book.abs_id == abs_id).first()
-                if book:
-                    hl.matched_book_id = book.id
-                return True
-            return False
-
-    def link_bookfusion_book(self, bookfusion_book_id, abs_id):
-        """Link all highlights for a BookFusion book (backward compat). Also sets matched_book_id."""
-        with self.get_session() as session:
-            from .models import Book
-            book = session.query(Book).filter(Book.abs_id == abs_id).first()
-            updates = {BookfusionHighlight.matched_abs_id: abs_id}
-            if book:
-                updates[BookfusionHighlight.matched_book_id] = book.id
             session.query(BookfusionHighlight).filter(
                 BookfusionHighlight.bookfusion_book_id == bookfusion_book_id
-            ).update(updates, synchronize_session=False)
+            ).update({BookfusionHighlight.matched_book_id: book_id}, synchronize_session=False)
 
-    def get_bookfusion_highlights_for_book(self, abs_id):
-        """Get by abs_id (backward compat)."""
+    def get_bookfusion_highlights_for_book_by_book_id(self, book_id):
+        """Get highlights matched to a book by book_id."""
         with self.get_session() as session:
             highlights = (
                 session.query(BookfusionHighlight)
-                .filter(BookfusionHighlight.matched_abs_id == abs_id)
+                .filter(BookfusionHighlight.matched_book_id == book_id)
                 .order_by(BookfusionHighlight.highlighted_at.desc().nullslast(), BookfusionHighlight.id)
                 .all()
             )
@@ -176,21 +157,17 @@ class BookFusionRepository(BaseRepository):
     def get_bookfusion_books(self):
         return self._get_all(BookfusionBook, order_by=BookfusionBook.title)
 
-    def is_bookfusion_linked(self, abs_id):
-        """Check by abs_id (backward compat)."""
+    def is_bookfusion_linked_by_book_id(self, book_id):
+        """Check if a book has a linked BookFusion catalog entry by book_id."""
         with self.get_session() as session:
-            return session.query(BookfusionBook).filter(BookfusionBook.matched_abs_id == abs_id).first() is not None
+            return session.query(BookfusionBook).filter(BookfusionBook.matched_book_id == book_id).first() is not None
 
-    def set_bookfusion_book_match(self, bookfusion_id, abs_id):
-        """Match by abs_id (backward compat). Also sets matched_book_id."""
+    def set_bookfusion_book_match_by_book_id(self, bookfusion_id, book_id):
+        """Match a BookFusion catalog book to a library book by book_id."""
         with self.get_session() as session:
-            from .models import Book
             bf_book = session.query(BookfusionBook).filter(BookfusionBook.bookfusion_id == bookfusion_id).first()
             if bf_book:
-                bf_book.matched_abs_id = abs_id
-                book = session.query(Book).filter(Book.abs_id == abs_id).first()
-                if book:
-                    bf_book.matched_book_id = book.id
+                bf_book.matched_book_id = book_id
 
     def set_bookfusion_books_hidden(self, bookfusion_ids, hidden):
         with self.get_session() as session:
@@ -201,22 +178,8 @@ class BookFusionRepository(BaseRepository):
     def get_bookfusion_book(self, bookfusion_id):
         return self._get_one(BookfusionBook, BookfusionBook.bookfusion_id == bookfusion_id)
 
-    def get_bookfusion_book_by_abs_id(self, abs_id):
-        """Get by abs_id (backward compat)."""
-        return self._get_one(BookfusionBook, BookfusionBook.matched_abs_id == abs_id)
-
     def get_bookfusion_book_by_book_id(self, book_id):
         return self._get_one(BookfusionBook, BookfusionBook.matched_book_id == book_id)
-
-    def unlink_bookfusion_by_abs_id(self, abs_id):
-        """Unlink by abs_id (backward compat)."""
-        with self.get_session() as session:
-            session.query(BookfusionBook).filter(BookfusionBook.matched_abs_id == abs_id).update(
-                {BookfusionBook.matched_abs_id: None, BookfusionBook.matched_book_id: None}, synchronize_session=False
-            )
-            session.query(BookfusionHighlight).filter(BookfusionHighlight.matched_abs_id == abs_id).update(
-                {BookfusionHighlight.matched_abs_id: None, BookfusionHighlight.matched_book_id: None}, synchronize_session=False
-            )
 
     def unlink_bookfusion_by_book_id(self, book_id):
         with self.get_session() as session:
@@ -245,24 +208,6 @@ class BookFusionRepository(BaseRepository):
                 return result
             return None
 
-    def get_bookfusion_linked_abs_ids(self):
-        """Get all linked abs_ids (backward compat)."""
-        with self.get_session() as session:
-            book_ids = {
-                r[0]
-                for r in session.query(BookfusionBook.matched_abs_id)
-                .filter(BookfusionBook.matched_abs_id.isnot(None))
-                .all()
-            }
-            highlight_ids = {
-                r[0]
-                for r in session.query(BookfusionHighlight.matched_abs_id)
-                .filter(BookfusionHighlight.matched_abs_id.isnot(None))
-                .distinct()
-                .all()
-            }
-            return book_ids | highlight_ids
-
     def get_bookfusion_linked_book_ids(self):
         with self.get_session() as session:
             book_ids = {
@@ -280,19 +225,21 @@ class BookFusionRepository(BaseRepository):
             }
             return book_ids | highlight_ids
 
-    def get_bookfusion_highlight_counts(self):
-        """Return counts keyed by abs_id (backward compat)."""
+    def get_bookfusion_highlight_counts_by_book_id(self):
+        """Return highlight counts keyed by book_id."""
         with self.get_session() as session:
             rows = (
-                session.query(BookfusionHighlight.matched_abs_id, func.count(BookfusionHighlight.id))
-                .filter(BookfusionHighlight.matched_abs_id.isnot(None))
-                .group_by(BookfusionHighlight.matched_abs_id)
+                session.query(BookfusionHighlight.matched_book_id, func.count(BookfusionHighlight.id))
+                .filter(BookfusionHighlight.matched_book_id.isnot(None))
+                .group_by(BookfusionHighlight.matched_book_id)
                 .all()
             )
-            return {abs_id: count for abs_id, count in rows}
+            return {book_id: count for book_id, count in rows}
 
     def auto_link_by_title(self, book):
         """Auto-link unmatched BookFusion highlights to a book by title similarity."""
+        if not book.title:
+            return
         try:
             import difflib
 
@@ -307,8 +254,8 @@ class BookFusionRepository(BaseRepository):
                 norm_bf = normalize_title(bf_title)
                 if norm_bf == norm_book or difflib.SequenceMatcher(None, norm_bf, norm_book).ratio() > 0.85:
                     if hl.bookfusion_book_id:
-                        self.link_bookfusion_book(hl.bookfusion_book_id, book.id)
+                        self.link_bookfusion_highlights_by_book_id(hl.bookfusion_book_id, book.id)
                         logger.info(f"Auto-linked BookFusion highlights for '{bf_title}' to book {book.id}")
                     break
-        except Exception as e:
+        except (AttributeError, TypeError) as e:
             logger.warning(f"BookFusion auto-link failed: {e}")

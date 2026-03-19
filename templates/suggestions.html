@@ -161,15 +161,20 @@
         function renderCandidate(match, suggestion, index) {
             const confidenceClass = 'chip--confidence-' + (match.confidence || 'low');
             const actions = [];
+            const sgSource = suggestion.source || 'abs';
 
             if (!suggestion.hidden) {
                 if (match.source_family === 'bookfusion') {
-                    actions.push('<button type="button" class="btn btn-sm" onclick=\'linkBookFusion(' + JSON.stringify(suggestion.source_id) + ', ' + index + ')\'>Link BookFusion</button>');
+                    actions.push('<button type="button" class="btn btn-sm" onclick=\'linkBookFusion(' + JSON.stringify(suggestion.source_id) + ', ' + index + ', ' + JSON.stringify(sgSource) + ')\'>Link BookFusion</button>');
                     if (match.bookfusion_ids && match.bookfusion_ids.length) {
                         actions.push('<button type="button" class="btn btn-sm btn-purple" onclick=\'addBookFusionToDashboard(' + JSON.stringify(JSON.stringify(match.bookfusion_ids)) + ')\'>Add BF Book</button>');
                     }
                 } else {
-                    actions.push('<a class="btn btn-sm" href="/match?abs_id=' + encodeURIComponent(suggestion.source_id) + '&search=' + encodeURIComponent(suggestion.title || '') + '">Create Mapping</a>');
+                    var mappingUrl = '/match?search=' + encodeURIComponent(suggestion.title || '');
+                    if (sgSource === 'abs') {
+                        mappingUrl = '/match?abs_id=' + encodeURIComponent(suggestion.source_id) + '&search=' + encodeURIComponent(suggestion.title || '');
+                    }
+                    actions.push('<a class="btn btn-sm" href="' + mappingUrl + '">Create Mapping</a>');
                 }
             }
 
@@ -199,9 +204,10 @@
                 return renderCandidate(match, suggestion, index);
             }).join('');
 
+            const suggestionSource = suggestion.source || 'abs';
             const actionButtons = suggestion.hidden
-                ? '<button type="button" class="btn btn-sm" onclick=\'unhideSuggestion(' + JSON.stringify(suggestion.source_id) + ', this)\'>Unhide</button>'
-                : '<button type="button" class="btn btn-sm" onclick=\'hideSuggestion(' + JSON.stringify(suggestion.source_id) + ', this)\'>Hide</button>';
+                ? '<button type="button" class="btn btn-sm" onclick=\'unhideSuggestion(' + JSON.stringify(suggestion.source_id) + ', ' + JSON.stringify(suggestionSource) + ', this)\'>Unhide</button>'
+                : '<button type="button" class="btn btn-sm" onclick=\'hideSuggestion(' + JSON.stringify(suggestion.source_id) + ', ' + JSON.stringify(suggestionSource) + ', this)\'>Hide</button>';
 
             return '' +
                 '<article class="suggestion-card' + (suggestion.hidden ? ' suggestion-card--hidden' : '') + '" data-has-bookfusion="' + (suggestion.has_bookfusion_evidence ? 'true' : 'false') + '">' +
@@ -222,7 +228,7 @@
                     '<div class="candidate-list">' + matches + '</div>' +
                     '<div class="suggestion-actions">' +
                         actionButtons +
-                        '<button type="button" class="btn btn-sm btn-danger" onclick=\'ignoreSuggestion(' + JSON.stringify(suggestion.source_id) + ', this)\'>Never Ask</button>' +
+                        '<button type="button" class="btn btn-sm btn-danger" onclick=\'ignoreSuggestion(' + JSON.stringify(suggestion.source_id) + ', ' + JSON.stringify(suggestionSource) + ', this)\'>Never Ask</button>' +
                     '</div>' +
                 '</article>';
         }
@@ -354,14 +360,14 @@
             modal.style.display = 'none';
         }
 
-        function hideSuggestion(sourceId, btn) {
+        function hideSuggestion(sourceId, source, btn) {
             showSuggestionConfirm({
                 title: 'Hide Suggestion?',
                 message: 'This suggestion will move to the Hidden section. You can restore it later.',
                 confirmLabel: 'Hide',
                 confirmClass: 'btn',
                 onConfirm: function() {
-                    actOnSuggestion('/api/suggestions/' + encodeURIComponent(sourceId) + '/hide', btn, function() {
+                    actOnSuggestion('/api/suggestions/' + encodeURIComponent(sourceId) + '/hide?source=' + encodeURIComponent(source || 'abs'), btn, function() {
                         updateSuggestionState(sourceId, function(item) {
                             item.status = 'hidden';
                             item.hidden = true;
@@ -372,14 +378,14 @@
             });
         }
 
-        function ignoreSuggestion(sourceId, btn) {
+        function ignoreSuggestion(sourceId, source, btn) {
             showSuggestionConfirm({
                 title: 'Never Ask Again?',
                 message: 'This suggestion will be permanently ignored and will not return on future rescans.',
                 confirmLabel: 'Never Ask',
                 confirmClass: 'btn btn-danger',
                 onConfirm: function() {
-                    actOnSuggestion('/api/suggestions/' + encodeURIComponent(sourceId) + '/ignore', btn, function() {
+                    actOnSuggestion('/api/suggestions/' + encodeURIComponent(sourceId) + '/ignore?source=' + encodeURIComponent(source || 'abs'), btn, function() {
                         updateSuggestionState(sourceId, function() {
                             return null;
                         });
@@ -388,8 +394,8 @@
             });
         }
 
-        function unhideSuggestion(sourceId, btn) {
-            actOnSuggestion('/api/suggestions/' + encodeURIComponent(sourceId) + '/unhide', btn, function() {
+        function unhideSuggestion(sourceId, source, btn) {
+            actOnSuggestion('/api/suggestions/' + encodeURIComponent(sourceId) + '/unhide?source=' + encodeURIComponent(source || 'abs'), btn, function() {
                 updateSuggestionState(sourceId, function(item) {
                     item.status = 'pending';
                     item.hidden = false;
@@ -417,11 +423,11 @@
             headerEl.nextElementSibling.classList.toggle('hidden');
         }
 
-        function linkBookFusion(sourceId, matchIndex) {
+        function linkBookFusion(sourceId, matchIndex, source) {
             fetch('/api/suggestions/' + encodeURIComponent(sourceId) + '/link-bookfusion', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ match_index: matchIndex })
+                body: JSON.stringify({ match_index: matchIndex, source: source || 'abs' })
             })
                 .then(function(r) { return r.json(); })
                 .then(function(data) {

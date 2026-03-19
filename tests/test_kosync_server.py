@@ -111,12 +111,12 @@ class TestKosyncDocument(unittest.TestCase):
         book = self.db_service.save_book(book)
 
         # Link
-        result = self.db_service.link_kosync_document('d' * 32, book.id, abs_id='book-1')
+        result = self.db_service.link_kosync_document('d' * 32, book.id)
         self.assertTrue(result)
 
         # Verify
         retrieved = self.db_service.get_kosync_document('d' * 32)
-        self.assertEqual(retrieved.linked_abs_id, 'book-1')
+        self.assertEqual(retrieved.linked_book_id, book.id)
 
     def test_get_unlinked_documents(self):
         """Test retrieving unlinked documents."""
@@ -453,7 +453,7 @@ class TestKosyncEndpoints(unittest.TestCase):
             }
         )
         # Link it to the book
-        web_server.database_service.link_kosync_document('a' * 32, book.id, abs_id='test-sibling-book')
+        web_server.database_service.link_kosync_document('a' * 32, book.id)
 
         # Now GET with an unknown hash_B — should resolve via the book's sibling docs
         # First, we need hash_B to be findable. The sibling resolution requires

@@ -86,7 +86,7 @@ def realign_book(book_ref):
     alignment_service = container.alignment_service()
 
     logger.info(f"Re-aligning '{sanitize_log_data(book.title or str(book.id))}'")
-    alignment_service.realign_book(book.abs_id or str(book.id))
+    alignment_service.realign_book(book.id)
     return jsonify({"success": True})
 
 

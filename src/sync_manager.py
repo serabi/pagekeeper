@@ -547,7 +547,7 @@ class SyncManager:
 
         # Migration upgrade
         if self.alignment_service:
-            alignment = self.alignment_service._get_alignment(abs_id)
+            alignment = self.alignment_service._get_alignment(book.id)
             if alignment:
                 if getattr(book, 'transcript_file', None) != 'DB_MANAGED':
                     logger.info(f"   Upgrading '{title_snip}' to DB_MANAGED unified architecture")

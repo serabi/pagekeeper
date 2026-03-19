@@ -633,7 +633,7 @@ def link_tbr_to_library(item_id):
     if not book:
         return jsonify({"success": False, "error": "Book not found in library"}), 404
 
-    updated = database_service.link_tbr_to_book(item_id, book.id, book_abs_id=book.abs_id)
+    updated = database_service.link_tbr_to_book(item_id, book.id)
     if not updated:
         return jsonify({"success": False, "error": "TBR item not found"}), 404
 

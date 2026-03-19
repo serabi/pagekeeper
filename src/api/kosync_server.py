@@ -411,7 +411,7 @@ def kosync_put_progress():
     else:
         linked_book = _database_service.get_book_by_kosync_id(doc_hash)
         if linked_book:
-            _database_service.link_kosync_document(doc_hash, linked_book.abs_id)
+            _database_service.link_kosync_document(doc_hash, linked_book.id)
 
     # AUTO-DISCOVERY
     if not linked_book:
@@ -526,7 +526,7 @@ def kosync_put_progress():
                             sync_mode='ebook_only'
                         )
                         _database_service.save_book(book, is_new=True)
-                        _database_service.link_kosync_document(doc_hash_val, str(book.id))
+                        _database_service.link_kosync_document(doc_hash_val, book.id)
                         _database_service.resolve_suggestion(doc_hash_val)
                         logger.info(f"Auto-created ebook-only mapping: {book.id} -> {epub_filename}")
 
@@ -827,11 +827,11 @@ def _register_hash_for_book(doc_id: str, book):
 
     existing = _database_service.get_kosync_document(doc_id)
     if existing:
-        if not existing.linked_abs_id:
-            _database_service.link_kosync_document(doc_id, book.abs_id)
+        if not existing.linked_book_id:
+            _database_service.link_kosync_document(doc_id, book.id)
             logger.info(f"KOSync: Linked existing document {doc_id[:8]}... to '{book.title}'")
     else:
-        doc = KD(document_hash=doc_id, linked_abs_id=book.abs_id)
+        doc = KD(document_hash=doc_id, linked_book_id=book.id)
         _database_service.save_kosync_document(doc)
         logger.info(f"KOSync: Created and linked new document {doc_id[:8]}... to '{book.title}'")
 
@@ -856,7 +856,7 @@ def _run_get_auto_discovery(doc_id: str):
         # Try to find an existing book that uses this epub
         book = _database_service.get_book_by_ebook_filename(epub_filename)
         if book:
-            _database_service.link_kosync_document(doc_id, book.abs_id)
+            _database_service.link_kosync_document(doc_id, book.id)
             logger.info(f"KOSync: GET-discovery linked {doc_id[:8]}... to '{book.title}'")
             return
 
@@ -973,7 +973,7 @@ def api_link_kosync_document(doc_hash):
     if not doc:
         return jsonify({'error': 'KOSync document not found'}), 404
 
-    success = _database_service.link_kosync_document(doc_hash, abs_id)
+    success = _database_service.link_kosync_document(doc_hash, book.id)
     if success:
         # [FIX] Always update the book's KOSync ID to match what we just linked.
         # This handles cases where the book had a "wrong" hash (e.g. from Storyteller artifact)

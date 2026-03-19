@@ -28,8 +28,8 @@ class MockContainer:
         self.mock_database_service = Mock()
         self.mock_database_service.get_all_settings.return_value = {}  # Default empty settings
         self.mock_database_service.get_book_by_ref.return_value = None
-        self.mock_database_service.get_bookfusion_linked_abs_ids.return_value = set()
-        self.mock_database_service.get_bookfusion_highlight_counts.return_value = {}
+        self.mock_database_service.get_bookfusion_linked_book_ids.return_value = set()
+        self.mock_database_service.get_bookfusion_highlight_counts_by_book_id.return_value = {}
         self.mock_ebook_parser = Mock()
         self.mock_sync_clients = Mock()
         self.mock_bookfusion_client = Mock()

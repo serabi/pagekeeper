@@ -68,7 +68,8 @@ def _submit_to_storyteller_async(container, abs_id, book_title, ebook_filename, 
             logger.warning(f"Storyteller submission error for '{book_title}': {e}")
             try:
                 db_svc = container.database_service()
-                submission = db_svc.get_active_storyteller_submission(abs_id)
+                book = db_svc.get_book_by_abs_id(abs_id)
+                submission = db_svc.get_active_storyteller_submission_by_book_id(book.id) if book else None
                 if submission:
                     db_svc.update_storyteller_submission_status(submission.id, "failed")
             except Exception:
@@ -111,6 +112,7 @@ def _serialize_suggestion(s):
     return {
         "id": s.id,
         "source_id": s.source_id,
+        "source": s.source or "abs",
         "title": s.title,
         "author": s.author,
         "cover_url": s.cover_url,

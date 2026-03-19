@@ -106,8 +106,8 @@ def index():
     bf_linked_ids = set()
     bf_highlight_counts = {}
     try:
-        bf_linked_ids = database_service.get_bookfusion_linked_abs_ids()
-        bf_highlight_counts = database_service.get_bookfusion_highlight_counts()
+        bf_linked_ids = database_service.get_bookfusion_linked_book_ids()
+        bf_highlight_counts = database_service.get_bookfusion_highlight_counts_by_book_id()
     except Exception as e:
         logger.warning(f"Could not fetch BookFusion link data: {e}")
 
@@ -208,7 +208,7 @@ def index():
         }
 
         # Storyteller submission status (from bulk-fetched dict)
-        st_submission = st_submissions_by_book.get(book.abs_id)  # still keyed by abs_id from bulk query
+        st_submission = st_submissions_by_book.get(book.id)
         if st_submission:
             mapping["storyteller_submission_status"] = st_submission.status
 
@@ -311,9 +311,9 @@ def index():
             mapping["hardcover_url"] = None
 
         # BookFusion link data
-        is_bf_linked = (book.abs_id in bf_linked_ids) or (book.abs_id or "").startswith("bf-")
+        is_bf_linked = (book.id in bf_linked_ids) or (book.abs_id or "").startswith("bf-")
         mapping["bookfusion_linked"] = is_bf_linked
-        mapping["bookfusion_highlight_count"] = bf_highlight_counts.get(book.abs_id, 0) if book.abs_id else 0
+        mapping["bookfusion_highlight_count"] = bf_highlight_counts.get(book.id, 0)
 
         mapping["unified_progress"] = min(max_progress, 100.0)
         mapping["latest_activity_at"] = latest_update_time or None

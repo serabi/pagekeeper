@@ -336,8 +336,7 @@ class DatabaseService:
                 hc_id = int(details.hardcover_book_id)
                 tbr_item = self._tbr.find_tbr_by_hardcover_id(hc_id)
                 if tbr_item and not tbr_item.book_id:
-                    self._tbr.link_tbr_to_book(tbr_item.id, details.book_id,
-                                               book_abs_id=details.abs_id)
+                    self._tbr.link_tbr_to_book(tbr_item.id, details.book_id)
             except (TypeError, ValueError):
                 pass
         return result
@@ -357,12 +356,6 @@ class DatabaseService:
 
     def set_bookfusion_sync_cursor(self, cursor):
         return self._settings.set_setting("BOOKFUSION_SYNC_CURSOR", cursor)
-
-    def find_tbr_by_abs_id(self, abs_id):
-        return self._tbr.find_by_abs_id(abs_id)
-
-    def delete_tbr_by_abs_id(self, abs_id):
-        return self._tbr.delete_by_abs_id(abs_id)
 
     def find_tbr_by_book_id(self, book_id):
         return self._tbr.find_by_book_id(book_id)
@@ -390,8 +383,8 @@ class DatabaseService:
     def delete_tbr_item(self, item_id):
         return self._tbr.delete_tbr_item(item_id)
 
-    def link_tbr_to_book(self, item_id, book_id, book_abs_id=None):
-        return self._tbr.link_tbr_to_book(item_id, book_id, book_abs_id=book_abs_id)
+    def link_tbr_to_book(self, item_id, book_id):
+        return self._tbr.link_tbr_to_book(item_id, book_id)
 
     def find_tbr_by_hardcover_id(self, hc_book_id):
         return self._tbr.find_tbr_by_hardcover_id(hc_book_id)

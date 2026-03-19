@@ -323,12 +323,12 @@ def reading_detail(book_ref):
         journals.sort(key=lambda j: j.created_at or datetime.min, reverse=True)
 
     # BookFusion highlights matched to this book
-    bf_highlights = database_service.get_bookfusion_highlights_for_book(book.abs_id)
+    bf_highlights = database_service.get_bookfusion_highlights_for_book_by_book_id(book.id)
 
     has_bookfusion_link = (
         (book.abs_id or '').startswith('bf-')
         or len(bf_highlights) > 0
-        or database_service.is_bookfusion_linked(book.abs_id)
+        or database_service.is_bookfusion_linked_by_book_id(book.id)
     )
 
     container = get_container()
@@ -357,7 +357,7 @@ def reading_detail(book_ref):
     if show_alignment_tab:
         try:
             alignment_service = container.alignment_service()
-            alignment_info = alignment_service.get_alignment_info(book.abs_id or str(book.id))
+            alignment_info = alignment_service.get_alignment_info(book.id)
             if alignment_info:
                 book_duration = book.duration
                 max_ts = alignment_info['max_timestamp']

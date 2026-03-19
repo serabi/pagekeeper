@@ -144,15 +144,15 @@ class SuggestionService:
             bf_books = []
 
         try:
-            linked_abs_ids = list(self.database_service.get_bookfusion_linked_abs_ids() or [])
+            linked_book_ids = list(self.database_service.get_bookfusion_linked_book_ids() or [])
         except TypeError:
-            linked_abs_ids = []
+            linked_book_ids = []
 
         visible_books = [b for b in bf_books if not getattr(b, 'hidden', False)]
         by_title_author = {}
         by_title = {}
         for book in visible_books:
-            if book.matched_abs_id:
+            if book.matched_book_id:
                 continue
             norm_title = self._normalize_title(book.title or book.filename or "")
             norm_author = self._normalize_author(book.authors or "")
@@ -163,7 +163,7 @@ class SuggestionService:
             by_title.setdefault(norm_title, []).append(book)
         return {
             "books": visible_books,
-            "linked_abs_ids": linked_abs_ids,
+            "linked_book_ids": linked_book_ids,
             "by_title_author": by_title_author,
             "by_title": by_title,
             "has_catalog": bool(visible_books),

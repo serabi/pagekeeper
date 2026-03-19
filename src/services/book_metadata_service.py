@@ -104,7 +104,7 @@ def build_book_metadata(book, container, database_service, abs_service, booklore
                          getattr(bl_client, 'base_url', '?'), e)
 
     # BookFusion catalog entry (tags, series)
-    bf_book = database_service.get_bookfusion_book_by_abs_id(abs_id)
+    bf_book = database_service.get_bookfusion_book_by_book_id(book.id)
     if bf_book:
         metadata['bf_tags'] = bf_book.tags or ''
         metadata['bf_series'] = bf_book.series or ''

@@ -36,6 +36,7 @@ class TestFixSyncIssues(unittest.TestCase):
         """
         abs_id = "test-book-id"
         book = Book(abs_id=abs_id, ebook_filename="test.epub")
+        book.id = 42
         book.transcript_file = "/tmp/does_not_exist.json"
 
         # Mock State
@@ -63,7 +64,7 @@ class TestFixSyncIssues(unittest.TestCase):
             result = self.client.get_text_from_current_state(book, state)
 
             # Verify
-            self.mock_alignment_service.get_char_for_time.assert_called_with(abs_id, 100.0)
+            self.mock_alignment_service.get_char_for_time.assert_called_with(42, 100.0)
             self.mock_ebook_parser.resolve_book_path.assert_called()
             self.mock_ebook_parser.extract_text_and_map.assert_called()
 

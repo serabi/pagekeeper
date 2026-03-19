@@ -27,7 +27,7 @@ class ReadingStatsService:
         ]
         states_by_book = {}
         for state in self.database_service.get_all_states():
-            states_by_book.setdefault(state.abs_id, []).append(state)
+            states_by_book.setdefault(state.book_id, []).append(state)
 
         monthly_finished = [0] * 12
         books_finished = 0
@@ -35,7 +35,7 @@ class ReadingStatsService:
         ratings = []
 
         for book in books:
-            progress = self._max_progress_percent(states_by_book.get(book.abs_id, []))
+            progress = self._max_progress_percent(states_by_book.get(book.id, []))
             if self._is_genuinely_reading(book, progress):
                 currently_reading += 1
 
