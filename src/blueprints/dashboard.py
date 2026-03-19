@@ -329,6 +329,17 @@ def index():
         else:
             mapping["last_sync"] = "Never"
 
+        # Determine placeholder logo based on book's primary source
+        if (book.abs_id or "").startswith("bf-"):
+            placeholder_logo = "/static/bookfusion-logo.svg"
+        elif book_type == "ebook-only" and bl_meta:
+            placeholder_logo = "/static/booklore.png"
+        elif book.abs_id:
+            placeholder_logo = "/static/audiobookshelf.png"
+        else:
+            placeholder_logo = None
+        mapping["placeholder_logo"] = placeholder_logo
+
         covers = resolve_book_covers(
             book, abs_service, database_service, book_type,
             booklore_meta=bl_meta, hardcover_details=hardcover_details,

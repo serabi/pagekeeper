@@ -44,9 +44,13 @@
                     {% if book.cover_url %}
                     <img src="{{ book.cover_url }}" alt=""
                         onerror="{% if book.fallback_cover_url and book.fallback_cover_url != book.cover_url %}this.onerror={% if book.kosync_doc_id %}function(){this.onerror=null; this.src='/covers/{{ book.kosync_doc_id }}.jpg';}{% else %}null{% endif %}; this.src='{{ book.fallback_cover_url|e }}';{% elif book.kosync_doc_id %}this.onerror=null; this.src='/covers/{{ book.kosync_doc_id }}.jpg';{% else %}this.style.display='none'; this.nextElementSibling.classList.remove('hidden');{% endif %}">
-                    <div class="r-cover-placeholder hidden"></div>
+                    <div class="r-cover-placeholder hidden">
+                        {% if book.placeholder_logo %}<img src="{{ book.placeholder_logo }}" alt="" class="book-cover-placeholder-logo">{% endif %}
+                    </div>
                     {% else %}
-                    <div class="r-cover-placeholder"></div>
+                    <div class="r-cover-placeholder">
+                        {% if book.placeholder_logo %}<img src="{{ book.placeholder_logo }}" alt="" class="book-cover-placeholder-logo">{% endif %}
+                    </div>
                     {% endif %}
                     <button type="button" class="r-change-cover-btn" id="change-cover-btn" title="Change cover">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>

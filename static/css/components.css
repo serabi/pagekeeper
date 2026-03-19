@@ -359,6 +359,7 @@ select:focus {
   max-width: 48px;
   opacity: 0.3;
   filter: grayscale(1);
+  object-fit: contain;
 }
 
 /* Info Section */

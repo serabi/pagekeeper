@@ -88,6 +88,16 @@ def _build_book_reading_data(book, database_service, abs_service, states_by_book
     if not display_author:
         display_author = book.ebook_filename or ''
 
+    # Determine placeholder logo based on book's primary source
+    if (book.abs_id or "").startswith("bf-"):
+        placeholder_logo = "/static/bookfusion-logo.svg"
+    elif book_type == "ebook-only" and bl_meta:
+        placeholder_logo = "/static/booklore.png"
+    elif book.abs_id:
+        placeholder_logo = "/static/audiobookshelf.png"
+    else:
+        placeholder_logo = None
+
     covers = resolve_book_covers(book, abs_service, database_service, book_type,
                                  booklore_meta=bl_meta)
 
@@ -102,6 +112,7 @@ def _build_book_reading_data(book, database_service, abs_service, states_by_book
         'book_type': book_type,
         'unified_progress': max_progress,
         'cover_url': covers['cover_url'],
+        'placeholder_logo': placeholder_logo,
         'custom_cover_url': covers['custom_cover_url'],
         'abs_cover_url': covers['abs_cover_url'],
         'fallback_cover_url': covers['fallback_cover_url'],
