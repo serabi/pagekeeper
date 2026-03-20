@@ -746,6 +746,14 @@ def batch_match():
     storyteller_force_mode = os.environ.get("STORYTELLER_FORCE_MODE", "false").lower() == "true"
     storyteller_configured = container.storyteller_client().is_configured()
 
+    abs_configured = abs_service.is_available()
+    has_ebook_sources = (
+        any_booklore_configured()
+        or container.cwa_client().is_configured()
+        or abs_service.has_ebook_libraries()
+        or get_ebook_dir().exists()
+    )
+
     queue_view = _build_batch_queue_view(session.get("queue", []))
     return render_template(
         "batch_match.html",
@@ -759,4 +767,6 @@ def batch_match():
         storyteller_submit_available=storyteller_submit_available,
         storyteller_force_mode=storyteller_force_mode,
         storyteller_configured=storyteller_configured,
+        abs_configured=abs_configured,
+        has_ebook_sources=has_ebook_sources,
     )

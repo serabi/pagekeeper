@@ -82,8 +82,12 @@
             {% set single_st_match = storyteller_books|length == 1 %}
             {% set single_eb_match = ebooks|length == 1 %}
 
+            {% set abs_ok = abs_configured|default(true) %}
+            {% set ebook_ok = has_ebook_sources|default(true) %}
+
             <section class="batch-selection-workspace">
                 <div class="batch-selection-grid">
+                    {% if abs_ok %}
                     <div class="batch-selection-column">
                         <div class="batch-selection-header">
                             <h3><span class="section-number">1</span>Audiobooks</h3>
@@ -122,11 +126,12 @@
                             {% endif %}
                         </div>
                     </div>
+                    {% endif %}
 
                     {% if storyteller_configured %}
                     <div class="batch-selection-column">
                         <div class="batch-selection-header">
-                            <h3><span class="section-number">2</span>Storyteller</h3>
+                            <h3><span class="section-number">{% if abs_ok %}2{% else %}1{% endif %}</span>Storyteller</h3>
                             <p class="section-hint">Optional narrated ebook sync source.</p>
                         </div>
                         <div class="batch-selection-panel">
@@ -175,8 +180,8 @@
 
                     <div class="batch-selection-column">
                         <div class="batch-selection-header">
-                            <h3><span class="section-number">{% if storyteller_configured %}3{% else %}2{% endif %}</span>eBooks</h3>
-                            <p class="section-hint">Optional ebook source for progress sync.</p>
+                            <h3><span class="section-number">{% if abs_ok and storyteller_configured %}3{% elif abs_ok or storyteller_configured %}2{% else %}1{% endif %}</span>eBooks</h3>
+                            <p class="section-hint">{% if abs_ok %}Optional ebook source for progress sync.{% else %}Choose an ebook for progress sync.{% endif %}</p>
                         </div>
                         <div class="batch-selection-panel">
                             {% if ebooks %}
@@ -215,7 +220,7 @@
                             <div class="empty-state batch-empty-state">
                                 <div class="empty-state-icon"></div>
                                 <h3>No ebooks found</h3>
-                                <p>You can still queue an audio-only mapping.</p>
+                                <p>{% if abs_ok %}You can still queue an audio-only mapping.{% else %}Search to load ebook matches.{% endif %}</p>
                             </div>
                             {% endif %}
                         </div>
@@ -224,7 +229,11 @@
 
                 <div class="batch-selection-footer">
                     <div class="batch-selection-status" id="selectionStatus">
+                        {% if abs_ok %}
                         Select an audiobook to enable queueing.
+                        {% else %}
+                        Select an ebook to enable queueing.
+                        {% endif %}
                     </div>
                     <button type="submit" class="btn btn-success add-to-queue-btn" id="addToQueueBtn" disabled>
                         Add to Queue
@@ -389,7 +398,7 @@
             }
 
             if (!hasAnything) {
-                statusLabel.textContent = 'Select an audiobook or ebook to enable queueing.';
+                statusLabel.textContent = 'Select a book to enable queueing.';
                 return;
             }
 
