@@ -109,12 +109,12 @@ function setTestButtonState(btn, success, detail, originalText) {
         btn.classList.add('btn-success');
     } else {
         btn.textContent = '\u2717 ' + (detail || 'Failed');
-        btn.classList.add('btn-error');
+        btn.classList.add('btn-danger');
     }
     setTimeout(function() {
         btn.textContent = originalText;
         btn.disabled = false;
-        btn.classList.remove('btn-success', 'btn-error');
+        btn.classList.remove('btn-success', 'btn-danger');
     }, 3000);
 }
 

@@ -63,7 +63,7 @@
                     </button>
                 </form>
                 <button type="button" class="btn btn-danger"
-                    onclick="showConfirmModal('Clear All', 'Clear entire queue? This cannot be undone.', '/batch-match', 'danger')"
+                    onclick="PKModal.confirmForm({ title: 'Clear All', message: 'Clear entire queue? This cannot be undone.', formAction: '/batch-match', hiddenFields: { action: 'clear_queue' }, confirmLabel: 'Clear All', confirmClass: 'btn btn-danger' })"
                     {% if not queue_summary.total_count %}disabled{% endif %}>
                     Clear All
                 </button>
@@ -337,169 +337,11 @@
         </section>
     </div>
 
-    <script>
-        const selectionState = {
-            audiobook: null,
-            storyteller: null,
-            ebook: null,
-            ebookDisplayName: '',
-        };
+    {% include 'partials/confirm_modal.html' %}
 
-        function applySelection(card) {
-            const group = card.dataset.selectGroup;
-            const value = card.dataset.value || '';
-            const targetInputId = card.dataset.targetInput;
-            const targetInput = document.getElementById(targetInputId);
-
-            document.querySelectorAll(`[data-select-group="${group}"]`).forEach((el) => {
-                el.classList.remove('selected');
-            });
-
-            card.classList.add('selected');
-            targetInput.value = value;
-
-            if (group === 'audiobook') {
-                selectionState.audiobook = value || null;
-            } else if (group === 'storyteller') {
-                selectionState.storyteller = value || null;
-            } else if (group === 'ebook') {
-                selectionState.ebook = value || null;
-                selectionState.ebookDisplayName = card.dataset.displayName || value;
-                const displayInput = document.getElementById(card.dataset.displayInput);
-                if (displayInput) {
-                    displayInput.value = selectionState.ebookDisplayName;
-                }
-            }
-
-            if (group !== 'ebook' && !selectionState.ebook) {
-                document.getElementById('selected_ebook_display_name').value = '';
-            }
-
-            updateBatchActionState();
-        }
-
-        function updateBatchActionState() {
-            const addButton = document.getElementById('addToQueueBtn');
-            const statusLabel = document.getElementById('selectionStatus');
-            const hasAudiobook = Boolean(selectionState.audiobook);
-            const hasEbook = Boolean(selectionState.ebook);
-            const hasStoryteller = Boolean(selectionState.storyteller);
-            const hasLinkedSource = hasEbook || hasStoryteller;
-            const hasAnything = hasAudiobook || hasLinkedSource;
-
-            addButton.disabled = !hasAnything;
-
-            if (hasAudiobook && !hasLinkedSource) {
-                addButton.textContent = 'Add Audio Only to Queue';
-            } else if (!hasAudiobook && hasLinkedSource) {
-                addButton.textContent = 'Add Ebook Only to Queue';
-            } else {
-                addButton.textContent = 'Add to Queue';
-            }
-
-            if (!hasAnything) {
-                statusLabel.textContent = 'Select a book to enable queueing.';
-                return;
-            }
-
-            if (!hasAudiobook) {
-                statusLabel.textContent = 'Queue will be created as ebook-only.';
-                return;
-            }
-
-            if (!hasLinkedSource) {
-                statusLabel.textContent = 'Queue will be created as audio-only.';
-                return;
-            }
-
-            if (hasStoryteller && hasEbook) {
-                statusLabel.textContent = 'Queue will include both Storyteller and ebook.';
-                return;
-            }
-
-            if (hasStoryteller) {
-                statusLabel.textContent = 'Queue will use Storyteller as the linked source.';
-                return;
-            }
-
-            statusLabel.textContent = 'Queue will use the selected ebook source.';
-        }
-
-        (function initBatchMatch() {
-            document.querySelectorAll('.batch-select-card').forEach((card) => {
-                card.addEventListener('click', () => applySelection(card));
-            });
-
-            const preselectedAudiobook = document.querySelector('[data-select-group="audiobook"].selected');
-            if (preselectedAudiobook) {
-                selectionState.audiobook = preselectedAudiobook.dataset.value || null;
-                document.getElementById('selected_audiobook_id').value = selectionState.audiobook || '';
-            }
-
-            const preselectedStoryteller = document.querySelector('[data-select-group="storyteller"].selected');
-            if (preselectedStoryteller) {
-                selectionState.storyteller = preselectedStoryteller.dataset.value || null;
-                document.getElementById('selected_storyteller_uuid').value = preselectedStoryteller.dataset.value || '';
-            }
-
-            const preselectedEbook = document.querySelector('[data-select-group="ebook"].selected');
-            if (preselectedEbook) {
-                selectionState.ebook = preselectedEbook.dataset.value || null;
-                selectionState.ebookDisplayName = preselectedEbook.dataset.displayName || selectionState.ebook || '';
-                document.getElementById('selected_ebook_filename').value = selectionState.ebook || '';
-                document.getElementById('selected_ebook_display_name').value = selectionState.ebookDisplayName;
-            }
-
-            updateBatchActionState();
-        })();
-    </script>
-
-    <!-- Confirm Modal -->
-    <div id="confirm-modal" class="confirm-modal" style="display:none;">
-        <div class="confirm-modal-overlay" onclick="closeConfirmModal()"></div>
-        <div class="confirm-modal-box">
-            <div class="confirm-modal-icon" id="confirm-modal-icon"></div>
-            <h3 class="confirm-modal-title" id="confirm-modal-title"></h3>
-            <p class="confirm-modal-message" id="confirm-modal-message"></p>
-            <div class="confirm-modal-actions">
-                <button class="btn btn-secondary" onclick="closeConfirmModal()">Cancel</button>
-                <form id="confirm-modal-form" method="POST" style="margin:0;">
-                    <input type="hidden" name="action" id="confirm-modal-action" value="">
-                    <button type="submit" class="btn" id="confirm-modal-submit">Confirm</button>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    <script>
-    function showConfirmModal(title, message, formAction, accentType) {
-        const modal = document.getElementById('confirm-modal');
-        if (!modal) return;
-        document.getElementById('confirm-modal-title').textContent = title;
-        document.getElementById('confirm-modal-message').textContent = message;
-        document.getElementById('confirm-modal-form').action = formAction;
-        document.getElementById('confirm-modal-action').value = 'clear_queue';
-        const submitBtn = document.getElementById('confirm-modal-submit');
-        const iconEl = document.getElementById('confirm-modal-icon');
-        submitBtn.className = 'btn';
-        iconEl.className = 'confirm-modal-icon';
-        if (accentType === 'danger') {
-            submitBtn.classList.add('btn-danger');
-            iconEl.textContent = '\u26A0';
-            iconEl.classList.add('confirm-icon-danger');
-        } else {
-            submitBtn.classList.add('btn-warning');
-            iconEl.textContent = '\u26A0';
-            iconEl.classList.add('confirm-icon-warning');
-        }
-        submitBtn.textContent = title;
-        modal.style.display = 'flex';
-    }
-    function closeConfirmModal() {
-        const modal = document.getElementById('confirm-modal');
-        if (modal) modal.style.display = 'none';
-    }
-    </script>
+    <script src="/static/js/utils.js"></script>
+    <script src="/static/js/confirm-modal.js"></script>
+    <script src="/static/js/batch-match.js"></script>
 </body>
 
 </html>

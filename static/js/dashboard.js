@@ -741,41 +741,12 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
-function showConfirmModal(title, message, formAction, accentType) {
+/* Override the legacy bridge from confirm-modal.js to also close card menus */
+var _baseShowConfirmModal = showConfirmModal;
+showConfirmModal = function(title, message, formAction, accentType) {
     closeAllMenus();
-    const modal = document.getElementById('confirm-modal');
-    if (!modal) return;
-    const iconEl = document.getElementById('confirm-modal-icon');
-    const titleEl = document.getElementById('confirm-modal-title');
-    const msgEl = document.getElementById('confirm-modal-message');
-    const formEl = document.getElementById('confirm-modal-form');
-    const submitBtn = document.getElementById('confirm-modal-submit');
-
-    titleEl.textContent = title;
-    msgEl.textContent = message;
-    formEl.action = formAction;
-
-    submitBtn.className = 'btn';
-    iconEl.className = 'confirm-modal-icon';
-
-    if (accentType === 'danger') {
-        submitBtn.classList.add('btn-danger');
-        iconEl.textContent = '\u26A0';
-        iconEl.classList.add('confirm-icon-danger');
-    } else {
-        submitBtn.classList.add('btn-warning');
-        iconEl.textContent = '\u26A0';
-        iconEl.classList.add('confirm-icon-warning');
-    }
-
-    submitBtn.textContent = title;
-    modal.style.display = 'flex';
-}
-
-function closeConfirmModal() {
-    const modal = document.getElementById('confirm-modal');
-    if (modal) modal.style.display = 'none';
-}
+    _baseShowConfirmModal(title, message, formAction, accentType);
+};
 document.addEventListener('click', function(e) {
     const trigger = e.target.closest('.card-menu-trigger');
     if (trigger) {
