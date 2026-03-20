@@ -546,24 +546,28 @@ function resumeBook(bookId, btn) {
 
 function dnfBook(bookId, title) {
     closeAllMenus();
-    if (!confirm('Mark "' + title + '" as Did Not Finish? This book will be excluded from syncing.')) {
-        return;
-    }
-
-    fetch('/api/dnf/' + encodeURIComponent(bookId), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-    }).then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                window.location.reload();
-            } else {
-                alert('Error marking book as DNF: ' + (data.error || 'Unknown error'));
-            }
-        }).catch(error => {
-            console.error('Error:', error);
-            alert('Connection error while marking book as DNF');
-        });
+    PKModal.confirm({
+        title: 'Did Not Finish',
+        message: 'Mark "' + title + '" as Did Not Finish? This book will be excluded from syncing.',
+        confirmLabel: 'Mark DNF',
+        confirmClass: 'btn btn-warning',
+        onConfirm: function () {
+            fetch('/api/dnf/' + encodeURIComponent(bookId), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            }).then(function (response) { return response.json(); })
+                .then(function (data) {
+                    if (data.success) {
+                        window.location.reload();
+                    } else {
+                        PKModal.alert({ title: 'Error', message: data.error || 'Unknown error' });
+                    }
+                }).catch(function (error) {
+                    console.error('Error:', error);
+                    PKModal.alert({ title: 'Error', message: 'Connection error while marking book as DNF' });
+                });
+        }
+    });
 }
 
 function retryTranscription(bookId, btn) {
@@ -598,12 +602,17 @@ function retryTranscription(bookId, btn) {
 
 function markComplete(bookId, title) {
     closeAllMenus();
-    if (!confirm('Are you sure you want to mark "' + title + '" as complete? This will set progress to 100% on all synced platforms.')) {
-        return;
-    }
-    window._mcBookId = bookId;
-    const modal = document.getElementById('delete-mapping-modal');
-    if (modal) modal.style.display = 'flex';
+    PKModal.confirm({
+        title: 'Mark Complete',
+        message: 'Mark "' + title + '" as complete? This will set progress to 100% on all synced platforms.',
+        confirmLabel: 'Mark Complete',
+        confirmClass: 'btn btn-warning',
+        onConfirm: function () {
+            window._mcBookId = bookId;
+            var modal = document.getElementById('delete-mapping-modal');
+            if (modal) modal.style.display = 'flex';
+        }
+    });
 }
 
 function closeDeleteMappingModal() {
@@ -631,11 +640,11 @@ function _dmExecuteFetch(bookId, shouldDelete) {
                     window.location.reload();
                 }
             } else {
-                alert('Error marking book as complete: ' + (data.error || 'Unknown error'));
+                PKModal.alert({ title: 'Error', message: data.error || 'Unknown error' });
             }
-        }).catch(error => {
+        }).catch(function (error) {
             console.error('Error:', error);
-            alert('Connection error while marking book as complete');
+            PKModal.alert({ title: 'Error', message: 'Connection error while marking book as complete' });
         });
 }
 

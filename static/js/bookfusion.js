@@ -186,7 +186,7 @@ function searchBooks() {
             });
             revealFirstMobileResult('bf-book-list');
         })
-        .catch(function () {
+        .catch(function (err) {
             list.textContent = '';
             var emptyEl = document.createElement('div');
             emptyEl.className = 'bf-empty';
@@ -236,8 +236,8 @@ function uploadBook(btn, book) {
             btn.disabled = false;
         }
     })
-    .catch(function () {
-        btn.textContent = 'Error';
+    .catch(function (err) {
+        btn.textContent = err.message || 'Upload failed';
         btn.classList.add('error');
         btn.disabled = false;
     });
@@ -281,11 +281,11 @@ function syncHighlights(fullResync) {
                 info.textContent = data.error || 'Sync failed';
             }
         })
-        .catch(function () {
+        .catch(function (err) {
             btn.disabled = false;
             resyncBtn.disabled = false;
             activeBtn.textContent = originalText;
-            info.textContent = 'Sync failed';
+            info.textContent = err.message || 'Sync failed';
         });
 }
 
@@ -382,7 +382,7 @@ function loadHighlights() {
                 }
             }
         })
-        .catch(function () {
+        .catch(function (err) {
             var container = document.getElementById('bf-highlights-container');
             container.textContent = '';
             var emptyEl = document.createElement('div');
@@ -457,8 +457,8 @@ function saveToJournal(btn, absId, highlights) {
             btn.disabled = false;
         }
     })
-    .catch(function () {
-        btn.textContent = 'Error';
+    .catch(function (err) {
+        btn.textContent = err.message || 'Save failed';
         btn.classList.add('error');
         btn.disabled = false;
     });
@@ -485,9 +485,9 @@ function linkHighlight(bookfusionBookId, absId) {
             loadHighlights();
         }
     })
-    .catch(function () {
+    .catch(function (err) {
         inputs.forEach(function (s) { s.disabled = false; });
-        console.error('Link request failed');
+        console.error('Link request failed:', err);
         loadHighlights();
     });
 }
@@ -523,7 +523,7 @@ function loadLibrary() {
                 renderLibrary(_libraryData);
             }
         })
-        .catch(function () {
+        .catch(function (err) {
             list.textContent = '';
             var errEl = document.createElement('div');
             errEl.className = 'bf-empty';
@@ -694,7 +694,7 @@ function handleHideClick(btn, index) {
             btn.disabled = false;
         }
     })
-    .catch(function () {
+    .catch(function (err) {
         btn.textContent = 'Hide';
         btn.disabled = false;
     });
@@ -722,7 +722,7 @@ function handleUnhideClick(btn, index) {
             btn.disabled = false;
         }
     })
-    .catch(function () {
+    .catch(function (err) {
         btn.textContent = 'Unhide';
         btn.disabled = false;
     });
@@ -751,7 +751,7 @@ function handleUnlinkClick(btn, index) {
             btn.disabled = false;
         }
     })
-    .catch(function () {
+    .catch(function (err) {
         btn.textContent = 'Unlink';
         btn.disabled = false;
     });
@@ -820,7 +820,7 @@ function matchToBook(btn, input, book, index) {
             input.disabled = false;
         }
     })
-    .catch(function () {
+    .catch(function (err) {
         btn.textContent = 'Link';
         btn.disabled = false;
         input.disabled = false;
@@ -859,8 +859,8 @@ function addToDashboard(btn, book, index, status) {
             btn.disabled = false;
         }
     })
-    .catch(function () {
-        btn.textContent = 'Error';
+    .catch(function (err) {
+        btn.textContent = err.message || 'Error';
         btn.classList.add('error');
         btn.disabled = false;
     });

@@ -324,7 +324,7 @@ logLevel.addEventListener('change', () => {
         loadingDiv.appendChild(spinner);
         loadingDiv.appendChild(document.createTextNode('Switching filter...'));
         logContent.appendChild(loadingDiv);
-        lastLogTimestamp = null;
+        shownLogs.clear();
         setTimeout(() => {
             fetchLiveLogs().then(() => {
                 if (logContent.textContent.includes('Switching filter')) {
@@ -364,7 +364,7 @@ searchInput.addEventListener('input', debounce(() => {
         loadingDiv.appendChild(spinner);
         loadingDiv.appendChild(document.createTextNode('Applying filter...'));
         logContent.appendChild(loadingDiv);
-        lastLogTimestamp = null;
+        shownLogs.clear();
         setTimeout(() => {
             fetchLiveLogs().then(() => {
                 if (logContent.textContent.includes('Applying filter')) {

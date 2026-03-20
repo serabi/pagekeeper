@@ -45,7 +45,11 @@ var PKModal = (function () {
 
     function _resolve() {
         if (_modal) return;
-        _modal          = _el('pk-confirm-modal');
+        _modal = _el('pk-confirm-modal');
+        if (!_modal) {
+            console.error('PKModal: #pk-confirm-modal not found — is confirm_modal.html included?');
+            return;
+        }
         _icon           = _el('pk-modal-icon');
         _title          = _el('pk-modal-title');
         _message        = _el('pk-modal-message');
