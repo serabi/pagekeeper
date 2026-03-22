@@ -85,7 +85,7 @@
             {% if show_bookfusion_page %}
             <a href="/bookfusion" class="nav-link {% if is_active_path('/bookfusion') %}active{% endif %}">BookFusion Books</a>
             {% endif %}
-            {% if get_bool('SUGGESTIONS_ENABLED') %}
+            {% if get_bool('SUGGESTIONS_ENABLED') and abs_url %}
             <a href="/suggestions" class="nav-link {% if is_active_path('/suggestions') %}active{% endif %}">Suggestions</a>
             {% endif %}
             <a href="/batch-match" class="nav-link {% if is_active_path('/batch-match') %}active{% endif %}">Batch</a>

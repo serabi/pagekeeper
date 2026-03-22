@@ -292,6 +292,11 @@ function initDashboard() {
     document.body.addEventListener('click', e => {
         if (e.target.classList.contains('modal-overlay')) refreshPaused = false;
     });
+    document.addEventListener('click', e => {
+        if (e.target.id === 'pk-modal-cancel' || e.target.id === 'pk-modal-confirm') {
+            refreshPaused = false;
+        }
+    });
 
     setTimeout(refreshDashboard, 30000);
 
@@ -390,22 +395,68 @@ function updateKoSyncHash(event) {
     const title = item.dataset.title;
     const currentHash = item.dataset.hash;
 
-    const msg = `Enter new KoSync MD5 Hash for '${title}'\n\nCurrent: ${currentHash}\n\n(Leave empty to automatically recalculate from the ebook file)`;
-    const input = prompt(msg);
+    var backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.style.zIndex = '1100';
 
-    if (input !== null) {
-        const form = document.createElement('form');
+    var content = document.createElement('div');
+    content.className = 'modal-content';
+    content.style.maxWidth = '420px';
+    content.style.padding = '24px';
+
+    var heading = document.createElement('h3');
+    heading.style.cssText = 'margin: 0 0 8px; font-size: 16px; font-weight: 600;';
+    heading.textContent = 'Update KoSync Hash';
+    content.appendChild(heading);
+
+    var desc = document.createElement('p');
+    desc.style.cssText = 'margin: 0 0 6px; font-size: 13px; color: var(--color-text-muted); line-height: 1.5;';
+    desc.textContent = `Enter new KoSync MD5 Hash for "${title}".`;
+    content.appendChild(desc);
+
+    var current = document.createElement('p');
+    current.style.cssText = 'margin: 0 0 12px; font-size: 12px; color: var(--color-text-muted); font-family: monospace;';
+    current.textContent = `Current: ${currentHash}`;
+    content.appendChild(current);
+
+    var hashInput = document.createElement('input');
+    hashInput.type = 'text';
+    hashInput.className = 'form-control';
+    hashInput.placeholder = 'Leave empty to auto-recalculate from ebook file';
+    hashInput.style.cssText = 'width: 100%; margin-bottom: 16px; box-sizing: border-box;';
+    content.appendChild(hashInput);
+
+    var btns = document.createElement('div');
+    btns.style.cssText = 'display: flex; gap: 8px; justify-content: flex-end;';
+
+    var cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn btn-secondary';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', function () { backdrop.remove(); });
+    btns.appendChild(cancelBtn);
+
+    var submitBtn = document.createElement('button');
+    submitBtn.className = 'btn btn-warning';
+    submitBtn.textContent = 'Update';
+    submitBtn.addEventListener('click', function () {
+        var form = document.createElement('form');
         form.method = 'POST';
         form.action = `/update-hash/${encodeURIComponent(bookId)}`;
-        const inputField = document.createElement('input');
-        inputField.type = 'hidden';
-        inputField.name = 'new_hash';
-        inputField.value = input.trim();
-
-        form.appendChild(inputField);
+        var hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.name = 'new_hash';
+        hidden.value = hashInput.value.trim();
+        form.appendChild(hidden);
         document.body.appendChild(form);
         form.submit();
-    }
+    });
+    btns.appendChild(submitBtn);
+
+    content.appendChild(btns);
+    backdrop.appendChild(content);
+    backdrop.addEventListener('click', function (e) { if (e.target === backdrop) backdrop.remove(); });
+    document.body.appendChild(backdrop);
+    hashInput.focus();
 }
 
 function syncNow(bookId, btn) {
@@ -546,24 +597,28 @@ function resumeBook(bookId, btn) {
 
 function dnfBook(bookId, title) {
     closeAllMenus();
-    if (!confirm('Mark "' + title + '" as Did Not Finish? This book will be excluded from syncing.')) {
-        return;
-    }
-
-    fetch('/api/dnf/' + encodeURIComponent(bookId), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-    }).then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                window.location.reload();
-            } else {
-                alert('Error marking book as DNF: ' + (data.error || 'Unknown error'));
-            }
-        }).catch(error => {
-            console.error('Error:', error);
-            alert('Connection error while marking book as DNF');
-        });
+    PKModal.confirm({
+        title: 'Did Not Finish',
+        message: 'Mark "' + title + '" as Did Not Finish? This book will be excluded from syncing.',
+        confirmLabel: 'Mark DNF',
+        confirmClass: 'btn btn-warning',
+        onConfirm: function () {
+            fetch('/api/dnf/' + encodeURIComponent(bookId), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' }
+            }).then(function (response) { return response.json(); })
+                .then(function (data) {
+                    if (data.success) {
+                        window.location.reload();
+                    } else {
+                        PKModal.alert({ title: 'Error', message: data.error || 'Unknown error' });
+                    }
+                }).catch(function (error) {
+                    console.error('Error:', error);
+                    PKModal.alert({ title: 'Error', message: 'Connection error while marking book as DNF' });
+                });
+        }
+    });
 }
 
 function retryTranscription(bookId, btn) {
@@ -598,18 +653,24 @@ function retryTranscription(bookId, btn) {
 
 function markComplete(bookId, title) {
     closeAllMenus();
-    if (!confirm('Are you sure you want to mark "' + title + '" as complete? This will set progress to 100% on all synced platforms.')) {
-        return;
-    }
-    window._mcBookId = bookId;
-    const modal = document.getElementById('delete-mapping-modal');
-    if (modal) modal.style.display = 'flex';
+    PKModal.confirm({
+        title: 'Mark Complete',
+        message: 'Mark "' + title + '" as complete? This will set progress to 100% on all synced platforms.',
+        confirmLabel: 'Mark Complete',
+        confirmClass: 'btn btn-warning',
+        onConfirm: function () {
+            window._mcBookId = bookId;
+            var modal = document.getElementById('delete-mapping-modal');
+            if (modal) modal.style.display = 'flex';
+        }
+    });
 }
 
 function closeDeleteMappingModal() {
     const modal = document.getElementById('delete-mapping-modal');
     if (modal) modal.style.display = 'none';
     window._mcBookId = null;
+    refreshPaused = false;
 }
 function _dmExecuteFetch(bookId, shouldDelete) {
     closeDeleteMappingModal();
@@ -631,11 +692,11 @@ function _dmExecuteFetch(bookId, shouldDelete) {
                     window.location.reload();
                 }
             } else {
-                alert('Error marking book as complete: ' + (data.error || 'Unknown error'));
+                PKModal.alert({ title: 'Error', message: data.error || 'Unknown error' });
             }
-        }).catch(error => {
+        }).catch(function (error) {
             console.error('Error:', error);
-            alert('Connection error while marking book as complete');
+            PKModal.alert({ title: 'Error', message: 'Connection error while marking book as complete' });
         });
 }
 
@@ -707,6 +768,7 @@ function closeActionPanel() {
     }
 
     panel.style.display = 'none';
+    refreshPaused = false;
 }
 
 function closeAllMenus() {
@@ -741,41 +803,12 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
-function showConfirmModal(title, message, formAction, accentType) {
+/* Override the legacy bridge from confirm-modal.js to also close card menus */
+var _baseShowConfirmModal = showConfirmModal;
+showConfirmModal = function(title, message, formAction, accentType) {
     closeAllMenus();
-    const modal = document.getElementById('confirm-modal');
-    if (!modal) return;
-    const iconEl = document.getElementById('confirm-modal-icon');
-    const titleEl = document.getElementById('confirm-modal-title');
-    const msgEl = document.getElementById('confirm-modal-message');
-    const formEl = document.getElementById('confirm-modal-form');
-    const submitBtn = document.getElementById('confirm-modal-submit');
-
-    titleEl.textContent = title;
-    msgEl.textContent = message;
-    formEl.action = formAction;
-
-    submitBtn.className = 'btn';
-    iconEl.className = 'confirm-modal-icon';
-
-    if (accentType === 'danger') {
-        submitBtn.classList.add('btn-danger');
-        iconEl.textContent = '\u26A0';
-        iconEl.classList.add('confirm-icon-danger');
-    } else {
-        submitBtn.classList.add('btn-warning');
-        iconEl.textContent = '\u26A0';
-        iconEl.classList.add('confirm-icon-warning');
-    }
-
-    submitBtn.textContent = title;
-    modal.style.display = 'flex';
-}
-
-function closeConfirmModal() {
-    const modal = document.getElementById('confirm-modal');
-    if (modal) modal.style.display = 'none';
-}
+    _baseShowConfirmModal(title, message, formAction, accentType);
+};
 document.addEventListener('click', function(e) {
     const trigger = e.target.closest('.card-menu-trigger');
     if (trigger) {

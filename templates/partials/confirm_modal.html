@@ -1,0 +1,22 @@
+{# ── Unified confirm modal ──
+   Include once per page. Controlled by static/js/confirm-modal.js (PKModal).
+   Supports: callback mode, form-POST mode, and alert/info mode. #}
+
+<div id="pk-confirm-modal" class="confirm-modal" style="display:none;">
+    <div class="confirm-modal-overlay" onclick="PKModal.close()"></div>
+    <div class="confirm-modal-box">
+        <div class="confirm-modal-icon" id="pk-modal-icon"></div>
+        <h3 class="confirm-modal-title" id="pk-modal-title"></h3>
+        <p class="confirm-modal-message" id="pk-modal-message"></p>
+        <div class="confirm-modal-actions">
+            <button type="button" class="btn btn-secondary" id="pk-modal-cancel" onclick="PKModal.close()">Cancel</button>
+            {# Plain button for JS-callback mode #}
+            <button type="button" class="btn" id="pk-modal-confirm">Confirm</button>
+            {# Form for POST mode #}
+            <form id="pk-modal-form" method="POST" style="margin:0;">
+                <span id="pk-modal-hidden-fields"></span>
+                <button type="submit" class="btn">Confirm</button>
+            </form>
+        </div>
+    </div>
+</div>

@@ -98,6 +98,8 @@ class Book(Base):
     abs_ebook_item_id = Column(String(255), nullable=True)
     ebook_item_id = Column(String(255), nullable=True)
     custom_cover_url = Column(String(500), nullable=True)
+    author = Column(String(500), nullable=True)
+    subtitle = Column(String(500), nullable=True)
 
     # Reading tracker fields
     started_at = Column(String(10), nullable=True)    # YYYY-MM-DD
@@ -125,7 +127,7 @@ class Book(Base):
                  kosync_doc_id: str = None, transcript_file: str = None,
                  status: str = 'not_started', duration: float = None, sync_mode: str = 'audiobook',
                  storyteller_uuid: str = None, abs_ebook_item_id: str = None, ebook_item_id: str = None,
-                 custom_cover_url: str = None,
+                 custom_cover_url: str = None, author: str = None, subtitle: str = None,
                  started_at: str = None, finished_at: str = None,
                  rating: float = None, read_count: int = 1):
         self.abs_id = abs_id
@@ -141,6 +143,8 @@ class Book(Base):
         self.abs_ebook_item_id = abs_ebook_item_id
         self.ebook_item_id = ebook_item_id
         self.custom_cover_url = custom_cover_url
+        self.author = author
+        self.subtitle = subtitle
         self.started_at = started_at
         self.finished_at = finished_at
         self.rating = rating

@@ -49,34 +49,43 @@ def serve_cover(filename):
 def proxy_booklore_cover(book_id):
     """Proxy cover access to Booklore (auth via query-parameter JWT)."""
     container = get_container()
-    return _proxy_booklore_cover_for(container.booklore_client(), book_id)
+    return _proxy_booklore_cover_for(container.booklore_client(), book_id, cache_prefix="bl")
 
 
 @covers_bp.route('/api/cover-proxy/booklore2/<int:book_id>')
 def proxy_booklore2_cover(book_id):
     """Proxy cover access to Booklore 2nd instance."""
     container = get_container()
-    return _proxy_booklore_cover_for(container.booklore_client_2(), book_id)
+    return _proxy_booklore_cover_for(container.booklore_client_2(), book_id, cache_prefix="bl2")
 
 
-def _proxy_booklore_cover_for(bl_client, book_id):
-    """Shared cover proxy logic for any BookloreClient instance."""
-    try:
-        if not bl_client.is_configured():
-            return "Booklore not configured", 404
+def _proxy_booklore_cover_for(bl_client, book_id, cache_prefix="bl"):
+    """Shared cover proxy logic with local caching for offline resilience."""
+    covers_dir = get_covers_dir()
+    cache_file = covers_dir / f"{cache_prefix}-{book_id}.jpg"
 
-        token = bl_client._get_fresh_token()
-        if not token:
-            return "Booklore auth failed", 500
+    if bl_client.is_configured():
+        try:
+            token = bl_client._get_fresh_token()
+            if token:
+                url = f"{bl_client.base_url}/api/v1/media/book/{book_id}/cover"
+                req = requests.get(url, params={"token": token}, timeout=10)
+                if req.status_code == 200:
+                    data = req.content
+                    try:
+                        cache_file.write_bytes(data)
+                    except Exception:
+                        logger.debug(f"Failed to cache Booklore cover for book {book_id}")
+                    resp = Response(data, content_type='image/jpeg')
+                    resp.headers['Cache-Control'] = 'public, max-age=86400, immutable'
+                    return resp
+        except Exception as e:
+            logger.error(f"Error proxying Booklore cover for book {book_id}: {e}")
 
-        url = f"{bl_client.base_url}/api/v1/media/book/{book_id}/cover"
-        req = requests.get(url, params={"token": token}, stream=True, timeout=10)
-        if req.status_code == 200:
-            resp = Response(req.iter_content(chunk_size=1024), content_type='image/jpeg')
-            resp.headers['Cache-Control'] = 'public, max-age=86400, immutable'
-            return resp
-        else:
-            return "Cover not found", 404
-    except Exception as e:
-        logger.error(f"Error proxying Booklore cover for book {book_id}: {e}")
-        return "Error loading cover", 500
+    # Fall back to local cache
+    if cache_file.exists():
+        resp = send_from_directory(covers_dir, cache_file.name)
+        resp.headers['Cache-Control'] = 'public, max-age=86400, immutable'
+        return resp
+
+    return "Cover not found", 404

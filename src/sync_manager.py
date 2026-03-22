@@ -259,7 +259,7 @@ class SyncManager:
         except Exception as e:
             logger.error(f"Error during cache cleanup: {e}")
 
-    def get_abs_title(self, ab):
+    def get_audiobook_title(self, ab):
         media = ab.get('media', {})
         metadata = media.get('metadata', {})
         return metadata.get('title') or ab.get('name', 'Unknown')

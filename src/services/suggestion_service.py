@@ -614,16 +614,6 @@ class SuggestionService:
         if os.environ.get("SUGGESTIONS_ENABLED", "true").lower() != "true":
             return {"created": 0, "updated": 0, "deleted": 0, "total": 0, "bookfusion_catalog": False}
 
-        if not self.abs_client:
-            return {"created": 0, "updated": 0, "deleted": 0, "total": 0, "bookfusion_catalog": False}
-
-        try:
-            self._update_rescan_status(phase="loading_abs", message="Loading ABS audiobooks...")
-            all_abs_books = self.abs_client.get_all_audiobooks() or []
-        except Exception as e:
-            logger.warning(f"Suggestions rescan failed to load ABS audiobooks: {e}")
-            return {"created": 0, "updated": 0, "deleted": 0, "total": 0, "bookfusion_catalog": False}
-
         mapped_ids = {b.abs_id for b in self.database_service.get_all_books()}
         existing_actionable = {
             s.source_id: s for s in self.database_service.get_all_actionable_suggestions()
@@ -635,46 +625,54 @@ class SuggestionService:
         created = 0
         updated = 0
         kept_ids = set()
-        total_books = len(all_abs_books)
 
-        self._update_rescan_status(phase="scoring", message=f"Scoring {total_books} ABS books...")
-        for idx, abs_book in enumerate(all_abs_books, start=1):
-            abs_id = abs_book.get('id')
-            if not abs_id or abs_id in mapped_ids or self.database_service.is_suggestion_ignored(abs_id):
-                continue
+        if self.abs_client:
+            try:
+                self._update_rescan_status(phase="loading_abs", message="Loading ABS audiobooks...")
+                all_abs_books = self.abs_client.get_all_audiobooks() or []
+            except Exception as e:
+                logger.warning(f"Suggestions rescan failed to load ABS audiobooks: {e}")
+                all_abs_books = []
 
-            meta = abs_book.get('media', {}).get('metadata', {})
-            title = meta.get('title') or ''
-            author = meta.get('authorName') or ''
-            matches = self._rank_candidates_for_book(title, author, candidates, bookfusion_context=bookfusion_context)
+            total_books = len(all_abs_books)
+            self._update_rescan_status(phase="scoring", message=f"Scoring {total_books} ABS books...")
+            for idx, abs_book in enumerate(all_abs_books, start=1):
+                abs_id = abs_book.get('id')
+                if not abs_id or abs_id in mapped_ids or self.database_service.is_suggestion_ignored(abs_id):
+                    continue
 
-            if not matches:
-                continue
+                meta = abs_book.get('media', {}).get('metadata', {})
+                title = meta.get('title') or ''
+                author = meta.get('authorName') or ''
+                matches = self._rank_candidates_for_book(title, author, candidates, bookfusion_context=bookfusion_context)
 
-            kept_ids.add(abs_id)
-            existing = existing_actionable.get(abs_id)
-            suggestion = PendingSuggestion(
-                source_id=abs_id,
-                title=title,
-                author=author,
-                cover_url=f"/api/cover-proxy/{abs_id}",
-                matches_json=json.dumps(matches),
-                status='hidden' if existing and getattr(existing, 'status', None) in ('hidden', 'dismissed') else 'pending',
-            )
-            if abs_id in existing_actionable:
-                updated += 1
-            else:
-                created += 1
-            self.database_service.save_pending_suggestion(suggestion)
+                if not matches:
+                    continue
 
-            if idx % 25 == 0:
-                self._update_rescan_status(
-                    phase="scoring",
-                    message=f"Scoring ABS books... {idx}/{total_books}",
-                    created=created,
-                    updated=updated,
+                kept_ids.add(abs_id)
+                existing = existing_actionable.get(abs_id)
+                suggestion = PendingSuggestion(
+                    source_id=abs_id,
+                    title=title,
+                    author=author,
+                    cover_url=f"/api/cover-proxy/{abs_id}",
+                    matches_json=json.dumps(matches),
+                    status='hidden' if existing and getattr(existing, 'status', None) == 'hidden' else 'pending',
                 )
-                time.sleep(0.01)
+                if abs_id in existing_actionable:
+                    updated += 1
+                else:
+                    created += 1
+                self.database_service.save_pending_suggestion(suggestion)
+
+                if idx % 25 == 0:
+                    self._update_rescan_status(
+                        phase="scoring",
+                        message=f"Scoring ABS books... {idx}/{total_books}",
+                        created=created,
+                        updated=updated,
+                    )
+                    time.sleep(0.01)
 
         deleted = 0
         self._update_rescan_status(phase="cleanup", message="Cleaning stale suggestions...")

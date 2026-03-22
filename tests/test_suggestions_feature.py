@@ -43,7 +43,7 @@ class MockContainer:
 
         # Link up the manager
         self.mock_sync_manager.abs_client = self.mock_abs_client
-        self.mock_sync_manager.get_abs_title.return_value = 'Test Book Title'
+        self.mock_sync_manager.get_audiobook_title.return_value = 'Test Book Title'
         self.mock_sync_manager.get_duration.return_value = 3600
 
     def sync_manager(self): return self.mock_sync_manager

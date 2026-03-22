@@ -46,7 +46,7 @@ class MockContainer:
         self.mock_sync_manager.abs_client = self.mock_abs_client
         self.mock_sync_manager.booklore_client = self.mock_booklore_client
         self.mock_sync_manager.storyteller_client = self.mock_storyteller_client
-        self.mock_sync_manager.get_abs_title.return_value = 'Test Book Title'
+        self.mock_sync_manager.get_audiobook_title.return_value = 'Test Book Title'
         self.mock_sync_manager.get_duration.return_value = 3600
         self.mock_sync_manager.clear_progress = Mock()
 

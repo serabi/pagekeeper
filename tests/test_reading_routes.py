@@ -249,6 +249,7 @@ class TestReadingRoutes(unittest.TestCase):
         self.db.get_states_by_book.return_value = {None: [state]}
         self.db.get_booklore_by_filename.return_value = {}
         self.db.get_all_booklore_books.return_value = []
+        self.db.get_all_hardcover_details.return_value = []
         self.db.get_reading_goal.return_value = None
 
         resp = self.client.get('/reading')

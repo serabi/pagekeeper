@@ -1005,18 +1005,7 @@
         </div><!-- /settings-shell -->
         </form>
 
-        <!-- Settings Modal (replaces alert/confirm) -->
-        <div id="settings-modal" class="confirm-modal" style="display: none;">
-            <div class="confirm-modal-overlay" onclick="closeSettingsModal()"></div>
-            <div class="confirm-modal-box">
-                <h3 class="confirm-modal-title" id="settings-modal-title"></h3>
-                <p class="confirm-modal-message" id="settings-modal-message" style="white-space: pre-line;"></p>
-                <div class="confirm-modal-actions">
-                    <button type="button" class="btn btn-secondary" id="settings-modal-cancel" onclick="closeSettingsModal()">OK</button>
-                    <button type="button" class="btn btn-danger" id="settings-modal-confirm" style="display: none;">Confirm</button>
-                </div>
-            </div>
-        </div>
+        {% include 'partials/confirm_modal.html' %}
     </div>
 
     <script>
@@ -1024,6 +1013,7 @@
             kosyncPort: "{{ get_val('KOSYNC_PORT', '4477') }}"
         };
     </script>
+    <script src="/static/js/confirm-modal.js"></script>
     <script src="/static/js/settings.js"></script>
 </body>
 

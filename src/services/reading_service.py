@@ -38,7 +38,8 @@ class ReadingService:
         try:
             dates = container.reading_date_service().pull_reading_dates(book_id)
             return dates.get('started_at', date.today().isoformat())
-        except Exception:
+        except Exception as e:
+            logger.warning("Could not pull started_at for book_id=%s, defaulting to today: %s", book_id, e)
             return date.today().isoformat()
 
     def update_status(self, book_id, new_status, container, *, allowed_from=None):

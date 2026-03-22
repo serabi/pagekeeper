@@ -125,8 +125,8 @@ def get_audiobooks_conditionally():
     return get_abs_service().get_audiobooks()
 
 
-def get_abs_author(ab):
-    """Extract author from ABS audiobook metadata."""
+def get_audiobook_author(ab):
+    """Extract author from audiobook metadata."""
     media = ab.get('media', {})
     metadata = media.get('metadata', {})
     return metadata.get('authorName') or (metadata.get('authors') or [{}])[0].get("name", "")
@@ -139,8 +139,8 @@ def audiobook_matches_search(ab, search_term):
     def normalize(s):
         return re.sub(r'[^\w\s]', '', s.lower())
 
-    title = normalize(manager.get_abs_title(ab))
-    author = normalize(get_abs_author(ab))
+    title = normalize(manager.get_audiobook_title(ab))
+    author = normalize(get_audiobook_author(ab))
     search_norm = normalize(search_term)
 
     # 1. Standard Search
@@ -481,7 +481,7 @@ def cleanup_mapping_resources(book):
                 except Exception as e:
                     logger.warning(f"Failed to delete cached ebook {book.ebook_filename}: {e}")
 
-    if getattr(book, 'sync_mode', 'audiobook') == 'ebook_only' and book.kosync_doc_id:
+    if book.sync_mode == 'ebook_only' and book.kosync_doc_id:
         logger.info(f"Deleting KOSync document record for ebook-only mapping: '{book.kosync_doc_id[:8]}'")
         database_service.delete_kosync_document(book.kosync_doc_id)
 
@@ -509,6 +509,56 @@ def restart_server():
     time.sleep(1.0)
     logger.info("Sending SIGTERM to trigger restart...")
     os.kill(os.getpid(), signal.SIGTERM)
+
+
+def serialize_suggestion(s):
+    """Shared serializer for PendingSuggestion → JSON-ready dict."""
+    matches = []
+    for m in s.matches:
+        evidence = m.get("evidence") or []
+        has_bookfusion = m.get("source_family") == "bookfusion" or any(ev.startswith("bookfusion") for ev in evidence)
+        matches.append({
+            **m,
+            "evidence": evidence,
+            "has_bookfusion": has_bookfusion,
+        })
+
+    has_bookfusion_evidence = any(m.get("has_bookfusion") for m in matches)
+    return {
+        "id": s.id,
+        "source_id": s.source_id,
+        "source": s.source or "unknown",
+        "title": s.title,
+        "author": s.author,
+        "cover_url": s.cover_url,
+        "matches": matches,
+        "created_at": s.created_at.isoformat() if s.created_at else None,
+        "has_bookfusion_evidence": has_bookfusion_evidence,
+        "top_match": matches[0] if matches else None,
+        "status": s.status,
+        "hidden": s.status == 'hidden',
+    }
+
+
+def find_booklore_metadata(book, booklore_by_filename):
+    """Find best Booklore metadata entry for a book by filename."""
+    for fn in (book.ebook_filename, book.original_ebook_filename):
+        if fn:
+            candidates = booklore_by_filename.get(fn.lower(), [])
+            match = next((b for b in candidates if b.title), candidates[0] if candidates else None)
+            if match:
+                return match
+    return None
+
+
+def attempt_hardcover_automatch(container, book):
+    """Best-effort Hardcover automatch after book creation."""
+    try:
+        hc_service = container.hardcover_service()
+        if hc_service.is_configured():
+            hc_service.automatch_hardcover(book, hardcover_sync_client=container.hardcover_sync_client())
+    except Exception as e:
+        logger.warning(f"Hardcover automatch failed (book saved): {e}")
 
 
 def safe_folder_name(name: str) -> str:

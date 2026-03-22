@@ -9,15 +9,20 @@ from pathlib import Path
 from flask import Blueprint, current_app, flash, redirect, render_template, request, session, url_for
 
 from src.blueprints.helpers import (
+    any_booklore_configured,
+    attempt_hardcover_automatch,
     audiobook_matches_search,
     find_in_booklore,
     get_abs_service,
+    get_audiobook_author,
     get_audiobooks_conditionally,
     get_container,
     get_database_service,
+    get_ebook_dir,
     get_kosync_id_for_ebook,
     get_manager,
     get_searchable_ebooks,
+    serialize_suggestion,
 )
 from src.db.models import Book, StorytellerSubmission
 from src.utils.logging_utils import sanitize_log_data
@@ -80,49 +85,141 @@ def _submit_to_storyteller_async(container, abs_id, book_title, ebook_filename, 
 
 def _copy_book_merge_metadata(existing_book, overrides=None):
     metadata = {
-        "storyteller_uuid": getattr(existing_book, "storyteller_uuid", None),
-        "original_ebook_filename": getattr(existing_book, "original_ebook_filename", None),
-        "abs_ebook_item_id": getattr(existing_book, "abs_ebook_item_id", None),
-        "ebook_item_id": getattr(existing_book, "ebook_item_id", None) or getattr(existing_book, "abs_ebook_item_id", None),
-        "custom_cover_url": getattr(existing_book, "custom_cover_url", None),
-        "started_at": getattr(existing_book, "started_at", None),
-        "finished_at": getattr(existing_book, "finished_at", None),
-        "rating": getattr(existing_book, "rating", None),
-        "read_count": getattr(existing_book, "read_count", 1),
+        "storyteller_uuid": existing_book.storyteller_uuid,
+        "original_ebook_filename": existing_book.original_ebook_filename,
+        "abs_ebook_item_id": existing_book.abs_ebook_item_id,
+        "ebook_item_id": existing_book.ebook_item_id or existing_book.abs_ebook_item_id,
+        "custom_cover_url": existing_book.custom_cover_url,
+        "started_at": existing_book.started_at,
+        "finished_at": existing_book.finished_at,
+        "rating": existing_book.rating,
+        "read_count": existing_book.read_count or 1,
     }
     if overrides:
         metadata.update({key: value for key, value in overrides.items() if value is not None})
     return metadata
 
 
-def _serialize_suggestion(s):
-    matches = []
-    for m in s.matches:
-        evidence = m.get("evidence") or []
-        has_bookfusion = m.get("source_family") == "bookfusion" or any(ev.startswith("bookfusion") for ev in evidence)
-        matches.append(
+def _create_book_mapping(container, abs_id, title, ebook_filename, duration,
+                         storyteller_uuid=None, storyteller_submit=False,
+                         author=None, subtitle=None):
+    """Create a book mapping with full pipeline: Booklore, KOSync, merge, Hardcover, etc.
+
+    Returns (book, error_message). On success error_message is None.
+    On failure book is None and error_message describes the problem.
+    """
+    database_service = get_database_service()
+    abs_service = get_abs_service()
+
+    # Booklore lookup
+    booklore_id = None
+    bl_match, bl_match_client = find_in_booklore(ebook_filename)
+    if bl_match:
+        booklore_id = bl_match.get("id")
+
+    # KOSync ID
+    kosync_doc_id = get_kosync_id_for_ebook(ebook_filename, booklore_id, bl_client=bl_match_client)
+    if not kosync_doc_id:
+        logger.warning(f"Cannot compute KOSync ID for '{sanitize_log_data(ebook_filename)}'")
+        return None, "Could not compute KOSync ID for ebook"
+
+    # Hash preservation
+    current_book_entry = database_service.get_book_by_ref(abs_id)
+    if current_book_entry and current_book_entry.kosync_doc_id:
+        logger.info(f"Preserving existing hash '{current_book_entry.kosync_doc_id}' for '{abs_id}'")
+        kosync_doc_id = current_book_entry.kosync_doc_id
+
+    # Duplicate merge detection
+    existing_book = database_service.get_book_by_kosync_id(kosync_doc_id)
+    migration_source_id = None
+    original_ebook_filename = None
+
+    if existing_book and existing_book.abs_id != abs_id:
+        logger.info(f"Merging existing '{existing_book.abs_id}' into '{abs_id}'")
+        migration_source_id = existing_book.abs_id
+        ebook_item_id = existing_book.ebook_item_id or existing_book.abs_ebook_item_id or existing_book.abs_id
+        original_ebook_filename = existing_book.original_ebook_filename or existing_book.ebook_filename
+        merge_metadata = _copy_book_merge_metadata(
+            existing_book,
             {
-                **m,
-                "evidence": evidence,
-                "has_bookfusion": has_bookfusion,
-            }
+                "abs_ebook_item_id": ebook_item_id,
+                "ebook_item_id": ebook_item_id,
+                "original_ebook_filename": original_ebook_filename,
+                "storyteller_uuid": storyteller_uuid or existing_book.storyteller_uuid,
+            },
+        )
+    else:
+        merge_metadata = {
+            "storyteller_uuid": storyteller_uuid,
+            "original_ebook_filename": None,
+            "abs_ebook_item_id": None,
+            "ebook_item_id": None,
+        }
+
+    # Create book
+    book = Book(
+        abs_id=abs_id,
+        title=title,
+        ebook_filename=ebook_filename,
+        kosync_doc_id=kosync_doc_id,
+        transcript_file=None,
+        status="pending",
+        duration=duration,
+        author=author,
+        subtitle=subtitle,
+        **merge_metadata,
+    )
+    database_service.save_book(book, is_new=True)
+
+    # Storyteller reservation (before HTTP calls to prevent race)
+    if storyteller_submit:
+        _create_storyteller_reservation(database_service, abs_id)
+
+    # Duplicate merge migration
+    if migration_source_id:
+        try:
+            database_service.migrate_book_data(migration_source_id, abs_id)
+            database_service.delete_book(existing_book.id)
+            abs_service.add_to_collection(abs_id, current_app.config["ABS_COLLECTION_NAME"])
+            logger.info(f"Successfully merged {migration_source_id} into {abs_id}")
+        except Exception as e:
+            logger.error(f"Failed to merge book data: {e}")
+            raise
+
+    # Hardcover automatch
+    attempt_hardcover_automatch(container, book)
+
+    # ABS collection add
+    if not migration_source_id:
+        abs_service.add_to_collection(abs_id, current_app.config["ABS_COLLECTION_NAME"])
+
+    # Booklore shelf add
+    if bl_match_client:
+        shelf_filename = original_ebook_filename or ebook_filename
+        try:
+            bl_match_client.add_to_shelf(shelf_filename)
+        except Exception as e:
+            logger.warning(f"Booklore add_to_shelf failed for '{sanitize_log_data(shelf_filename)}': {e}")
+
+    # Storyteller submission (background thread)
+    if storyteller_submit:
+        _submit_to_storyteller_async(
+            container, abs_id, title, ebook_filename,
+            current_app.config.get("BOOKS_DIR", ""),
+            current_app.config.get("EPUB_CACHE_DIR", ""),
         )
 
-    has_bookfusion_evidence = any(m.get("has_bookfusion") for m in matches)
-    return {
-        "id": s.id,
-        "source_id": s.source_id,
-        "source": s.source or "abs",
-        "title": s.title,
-        "author": s.author,
-        "cover_url": s.cover_url,
-        "matches": matches,
-        "created_at": s.created_at.isoformat() if s.created_at else None,
-        "has_bookfusion_evidence": has_bookfusion_evidence,
-        "top_match": matches[0] if matches else None,
-        "status": "hidden" if s.status == "dismissed" else s.status,
-        "hidden": s.status in ("hidden", "dismissed"),
-    }
+    # Resolve suggestions
+    database_service.resolve_suggestion(abs_id)
+    database_service.resolve_suggestion(kosync_doc_id)
+    try:
+        device_doc = database_service.get_kosync_doc_by_filename(ebook_filename)
+        if device_doc and device_doc.document_hash != kosync_doc_id:
+            database_service.resolve_suggestion(device_doc.document_hash)
+    except Exception as e:
+        logger.warning(f"Failed to check/resolve device hash: {e}")
+
+    return book, None
 
 
 def _build_batch_queue_item(item):
@@ -134,6 +231,9 @@ def _build_batch_queue_item(item):
     if item.get("audio_only"):
         status_label = "Audio Only"
         status_kind = "audio-only"
+    elif item.get("ebook_only"):
+        status_label = "Ebook Only"
+        status_kind = "ebook-only"
     elif item.get("abs_id") and item.get("ebook_filename"):
         status_label = "Ready"
         status_kind = "ready"
@@ -156,8 +256,9 @@ def _build_batch_queue_view(queue):
     return {
         "items": queue_items,
         "total_count": len(queue_items),
-        "ready_count": sum(1 for item in queue_items if item["status_kind"] in {"ready", "audio-only"}),
+        "ready_count": sum(1 for item in queue_items if item["status_kind"] in {"ready", "audio-only", "ebook-only"}),
         "audio_only_count": sum(1 for item in queue_items if item["status_kind"] == "audio-only"),
+        "ebook_only_count": sum(1 for item in queue_items if item["status_kind"] == "ebook-only"),
         "incomplete_count": sum(1 for item in queue_items if item["status_kind"] == "incomplete"),
     }
 
@@ -165,10 +266,14 @@ def _build_batch_queue_view(queue):
 @matching_bp.route("/suggestions")
 def suggestions():
     """Dedicated page for browsing and acting on pairing suggestions."""
+    abs_service = get_abs_service()
+    if not abs_service.is_available():
+        flash("Suggestions require Audiobookshelf to be configured.", "warning")
+        return redirect(url_for("dashboard.index"))
     container = get_container()
     database_service = get_database_service()
     raw_suggestions = database_service.get_all_actionable_suggestions()
-    suggestions_list = [_serialize_suggestion(s) for s in raw_suggestions if s.matches]
+    suggestions_list = [serialize_suggestion(s) for s in raw_suggestions if s.matches]
     visible_count = sum(1 for s in suggestions_list if not s.get("hidden"))
     hidden_count = sum(1 for s in suggestions_list if s.get("hidden"))
     suggestions_enabled = current_app.config.get("SUGGESTIONS_ENABLED", False)
@@ -211,21 +316,18 @@ def match():
                 return "Audiobook not found", 404
             book = Book(
                 abs_id=abs_id,
-                title=manager.get_abs_title(selected_ab),
+                title=manager.get_audiobook_title(selected_ab),
                 ebook_filename=None,
                 kosync_doc_id=None,
                 status="not_started",
                 duration=manager.get_duration(selected_ab),
                 sync_mode="audiobook",
+                author=get_audiobook_author(selected_ab),
+                subtitle=selected_ab.get("media", {}).get("metadata", {}).get("subtitle") or None,
             )
             database_service.save_book(book, is_new=True)
             abs_service.add_to_collection(abs_id, current_app.config["ABS_COLLECTION_NAME"])
-            try:
-                hc_service = container.hardcover_service()
-                if hc_service.is_configured():
-                    hc_service.automatch_hardcover(book, hardcover_sync_client=container.hardcover_sync_client())
-            except Exception as e:
-                logger.warning(f"Hardcover automatch failed (book saved): {e}")
+            attempt_hardcover_automatch(container, book)
             database_service.resolve_suggestion(abs_id)
             return redirect(url_for("dashboard.index"))
 
@@ -316,12 +418,14 @@ def match():
                 return "Audiobook not found", 404
             new_book = Book(
                 abs_id=abs_id,
-                title=manager.get_abs_title(selected_ab),
+                title=manager.get_audiobook_title(selected_ab),
                 ebook_filename=book.ebook_filename,
                 kosync_doc_id=book.kosync_doc_id,
                 status=book.status or "not_started",
                 duration=manager.get_duration(selected_ab),
                 sync_mode="audiobook",
+                author=get_audiobook_author(selected_ab),
+                subtitle=selected_ab.get("media", {}).get("metadata", {}).get("subtitle") or None,
                 **_copy_book_merge_metadata(
                     book,
                     {
@@ -339,12 +443,7 @@ def match():
             except Exception as e:
                 logger.error(f"Failed to merge book data: {e}")
                 raise
-            try:
-                hc_service = container.hardcover_service()
-                if hc_service.is_configured():
-                    hc_service.automatch_hardcover(new_book, hardcover_sync_client=container.hardcover_sync_client())
-            except Exception as e:
-                logger.warning(f"Hardcover automatch failed (book saved): {e}")
+            attempt_hardcover_automatch(container, new_book)
             database_service.resolve_suggestion(abs_id)
             if new_book.kosync_doc_id:
                 database_service.resolve_suggestion(new_book.kosync_doc_id)
@@ -353,138 +452,28 @@ def match():
         # --- Standard flow (requires audiobook) ---
         abs_service = get_abs_service()
         abs_id = request.form.get("audiobook_id")
-        selected_filename = sanitize_filename(request.form.get("ebook_filename"))
-        ebook_filename = selected_filename
-        original_ebook_filename = None
+        ebook_filename = sanitize_filename(request.form.get("ebook_filename"))
+        storyteller_uuid = request.form.get("storyteller_uuid")
+        storyteller_submit = request.form.get("storyteller_submit")
+
         audiobooks = abs_service.get_audiobooks()
         selected_ab = next((ab for ab in audiobooks if ab["id"] == abs_id), None)
         if not selected_ab:
             return "Audiobook not found", 404
 
-        booklore_id = None
-        storyteller_uuid = request.form.get("storyteller_uuid")
-
-        bl_match, bl_match_client = find_in_booklore(ebook_filename)
-        if bl_match:
-            booklore_id = bl_match.get("id")
-
-        kosync_doc_id = get_kosync_id_for_ebook(ebook_filename, booklore_id, bl_client=bl_match_client)
-
-        if not kosync_doc_id:
-            logger.warning(
-                f"Cannot compute KOSync ID for '{sanitize_log_data(ebook_filename)}': File not found in Booklore or filesystem"
-            )
-            return "Could not compute KOSync ID for ebook", 404
-
-        # Hash Preservation
-        current_book_entry = database_service.get_book_by_ref(abs_id)
-        if current_book_entry and current_book_entry.kosync_doc_id:
-            logger.info(
-                f"Preserving existing hash '{current_book_entry.kosync_doc_id}' for '{abs_id}' instead of new hash '{kosync_doc_id}'"
-            )
-            kosync_doc_id = current_book_entry.kosync_doc_id
-
-        # Duplicate Merge
-        existing_book = database_service.get_book_by_kosync_id(kosync_doc_id)
-        migration_source_id = None
-
-        if existing_book and existing_book.abs_id != abs_id:
-            logger.info(f"Found existing book entry '{existing_book.abs_id}' for this ebook -- Merging into '{abs_id}'")
-            migration_source_id = existing_book.abs_id
-            ebook_item_id = existing_book.ebook_item_id or existing_book.abs_ebook_item_id or existing_book.abs_id
-
-            if not original_ebook_filename:
-                original_ebook_filename = existing_book.original_ebook_filename or existing_book.ebook_filename
-            merge_metadata = _copy_book_merge_metadata(
-                existing_book,
-                {
-                    "abs_ebook_item_id": ebook_item_id,
-                    "ebook_item_id": ebook_item_id,
-                    "original_ebook_filename": original_ebook_filename,
-                    "storyteller_uuid": storyteller_uuid or existing_book.storyteller_uuid,
-                },
-            )
-        else:
-            ebook_item_id = None
-            merge_metadata = {
-                "storyteller_uuid": storyteller_uuid,
-                "original_ebook_filename": original_ebook_filename,
-                "abs_ebook_item_id": ebook_item_id,
-                "ebook_item_id": ebook_item_id,
-            }
-
-        book = Book(
-            abs_id=abs_id,
-            title=manager.get_abs_title(selected_ab),
+        _ab_meta = selected_ab.get("media", {}).get("metadata", {})
+        book, error = _create_book_mapping(
+            container, abs_id,
+            title=manager.get_audiobook_title(selected_ab),
             ebook_filename=ebook_filename,
-            kosync_doc_id=kosync_doc_id,
-            transcript_file=None,
-            status="pending",
             duration=manager.get_duration(selected_ab),
-            **merge_metadata,
+            storyteller_uuid=storyteller_uuid,
+            storyteller_submit=bool(storyteller_submit),
+            author=get_audiobook_author(selected_ab),
+            subtitle=_ab_meta.get("subtitle") or None,
         )
-
-        storyteller_submit = request.form.get("storyteller_submit")
-
-        database_service.save_book(book, is_new=True)
-
-        # Create Storyteller reservation immediately after saving the book —
-        # before any HTTP calls (Hardcover, Booklore, ABS) that could take
-        # seconds and let the sync cycle pick up the book without a reservation.
-        if storyteller_submit:
-            _create_storyteller_reservation(database_service, abs_id)
-
-        # Duplicate Merge: Migrate
-        if migration_source_id:
-            try:
-                database_service.migrate_book_data(migration_source_id, abs_id)
-                database_service.delete_book(existing_book.id)
-                abs_service.add_to_collection(abs_id, current_app.config["ABS_COLLECTION_NAME"])
-                logger.info(f"Successfully merged {migration_source_id} into {abs_id}")
-            except Exception as e:
-                logger.error(f"Failed to merge book data: {e}")
-                raise
-
-        # Trigger Hardcover Automatch
-        try:
-            hc_service = container.hardcover_service()
-            if hc_service.is_configured():
-                hc_service.automatch_hardcover(book, hardcover_sync_client=container.hardcover_sync_client())
-        except Exception as e:
-            logger.warning(f"Hardcover automatch failed (book saved): {e}")
-
-        if not migration_source_id:
-            abs_service.add_to_collection(abs_id, current_app.config["ABS_COLLECTION_NAME"])
-        if bl_match_client:
-            shelf_filename = original_ebook_filename or ebook_filename
-            try:
-                bl_match_client.add_to_shelf(shelf_filename)
-            except Exception as e:
-                logger.warning(f"Booklore add_to_shelf failed for '{sanitize_log_data(shelf_filename)}': {e}")
-        # Storyteller submission (runs in background thread to avoid blocking)
-        if storyteller_submit:
-            _submit_to_storyteller_async(
-                container,
-                abs_id,
-                manager.get_abs_title(selected_ab),
-                ebook_filename,
-                current_app.config.get("BOOKS_DIR", ""),
-                current_app.config.get("EPUB_CACHE_DIR", ""),
-            )
-
-        # Remove resolved suggestions once the mapping is created
-        database_service.resolve_suggestion(abs_id)
-        database_service.resolve_suggestion(kosync_doc_id)
-
-        try:
-            device_doc = database_service.get_kosync_doc_by_filename(ebook_filename)
-            if device_doc and device_doc.document_hash != kosync_doc_id:
-                logger.info(
-                    f"Resolving additional suggestion/hash for '{ebook_filename}': '{device_doc.document_hash}'"
-                )
-                database_service.resolve_suggestion(device_doc.document_hash)
-        except Exception as e:
-            logger.warning(f"Failed to check/resolve device hash: {e}")
+        if error:
+            return error, 404
 
         return redirect(url_for("dashboard.index"))
 
@@ -543,6 +532,16 @@ def match():
         pass
 
     storyteller_force_mode = os.environ.get("STORYTELLER_FORCE_MODE", "false").lower() == "true"
+    storyteller_configured = container.storyteller_client().is_configured()
+
+    # Detect available services for smart mode defaults
+    abs_configured = abs_service.is_available()
+    has_ebook_sources = (
+        any_booklore_configured()
+        or container.cwa_client().is_configured()
+        or abs_service.has_ebook_libraries()
+        or get_ebook_dir().exists()
+    )
 
     # Build sets of IDs already in the library for "In Library" badges
     library_abs_ids = set()
@@ -559,7 +558,7 @@ def match():
         ebooks=ebooks,
         storyteller_books=storyteller_books,
         search=search,
-        get_title=manager.get_abs_title,
+        get_title=manager.get_audiobook_title,
         attach_to=attach_to,
         attach_title=attach_title,
         link_to=link_to,
@@ -567,8 +566,11 @@ def match():
         preselect_abs_id=preselect_abs_id,
         storyteller_submit_available=storyteller_submit_available,
         storyteller_force_mode=storyteller_force_mode,
+        storyteller_configured=storyteller_configured,
         library_abs_ids=library_abs_ids,
         library_ebook_filenames=library_ebook_filenames,
+        abs_configured=abs_configured,
+        has_ebook_sources=has_ebook_sources,
     )
 
 
@@ -584,33 +586,55 @@ def batch_match():
         action = request.form.get("action")
         if action == "add_to_queue":
             session.setdefault("queue", [])
-            abs_id = request.form.get("audiobook_id")
+            abs_id = request.form.get("audiobook_id") or ""
             ebook_filename = sanitize_filename(request.form.get("ebook_filename", "")) or ""
             ebook_display_name = request.form.get("ebook_display_name", ebook_filename)
             storyteller_uuid = request.form.get("storyteller_uuid", "")
-            audiobooks = abs_service.get_audiobooks()
-            selected_ab = next((ab for ab in audiobooks if ab["id"] == abs_id), None)
-            if selected_ab:
-                if not any(item["abs_id"] == abs_id for item in session["queue"]):
-                    is_audio_only = not ebook_filename and not storyteller_uuid
-                    session["queue"].append(
-                        {
-                            "abs_id": abs_id,
-                            "title": manager.get_abs_title(selected_ab),
-                            "ebook_filename": ebook_filename,
-                            "ebook_display_name": ebook_display_name,
-                            "storyteller_uuid": storyteller_uuid,
-                            "storyteller_submit": bool(request.form.get("storyteller_submit")),
-                            "duration": manager.get_duration(selected_ab),
-                            "cover_url": abs_service.get_cover_proxy_url(abs_id),
-                            "audio_only": is_audio_only,
-                        }
-                    )
-                    session.modified = True
+
+            if not abs_id and not ebook_filename and not storyteller_uuid:
+                return redirect(url_for("matching.batch_match", search=request.form.get("search", "")))
+
+            # Resolve audiobook metadata if present
+            selected_ab = None
+            if abs_id:
+                audiobooks = abs_service.get_audiobooks()
+                selected_ab = next((ab for ab in audiobooks if ab["id"] == abs_id), None)
+                if not selected_ab:
+                    return redirect(url_for("matching.batch_match", search=request.form.get("search", "")))
+
+            # Dedup key: abs_id if present, otherwise ebook_filename
+            queue_key = abs_id or ebook_filename
+            if not any(item.get("queue_key") == queue_key for item in session["queue"]):
+                is_ebook_only = not abs_id and (ebook_filename or storyteller_uuid)
+                is_audio_only = abs_id and not ebook_filename and not storyteller_uuid
+                title = (
+                    manager.get_audiobook_title(selected_ab) if selected_ab
+                    else ebook_display_name or Path(ebook_filename).stem if ebook_filename
+                    else "Storyteller Book"
+                )
+                _ab_meta = (selected_ab or {}).get("media", {}).get("metadata", {})
+                session["queue"].append(
+                    {
+                        "queue_key": queue_key,
+                        "abs_id": abs_id,
+                        "title": title,
+                        "ebook_filename": ebook_filename,
+                        "ebook_display_name": ebook_display_name,
+                        "storyteller_uuid": storyteller_uuid,
+                        "storyteller_submit": bool(request.form.get("storyteller_submit")),
+                        "duration": manager.get_duration(selected_ab) if selected_ab else 0,
+                        "cover_url": abs_service.get_cover_proxy_url(abs_id) if abs_id else None,
+                        "audio_only": is_audio_only,
+                        "ebook_only": is_ebook_only,
+                        "author": get_audiobook_author(selected_ab) if selected_ab else None,
+                        "subtitle": _ab_meta.get("subtitle") or None,
+                    }
+                )
+                session.modified = True
             return redirect(url_for("matching.batch_match", search=request.form.get("search", "")))
         elif action == "remove_from_queue":
-            abs_id = request.form.get("abs_id")
-            session["queue"] = [item for item in session.get("queue", []) if item["abs_id"] != abs_id]
+            remove_key = request.form.get("queue_key") or request.form.get("abs_id")
+            session["queue"] = [item for item in session.get("queue", []) if item.get("queue_key", item.get("abs_id")) != remove_key]
             session.modified = True
             return redirect(url_for("matching.batch_match"))
         elif action == "clear_queue":
@@ -632,140 +656,60 @@ def batch_match():
                             status="not_started",
                             duration=item["duration"],
                             sync_mode="audiobook",
+                            author=item.get("author"),
+                            subtitle=item.get("subtitle"),
                         )
                         database_service.save_book(book, is_new=True)
                         abs_service.add_to_collection(item["abs_id"], current_app.config["ABS_COLLECTION_NAME"])
-                        try:
-                            hc_service = container.hardcover_service()
-                            if hc_service.is_configured():
-                                hc_service.automatch_hardcover(book, hardcover_sync_client=container.hardcover_sync_client())
-                        except Exception as e:
-                            logger.warning(f"Hardcover automatch failed (book saved): {e}")
+                        attempt_hardcover_automatch(container, book)
                         database_service.resolve_suggestion(item["abs_id"])
                         continue
 
-                    ebook_filename = item["ebook_filename"]
-                    storyteller_uuid = item.get("storyteller_uuid", "")
-                    original_ebook_filename = None
-                    duration = item["duration"]
-                    booklore_id = None
-                    kosync_doc_id = None
+                    # Handle ebook-only queue items
+                    if item.get("ebook_only"):
+                        ebook_filename = item["ebook_filename"]
+                        storyteller_uuid = item.get("storyteller_uuid") or None
 
-                    bl_match, bl_match_client = find_in_booklore(ebook_filename)
-                    if bl_match:
-                        booklore_id = bl_match.get("id")
+                        if ebook_filename:
+                            bl_book, bl_client = find_in_booklore(ebook_filename)
+                            booklore_id = bl_book.get("id") if bl_book else None
+                            kosync_doc_id = get_kosync_id_for_ebook(ebook_filename, booklore_id, bl_client=bl_client)
+                            if not kosync_doc_id:
+                                failed_items.append(item.get("ebook_display_name") or ebook_filename)
+                                continue
+                            title = item.get("ebook_display_name") or (bl_book.get("title") if bl_book else None) or Path(ebook_filename).stem
+                        else:
+                            title = item.get("title", "Storyteller Book")
+                            ebook_filename = None
+                            kosync_doc_id = None
 
-                    kosync_doc_id = get_kosync_id_for_ebook(ebook_filename, booklore_id, bl_client=bl_match_client)
-
-                    if not kosync_doc_id:
-                        logger.warning(f"Could not compute KOSync ID for {sanitize_log_data(ebook_filename)}, skipping")
-                        failed_items.append(item.get("ebook_display_name") or ebook_filename)
+                        book = Book(
+                            abs_id=None,
+                            title=title,
+                            ebook_filename=ebook_filename,
+                            kosync_doc_id=kosync_doc_id,
+                            status="not_started",
+                            sync_mode="ebook_only",
+                            storyteller_uuid=storyteller_uuid,
+                        )
+                        database_service.save_book(book, is_new=True)
+                        if kosync_doc_id:
+                            database_service.resolve_suggestion(kosync_doc_id)
                         continue
 
-                    # Hash Preservation
-                    current_book_entry = database_service.get_book_by_ref(item["abs_id"])
-                    if current_book_entry and current_book_entry.kosync_doc_id:
-                        logger.info(
-                            f"Preserving existing hash '{current_book_entry.kosync_doc_id}' for '{item['abs_id']}' instead of new hash '{kosync_doc_id}'"
-                        )
-                        kosync_doc_id = current_book_entry.kosync_doc_id
-
-                    # Duplicate Merge
-                    existing_book = database_service.get_book_by_kosync_id(kosync_doc_id)
-                    migration_source_id = None
-                    ebook_item_id = None
-
-                    if existing_book and existing_book.abs_id != item["abs_id"]:
-                        logger.info(
-                            f"Found existing book entry '{existing_book.abs_id}' for this ebook -- Merging into '{item['abs_id']}'"
-                        )
-                        migration_source_id = existing_book.abs_id
-                        ebook_item_id = existing_book.ebook_item_id or existing_book.abs_ebook_item_id or existing_book.abs_id
-                        if not original_ebook_filename:
-                            original_ebook_filename = (
-                                existing_book.original_ebook_filename or existing_book.ebook_filename
-                            )
-                        merge_metadata = _copy_book_merge_metadata(
-                            existing_book,
-                            {
-                                "abs_ebook_item_id": ebook_item_id,
-                                "ebook_item_id": ebook_item_id,
-                                "original_ebook_filename": original_ebook_filename,
-                                "storyteller_uuid": storyteller_uuid or existing_book.storyteller_uuid,
-                            },
-                        )
-                    else:
-                        merge_metadata = {
-                            "storyteller_uuid": storyteller_uuid or None,
-                            "original_ebook_filename": original_ebook_filename,
-                            "abs_ebook_item_id": ebook_item_id,
-                            "ebook_item_id": ebook_item_id,
-                        }
-
-                    batch_storyteller_submit = item.get("storyteller_submit")
-
-                    book = Book(
+                    book, error = _create_book_mapping(
+                        container,
                         abs_id=item["abs_id"],
                         title=item["title"],
-                        ebook_filename=ebook_filename,
-                        kosync_doc_id=kosync_doc_id,
-                        transcript_file=None,
-                        status="pending",
-                        duration=duration,
-                        **merge_metadata,
+                        ebook_filename=item["ebook_filename"],
+                        duration=item["duration"],
+                        storyteller_uuid=item.get("storyteller_uuid", ""),
+                        storyteller_submit=bool(item.get("storyteller_submit")),
+                        author=item.get("author"),
+                        subtitle=item.get("subtitle"),
                     )
-
-                    database_service.save_book(book, is_new=True)
-
-                    # Create reservation immediately after book save, before HTTP calls
-                    if batch_storyteller_submit:
-                        _create_storyteller_reservation(database_service, item["abs_id"])
-
-                    # Duplicate Merge: Migrate
-                    if migration_source_id:
-                        database_service.migrate_book_data(migration_source_id, item["abs_id"])
-                        database_service.delete_book(existing_book.id)
-                        abs_service.add_to_collection(item["abs_id"], current_app.config["ABS_COLLECTION_NAME"])
-                        logger.info(f"Successfully merged {migration_source_id} into {item['abs_id']}")
-
-                    # Trigger Hardcover Automatch
-                    try:
-                        hc_service = container.hardcover_service()
-                        if hc_service.is_configured():
-                            hc_service.automatch_hardcover(book, hardcover_sync_client=container.hardcover_sync_client())
-                    except Exception as e:
-                        logger.warning(f"Hardcover automatch failed (book saved): {e}")
-
-                    if not migration_source_id:
-                        abs_service.add_to_collection(item["abs_id"], current_app.config["ABS_COLLECTION_NAME"])
-                    if bl_match_client:
-                        shelf_filename = original_ebook_filename or ebook_filename
-                        try:
-                            bl_match_client.add_to_shelf(shelf_filename)
-                        except Exception as e:
-                            logger.warning(
-                                f"Booklore add_to_shelf failed for '{sanitize_log_data(shelf_filename)}': {e}"
-                            )
-                    # Storyteller submission (runs in background thread)
-                    if batch_storyteller_submit:
-                        _submit_to_storyteller_async(
-                            container,
-                            item["abs_id"],
-                            item["title"],
-                            ebook_filename,
-                            current_app.config.get("BOOKS_DIR", ""),
-                            current_app.config.get("EPUB_CACHE_DIR", ""),
-                        )
-
-                    database_service.resolve_suggestion(item["abs_id"])
-                    database_service.resolve_suggestion(kosync_doc_id)
-
-                    try:
-                        device_doc = database_service.get_kosync_doc_by_filename(ebook_filename)
-                        if device_doc and device_doc.document_hash != kosync_doc_id:
-                            database_service.resolve_suggestion(device_doc.document_hash)
-                    except Exception as e:
-                        logger.warning(f"Failed to check/resolve device hash: {e}")
+                    if error:
+                        failed_items.append(item.get("ebook_display_name") or item["ebook_filename"])
 
                 except Exception as e:
                     logger.error(f"Failed to process queue item '{sanitize_log_data(item_label)}': {e}")
@@ -804,6 +748,15 @@ def batch_match():
         pass
 
     storyteller_force_mode = os.environ.get("STORYTELLER_FORCE_MODE", "false").lower() == "true"
+    storyteller_configured = container.storyteller_client().is_configured()
+
+    abs_configured = abs_service.is_available()
+    has_ebook_sources = (
+        any_booklore_configured()
+        or container.cwa_client().is_configured()
+        or abs_service.has_ebook_libraries()
+        or get_ebook_dir().exists()
+    )
 
     queue_view = _build_batch_queue_view(session.get("queue", []))
     return render_template(
@@ -814,7 +767,10 @@ def batch_match():
         queue=queue_view["items"],
         queue_summary=queue_view,
         search=search,
-        get_title=manager.get_abs_title,
+        get_title=manager.get_audiobook_title,
         storyteller_submit_available=storyteller_submit_available,
         storyteller_force_mode=storyteller_force_mode,
+        storyteller_configured=storyteller_configured,
+        abs_configured=abs_configured,
+        has_ebook_sources=has_ebook_sources,
     )

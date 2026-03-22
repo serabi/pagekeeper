@@ -5,7 +5,7 @@ from .models import PendingSuggestion
 
 
 class SuggestionRepository(BaseRepository):
-    ACTIONABLE_STATUSES = ('pending', 'hidden', 'dismissed')
+    ACTIONABLE_STATUSES = ('pending', 'hidden')
 
     def get_suggestion(self, source_id, source='abs'):
         return self._get_one(
@@ -43,7 +43,7 @@ class SuggestionRepository(BaseRepository):
                 PendingSuggestion.source_id == suggestion.source_id,
                 PendingSuggestion.source == suggestion.source,
             ).first()
-            if existing and existing.status in ('hidden', 'dismissed') and suggestion.status == 'pending':
+            if existing and existing.status == 'hidden' and suggestion.status == 'pending':
                 suggestion.status = 'hidden'
 
         return self._upsert(
@@ -73,7 +73,7 @@ class SuggestionRepository(BaseRepository):
     def get_hidden_suggestions(self):
         return self._get_all(
             PendingSuggestion,
-            PendingSuggestion.status.in_(('hidden', 'dismissed')),
+            PendingSuggestion.status == 'hidden',
             order_by=PendingSuggestion.created_at.desc(),
         )
 
@@ -109,7 +109,7 @@ class SuggestionRepository(BaseRepository):
                 PendingSuggestion.source_id == source_id,
                 PendingSuggestion.source == source,
             ).first()
-            if suggestion and suggestion.status in ('hidden', 'dismissed'):
+            if suggestion and suggestion.status == 'hidden':
                 suggestion.status = 'pending'
                 return True
             return False

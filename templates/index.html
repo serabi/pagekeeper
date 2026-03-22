@@ -256,21 +256,7 @@
             </div>
         </div>
 
-        <!-- Generic Confirmation Modal -->
-        <div id="confirm-modal" class="confirm-modal" style="display:none;">
-            <div class="confirm-modal-overlay" onclick="closeConfirmModal()"></div>
-            <div class="confirm-modal-box">
-                <div class="confirm-modal-icon" id="confirm-modal-icon"></div>
-                <h3 class="confirm-modal-title" id="confirm-modal-title"></h3>
-                <p class="confirm-modal-message" id="confirm-modal-message"></p>
-                <div class="confirm-modal-actions">
-                    <button class="btn btn-secondary" onclick="closeConfirmModal()">Cancel</button>
-                    <form id="confirm-modal-form" method="POST" style="margin:0;">
-                        <button type="submit" class="btn" id="confirm-modal-submit">Confirm</button>
-                    </form>
-                </div>
-            </div>
-        </div>
+        {% include 'partials/confirm_modal.html' %}
 
         <!-- Delete Mapping Confirmation Modal -->
         <div id="delete-mapping-modal" class="hc-modal" style="display:none;">
@@ -297,6 +283,8 @@
                 </div>
             </div>
         </div>
+        <script src="/static/js/utils.js"></script>
+        <script src="/static/js/confirm-modal.js"></script>
         <script src="/static/js/dashboard.js"></script>
         <script>initDashboard();</script>
 </body>

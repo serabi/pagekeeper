@@ -51,6 +51,10 @@ class ABSService:
             return False
         return self.abs_client.remove_from_collection(abs_id, collection_name)
 
+    def has_ebook_libraries(self) -> bool:
+        """Return True if ABS is configured and capable of serving ebooks."""
+        return self.is_available()
+
     # --- Ebook operations ---
 
     def search_ebooks(self, query: str) -> list[dict]:
