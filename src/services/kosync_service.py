@@ -108,7 +108,7 @@ class KosyncService:
                 self._db.link_kosync_document(doc_id, book.id, book.abs_id)
                 logger.info(f"KOSync: Linked existing document {doc_id[:8]}... to '{book.title}'")
         else:
-            doc = KosyncDocument(document_hash=doc_id, linked_book_id=book.id)
+            doc = KosyncDocument(document_hash=doc_id, linked_book_id=book.id, linked_abs_id=book.abs_id)
             self._db.save_kosync_document(doc)
             logger.info(f"KOSync: Created and linked new document {doc_id[:8]}... to '{book.title}'")
 
@@ -222,9 +222,7 @@ class KosyncService:
             books = self._db.get_all_booklore_books()
             if not books:
                 logger.info("Booklore cache in DB is empty. Syncing library...")
-                from src.services.library_service import LibraryService
-                lib_service = LibraryService(self._db, bl_group)
-                lib_service.sync_library_books()
+                bl_group.get_all_books()
                 books = self._db.get_all_booklore_books()
 
             logger.info(f"Scanning {len(books)} books from Booklore DB cache...")

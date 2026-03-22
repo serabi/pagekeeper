@@ -233,7 +233,7 @@ function toggleKosyncSourceMode() {
     var builtinSection = document.getElementById('kosync_builtin_section');
     var externalSection = document.getElementById('kosync_external_section');
     var externalUrl = document.getElementById('kosync_external_url');
-    if (!hiddenInput || !builtinSection || !externalSection) return;
+    if (!hiddenInput || !builtinSection || !externalSection || !externalUrl) return;
     var builtinUrl = 'http://127.0.0.1:' + SETTINGS_CONFIG.kosyncPort;
 
     if (isBuiltin) {

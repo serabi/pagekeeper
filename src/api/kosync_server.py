@@ -602,9 +602,6 @@ def api_link_kosync_document(doc_hash):
             logger.info(f"Updating Book {book.title} KOSync ID: {current_id} -> {doc_hash}")
             book.kosync_doc_id = doc_hash
             _database_service.save_book(book)
-        elif not current_id:
-            book.kosync_doc_id = doc_hash
-            _database_service.save_book(book)
 
         # Cleanup: remove any actionable suggestion for this document since it's now linked
         _database_service.resolve_suggestion(doc_hash)
