@@ -241,9 +241,13 @@
       if (isHc) {
         showRemoveConfirm();
       } else {
-        if (confirm('Remove this book from your TBR list?')) {
-          doRemove(false);
-        }
+        PKModal.confirm({
+          title: 'Remove from TBR',
+          message: 'Remove this book from your TBR list?',
+          confirmLabel: 'Remove',
+          confirmClass: 'btn btn-danger',
+          onConfirm: function () { doRemove(false); }
+        });
       }
     });
   }
@@ -443,11 +447,18 @@
   var unlinkHcBtn = document.getElementById('unlink-hc-btn');
   if (unlinkHcBtn) {
     unlinkHcBtn.addEventListener('click', function () {
-      if (!confirm('Unlink this book from Hardcover?')) return;
-      patchItem({ hardcover_book_id: null, hardcover_slug: null }).then(function (ok) {
-        if (ok) {
-          showToast('Unlinked from Hardcover');
-          location.reload();
+      PKModal.confirm({
+        title: 'Unlink from Hardcover',
+        message: 'Unlink this book from Hardcover?',
+        confirmLabel: 'Unlink',
+        confirmClass: 'btn btn-warning',
+        onConfirm: function () {
+          patchItem({ hardcover_book_id: null, hardcover_slug: null }).then(function (ok) {
+            if (ok) {
+              showToast('Unlinked from Hardcover');
+              location.reload();
+            }
+          });
         }
       });
     });

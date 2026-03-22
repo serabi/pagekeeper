@@ -885,7 +885,7 @@
             })
             .catch(function(err) {
                 console.error('Failed to update progress:', err);
-                alert('Failed to save progress. Please try again.');
+                PKModal.alert({ title: 'Error', message: 'Failed to save progress. Please try again.' });
             });
         }
 
@@ -907,11 +907,11 @@
                     if (d.success) {
                         location.reload();
                     } else {
-                        alert(d.error || 'Failed to pause');
+                        PKModal.alert({ title: 'Error', message: d.error || 'Failed to pause' });
                     }
                 })
                 .catch(function() {
-                    alert('Request failed');
+                    PKModal.alert({ title: 'Error', message: 'Request failed' });
                 });
             } else if (action === 'resume') {
                 fetch('/api/resume/' + encodeURIComponent(_rdAbsId), { method: 'POST', headers: {'Content-Type': 'application/json'} })
@@ -920,11 +920,11 @@
                     if (d.success) {
                         location.reload();
                     } else {
-                        alert(d.error || 'Failed to resume');
+                        PKModal.alert({ title: 'Error', message: d.error || 'Failed to resume' });
                     }
                 })
                 .catch(function() {
-                    alert('Request failed');
+                    PKModal.alert({ title: 'Error', message: 'Request failed' });
                 });
             } else if (action === 'dnf') {
                 showRdConfirm('Mark DNF', 'Mark "' + _rdTitle + '" as Did Not Finish? This book will be excluded from syncing.', 'dnf');
@@ -965,11 +965,11 @@
             if (action === 'dnf') {
                 fetch('/api/dnf/' + encodeURIComponent(_rdAbsId), { method: 'POST', headers: {'Content-Type': 'application/json'} })
                 .then(function(r) { return r.json(); })
-                .then(function(d) { if (d.success) location.reload(); else alert(d.error || 'Error'); });
+                .then(function(d) { if (d.success) location.reload(); else PKModal.alert({ title: 'Error', message: d.error || 'Error' }); });
             } else if (action === 'complete') {
                 fetch('/api/mark-complete/' + encodeURIComponent(_rdAbsId), { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ delete: false }) })
                 .then(function(r) { return r.json(); })
-                .then(function(d) { if (d.success) location.reload(); else alert(d.error || 'Error'); });
+                .then(function(d) { if (d.success) location.reload(); else PKModal.alert({ title: 'Error', message: d.error || 'Error' }); });
             } else if (action === 'clear') {
                 // Post as form — same as dashboard confirm modal
                 var form = document.createElement('form');
@@ -989,8 +989,8 @@
                     if (!r.ok) throw new Error('Request failed');
                     return r.json();
                 })
-                .then(function(d) { if (d.success) location.reload(); else alert(d.error || 'Error'); })
-                .catch(function() { alert('Failed to start re-alignment'); });
+                .then(function(d) { if (d.success) location.reload(); else PKModal.alert({ title: 'Error', message: d.error || 'Error' }); })
+                .catch(function() { PKModal.alert({ title: 'Error', message: 'Failed to start re-alignment' }); });
             } else if (action === 'delete-journal') {
                 var jid = _rdPendingJournalId;
                 _rdPendingJournalId = null;
@@ -1102,5 +1102,7 @@
             });
         })();
     </script>
+    {% include 'partials/confirm_modal.html' %}
+    <script src="/static/js/confirm-modal.js"></script>
 </body>
 </html>

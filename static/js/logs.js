@@ -27,6 +27,22 @@ const loadMore = document.getElementById('loadMore');
 
 let isAtBottom = true;
 let userScrolled = false;
+let filterPending = false;
+
+function showNoLogsMessage() {
+    logContent.textContent = '';
+    var noLogsLine = document.createElement('div');
+    noLogsLine.className = 'log-line';
+    var noLogsLevel = document.createElement('span');
+    noLogsLevel.className = 'log-level INFO';
+    noLogsLevel.textContent = 'INFO';
+    var noLogsMsg = document.createElement('span');
+    noLogsMsg.className = 'log-message';
+    noLogsMsg.textContent = 'No logs found matching current filters';
+    noLogsLine.appendChild(noLogsLevel);
+    noLogsLine.appendChild(noLogsMsg);
+    logContent.appendChild(noLogsLine);
+}
 
 logContent.addEventListener('scroll', () => {
     const isCurrentlyAtBottom = logContent.scrollTop + logContent.clientHeight >= logContent.scrollHeight - 10;
@@ -90,52 +106,44 @@ async function fetchLiveLogs() {
         }
 
         if (data.logs && data.logs.length > 0) {
-            const forceShow = logContent.textContent.includes('Switching filter') || logContent.textContent.includes('Applying filter');
-            appendNewLogs(data.logs, forceShow);
+            appendNewLogs(data.logs, filterPending);
             updateLastUpdated();
-        } else if (logContent.textContent.includes('Switching filter') || logContent.textContent.includes('Applying filter')) {
-            logContent.textContent = '';
-            var noLogsLine = document.createElement('div');
-            noLogsLine.className = 'log-line';
-            var noLogsLevel = document.createElement('span');
-            noLogsLevel.className = 'log-level INFO';
-            noLogsLevel.textContent = 'INFO';
-            var noLogsMsg = document.createElement('span');
-            noLogsMsg.className = 'log-message';
-            noLogsMsg.textContent = 'No logs found matching current filters';
-            noLogsLine.appendChild(noLogsLevel);
-            noLogsLine.appendChild(noLogsMsg);
-            logContent.appendChild(noLogsLine);
+        } else if (filterPending) {
+            filterPending = false;
+            showNoLogsMessage();
         }
 
         return data;
     } catch (error) {
         console.error('Error fetching live logs:', error);
+        filterPending = false;
+        var errDiv = document.createElement('div');
+        errDiv.className = 'log-line';
+        var errLevel = document.createElement('span');
+        errLevel.className = 'log-level ERROR';
+        errLevel.textContent = 'ERROR';
+        var errMsg = document.createElement('span');
+        errMsg.className = 'log-message';
+        errMsg.textContent = 'Failed to fetch live logs: ' + (error.message || error);
+        errDiv.appendChild(errLevel);
+        errDiv.appendChild(errMsg);
+        logContent.appendChild(errDiv);
     }
 }
 
 function appendNewLogs(logs, forceShow = false) {
     if (!logs || logs.length === 0) {
-        if (logContent.textContent.includes('Switching filter') || logContent.textContent.includes('Applying filter')) {
-            logContent.textContent = '';
-            var noLogsLine = document.createElement('div');
-            noLogsLine.className = 'log-line';
-            var noLogsLevel = document.createElement('span');
-            noLogsLevel.className = 'log-level INFO';
-            noLogsLevel.textContent = 'INFO';
-            var noLogsMsg = document.createElement('span');
-            noLogsMsg.className = 'log-message';
-            noLogsMsg.textContent = 'No logs found matching current filters';
-            noLogsLine.appendChild(noLogsLevel);
-            noLogsLine.appendChild(noLogsMsg);
-            logContent.appendChild(noLogsLine);
+        if (filterPending) {
+            filterPending = false;
+            showNoLogsMessage();
         }
         return;
     }
 
     const scrollToBottomAfter = isAtBottom;
 
-    if (logContent.textContent.includes('Switching filter') || logContent.textContent.includes('Applying filter')) {
+    if (filterPending) {
+        filterPending = false;
         logContent.textContent = '';
         shownLogs.clear();
         forceShow = true;
@@ -203,17 +211,7 @@ function displayLogs(data, append = false) {
 
     if (logs.length === 0) {
         if (!append) {
-            var noLogsLine = document.createElement('div');
-            noLogsLine.className = 'log-line';
-            var noLogsLevel = document.createElement('span');
-            noLogsLevel.className = 'log-level INFO';
-            noLogsLevel.textContent = 'INFO';
-            var noLogsMsg = document.createElement('span');
-            noLogsMsg.className = 'log-message';
-            noLogsMsg.textContent = 'No logs found matching current filters';
-            noLogsLine.appendChild(noLogsLevel);
-            noLogsLine.appendChild(noLogsMsg);
-            logContent.appendChild(noLogsLine);
+            showNoLogsMessage();
         }
         return;
     }
@@ -317,6 +315,7 @@ refreshBtn.addEventListener('click', () => {
 logLevel.addEventListener('change', () => {
     if (liveMode.checked) {
         logContent.textContent = '';
+        filterPending = true;
         var loadingDiv = document.createElement('div');
         loadingDiv.className = 'loading';
         var spinner = document.createElement('div');
@@ -327,19 +326,9 @@ logLevel.addEventListener('change', () => {
         shownLogs.clear();
         setTimeout(() => {
             fetchLiveLogs().then(() => {
-                if (logContent.textContent.includes('Switching filter')) {
-                    logContent.textContent = '';
-                    var noLogsLine = document.createElement('div');
-                    noLogsLine.className = 'log-line';
-                    var noLogsLevel = document.createElement('span');
-                    noLogsLevel.className = 'log-level INFO';
-                    noLogsLevel.textContent = 'INFO';
-                    var noLogsMsg = document.createElement('span');
-                    noLogsMsg.className = 'log-message';
-                    noLogsMsg.textContent = 'No logs found matching current filters';
-                    noLogsLine.appendChild(noLogsLevel);
-                    noLogsLine.appendChild(noLogsMsg);
-                    logContent.appendChild(noLogsLine);
+                if (filterPending) {
+                    filterPending = false;
+                    showNoLogsMessage();
                 }
             });
         }, 500);
@@ -357,6 +346,7 @@ linesCount.addEventListener('change', () => {
 searchInput.addEventListener('input', debounce(() => {
     if (liveMode.checked) {
         logContent.textContent = '';
+        filterPending = true;
         var loadingDiv = document.createElement('div');
         loadingDiv.className = 'loading';
         var spinner = document.createElement('div');
@@ -367,19 +357,9 @@ searchInput.addEventListener('input', debounce(() => {
         shownLogs.clear();
         setTimeout(() => {
             fetchLiveLogs().then(() => {
-                if (logContent.textContent.includes('Applying filter')) {
-                    logContent.textContent = '';
-                    var noLogsLine = document.createElement('div');
-                    noLogsLine.className = 'log-line';
-                    var noLogsLevel = document.createElement('span');
-                    noLogsLevel.className = 'log-level INFO';
-                    noLogsLevel.textContent = 'INFO';
-                    var noLogsMsg = document.createElement('span');
-                    noLogsMsg.className = 'log-message';
-                    noLogsMsg.textContent = 'No logs found matching current filters';
-                    noLogsLine.appendChild(noLogsLevel);
-                    noLogsLine.appendChild(noLogsMsg);
-                    logContent.appendChild(noLogsLine);
+                if (filterPending) {
+                    filterPending = false;
+                    showNoLogsMessage();
                 }
             });
         }, 500);

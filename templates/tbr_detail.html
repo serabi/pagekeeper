@@ -208,6 +208,8 @@
         var TBR_ITEM_ID = {{ item.id }};
         var HC_CONFIGURED = {{ 'true' if hc_configured else 'false' }};
     </script>
+    {% include 'partials/confirm_modal.html' %}
+    <script src="/static/js/confirm-modal.js"></script>
     <script src="/static/js/tbr-detail.js?v=1"></script>
 </body>
 </html>

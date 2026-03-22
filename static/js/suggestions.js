@@ -67,7 +67,7 @@
             if (match.source_family === 'bookfusion') {
                 actions.push('<button type="button" class="btn btn-sm" onclick=\'PK_Suggestions.linkBookFusion(' + JSON.stringify(suggestion.source_id) + ', ' + index + ', ' + JSON.stringify(sgSource) + ')\'>Link BookFusion</button>');
                 if (match.bookfusion_ids && match.bookfusion_ids.length) {
-                    actions.push('<button type="button" class="btn btn-sm btn-purple" onclick=\'PK_Suggestions.addBookFusionToDashboard(' + JSON.stringify(JSON.stringify(match.bookfusion_ids)) + ')\'>Add BF Book</button>');
+                    actions.push('<button type="button" class="btn btn-sm btn-purple" onclick=\'PK_Suggestions.addBookFusionToDashboard(' + JSON.stringify(match.bookfusion_ids) + ')\'>Add BF Book</button>');
                 }
             } else {
                 var mappingUrl = '/match?search=' + encodeURIComponent(suggestion.title || '');
@@ -290,8 +290,7 @@
             });
     }
 
-    function addBookFusionToDashboard(bookfusionIdsJson) {
-        var bookfusionIds = JSON.parse(bookfusionIdsJson);
+    function addBookFusionToDashboard(bookfusionIds) {
         fetch('/api/bookfusion/add-to-dashboard', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

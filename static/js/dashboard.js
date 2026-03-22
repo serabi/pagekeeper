@@ -292,6 +292,11 @@ function initDashboard() {
     document.body.addEventListener('click', e => {
         if (e.target.classList.contains('modal-overlay')) refreshPaused = false;
     });
+    document.addEventListener('click', e => {
+        if (e.target.id === 'pk-modal-cancel' || e.target.id === 'pk-modal-confirm') {
+            refreshPaused = false;
+        }
+    });
 
     setTimeout(refreshDashboard, 30000);
 
@@ -390,22 +395,68 @@ function updateKoSyncHash(event) {
     const title = item.dataset.title;
     const currentHash = item.dataset.hash;
 
-    const msg = `Enter new KoSync MD5 Hash for '${title}'\n\nCurrent: ${currentHash}\n\n(Leave empty to automatically recalculate from the ebook file)`;
-    const input = prompt(msg);
+    var backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.style.zIndex = '1100';
 
-    if (input !== null) {
-        const form = document.createElement('form');
+    var content = document.createElement('div');
+    content.className = 'modal-content';
+    content.style.maxWidth = '420px';
+    content.style.padding = '24px';
+
+    var heading = document.createElement('h3');
+    heading.style.cssText = 'margin: 0 0 8px; font-size: 16px; font-weight: 600;';
+    heading.textContent = 'Update KoSync Hash';
+    content.appendChild(heading);
+
+    var desc = document.createElement('p');
+    desc.style.cssText = 'margin: 0 0 6px; font-size: 13px; color: var(--color-text-muted); line-height: 1.5;';
+    desc.textContent = `Enter new KoSync MD5 Hash for "${title}".`;
+    content.appendChild(desc);
+
+    var current = document.createElement('p');
+    current.style.cssText = 'margin: 0 0 12px; font-size: 12px; color: var(--color-text-muted); font-family: monospace;';
+    current.textContent = `Current: ${currentHash}`;
+    content.appendChild(current);
+
+    var hashInput = document.createElement('input');
+    hashInput.type = 'text';
+    hashInput.className = 'form-control';
+    hashInput.placeholder = 'Leave empty to auto-recalculate from ebook file';
+    hashInput.style.cssText = 'width: 100%; margin-bottom: 16px; box-sizing: border-box;';
+    content.appendChild(hashInput);
+
+    var btns = document.createElement('div');
+    btns.style.cssText = 'display: flex; gap: 8px; justify-content: flex-end;';
+
+    var cancelBtn = document.createElement('button');
+    cancelBtn.className = 'btn btn-secondary';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.addEventListener('click', function () { backdrop.remove(); });
+    btns.appendChild(cancelBtn);
+
+    var submitBtn = document.createElement('button');
+    submitBtn.className = 'btn btn-warning';
+    submitBtn.textContent = 'Update';
+    submitBtn.addEventListener('click', function () {
+        var form = document.createElement('form');
         form.method = 'POST';
         form.action = `/update-hash/${encodeURIComponent(bookId)}`;
-        const inputField = document.createElement('input');
-        inputField.type = 'hidden';
-        inputField.name = 'new_hash';
-        inputField.value = input.trim();
-
-        form.appendChild(inputField);
+        var hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.name = 'new_hash';
+        hidden.value = hashInput.value.trim();
+        form.appendChild(hidden);
         document.body.appendChild(form);
         form.submit();
-    }
+    });
+    btns.appendChild(submitBtn);
+
+    content.appendChild(btns);
+    backdrop.appendChild(content);
+    backdrop.addEventListener('click', function (e) { if (e.target === backdrop) backdrop.remove(); });
+    document.body.appendChild(backdrop);
+    hashInput.focus();
 }
 
 function syncNow(bookId, btn) {
@@ -619,6 +670,7 @@ function closeDeleteMappingModal() {
     const modal = document.getElementById('delete-mapping-modal');
     if (modal) modal.style.display = 'none';
     window._mcBookId = null;
+    refreshPaused = false;
 }
 function _dmExecuteFetch(bookId, shouldDelete) {
     closeDeleteMappingModal();
@@ -716,6 +768,7 @@ function closeActionPanel() {
     }
 
     panel.style.display = 'none';
+    refreshPaused = false;
 }
 
 function closeAllMenus() {
