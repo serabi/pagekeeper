@@ -51,3 +51,13 @@ CLAUDE.md
 # Claude Code local settings (personal permissions/config)
 .claude/settings.local.json
 .kilocodemodes
+# Nightshift plan artifacts (keep out of version control)
+.nightshift-plan
+.todos/
+.sidecar/
+.sidecar-agent
+.sidecar-task
+.sidecar-pr
+.sidecar-start.sh
+.sidecar-base
+.td-root

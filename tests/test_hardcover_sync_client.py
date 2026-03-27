@@ -455,7 +455,7 @@ class TestHardcoverSyncClient(unittest.TestCase):
 
         # 'completed' maps to HC_READ (3)
         self.mock_hardcover_client.update_status.assert_called_once_with(50, HC_READ, 200)
-        mock_record_write.assert_called_once_with('Hardcover', 'test-hardcover-book', {'status': HC_READ})
+        mock_record_write.assert_called_once_with('Hardcover', self.test_book.id, {'status': HC_READ})
 
     @patch('src.services.hardcover_service.record_write')
     def test_manual_match_preserves_existing_hardcover_status(self, mock_record_write):

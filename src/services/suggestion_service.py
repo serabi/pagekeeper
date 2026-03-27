@@ -30,14 +30,16 @@ _CONFIDENCE_MEDIUM_THRESHOLD = 0.82
 class SuggestionService:
     """Handles suggestion discovery and creation for unmapped books."""
 
-    def __init__(self,
-                 database_service,
-                 abs_client,
-                 booklore_client,
-                 storyteller_client,
-                 library_service,
-                 books_dir,
-                 ebook_parser):
+    def __init__(
+        self,
+        database_service,
+        abs_client,
+        booklore_client,
+        storyteller_client,
+        library_service,
+        books_dir,
+        ebook_parser,
+    ):
         self.database_service = database_service
         self.abs_client = abs_client
         self.booklore_client = booklore_client
@@ -77,21 +79,23 @@ class SuggestionService:
         if not title:
             return ""
         title = clean_book_title(title)
-        title = re.sub(r'\s*[\(\[].*?[\)\]]', '', title)
-        title = re.sub(r'\.(epub|mobi|azw3?|pdf|fb2|cbz|cbr|md)$', '', title, flags=re.IGNORECASE)
-        title = re.sub(r'[^\w\s]', ' ', title.lower())
-        return ' '.join(title.split())
+        title = re.sub(r"\s*[\(\[].*?[\)\]]", "", title)
+        title = re.sub(r"\.(epub|mobi|azw3?|pdf|fb2|cbz|cbr|md)$", "", title, flags=re.IGNORECASE)
+        title = re.sub(r"[^\w\s]", " ", title.lower())
+        return " ".join(title.split())
 
     def _normalize_author(self, author: str | None) -> str:
         if not author:
             return ""
-        author = re.sub(r'[^\w\s,]', ' ', author.lower())
-        return ' '.join(author.split())
+        author = re.sub(r"[^\w\s,]", " ", author.lower())
+        return " ".join(author.split())
 
     def _extract_title_numbers(self, normalized_title: str) -> set[str]:
         return {token for token in normalized_title.split() if token.isdigit()}
 
-    def _compute_match_score(self, source_title: str, source_author: str, candidate_title: str, candidate_author: str) -> tuple[float, list[str]]:
+    def _compute_match_score(
+        self, source_title: str, source_author: str, candidate_title: str, candidate_author: str
+    ) -> tuple[float, list[str]]:
         norm_source_title = self._normalize_title(source_title)
         norm_source_author = self._normalize_author(source_author)
         norm_candidate_title = self._normalize_title(candidate_title)
@@ -120,7 +124,9 @@ class SuggestionService:
                 author_score = max(author_score, _AUTHOR_PARTIAL_MATCH_FLOOR)
                 evidence.append("author_partial")
 
-        score = (title_score * _TITLE_WEIGHT) + (author_score * _AUTHOR_WEIGHT if norm_source_author and norm_candidate_author else 0.0)
+        score = (title_score * _TITLE_WEIGHT) + (
+            author_score * _AUTHOR_WEIGHT if norm_source_author and norm_candidate_author else 0.0
+        )
 
         source_numbers = self._extract_title_numbers(norm_source_title)
         candidate_numbers = self._extract_title_numbers(norm_candidate_title)
@@ -144,15 +150,15 @@ class SuggestionService:
             bf_books = []
 
         try:
-            linked_abs_ids = list(self.database_service.get_bookfusion_linked_abs_ids() or [])
+            linked_book_ids = list(self.database_service.get_bookfusion_linked_book_ids() or [])
         except TypeError:
-            linked_abs_ids = []
+            linked_book_ids = []
 
-        visible_books = [b for b in bf_books if not getattr(b, 'hidden', False)]
+        visible_books = [b for b in bf_books if not getattr(b, "hidden", False)]
         by_title_author = {}
         by_title = {}
         for book in visible_books:
-            if book.matched_abs_id:
+            if book.matched_book_id:
                 continue
             norm_title = self._normalize_title(book.title or book.filename or "")
             norm_author = self._normalize_author(book.authors or "")
@@ -163,7 +169,7 @@ class SuggestionService:
             by_title.setdefault(norm_title, []).append(book)
         return {
             "books": visible_books,
-            "linked_abs_ids": linked_abs_ids,
+            "linked_book_ids": linked_book_ids,
             "by_title_author": by_title_author,
             "by_title": by_title,
             "has_catalog": bool(visible_books),
@@ -194,28 +200,32 @@ class SuggestionService:
             last_finished_at = self._rescan_status.get("last_finished_at") or 0
             elapsed = time.time() - last_finished_at if last_finished_at else min_interval
             if not force and elapsed < min_interval:
-                self._rescan_status.update({
-                    "running": False,
-                    "queued": False,
-                    "rate_limited": True,
-                    "next_allowed_in": max(0, min_interval - int(elapsed)),
-                    "message": "Rescan recently completed. Please wait before running it again.",
-                })
+                self._rescan_status.update(
+                    {
+                        "running": False,
+                        "queued": False,
+                        "rate_limited": True,
+                        "next_allowed_in": max(0, min_interval - int(elapsed)),
+                        "message": "Rescan recently completed. Please wait before running it again.",
+                    }
+                )
                 return dict(self._rescan_status)
 
-            self._rescan_status.update({
-                "running": True,
-                "queued": True,
-                "rate_limited": False,
-                "next_allowed_in": 0,
-                "last_started_at": time.time(),
-                "phase": "queued",
-                "message": "Queued suggestions rescan.",
-                "created": 0,
-                "updated": 0,
-                "deleted": 0,
-                "total": 0,
-            })
+            self._rescan_status.update(
+                {
+                    "running": True,
+                    "queued": True,
+                    "rate_limited": False,
+                    "next_allowed_in": 0,
+                    "last_started_at": time.time(),
+                    "phase": "queued",
+                    "message": "Queued suggestions rescan.",
+                    "created": 0,
+                    "updated": 0,
+                    "deleted": 0,
+                    "total": 0,
+                }
+            )
             self._rescan_thread = threading.Thread(
                 target=self._run_rescan_job,
                 daemon=True,
@@ -224,7 +234,9 @@ class SuggestionService:
             self._rescan_thread.start()
             return dict(self._rescan_status)
 
-    def _build_library_candidates(self, bookfusion_context: dict | None = None, include_filesystem: bool = True) -> list[dict]:
+    def _build_library_candidates(
+        self, bookfusion_context: dict | None = None, include_filesystem: bool = True
+    ) -> list[dict]:
         candidates = []
         seen = set()
 
@@ -233,23 +245,25 @@ class SuggestionService:
         if bl_client and bl_client.is_configured():
             try:
                 for book in bl_client.get_all_books() or []:
-                    filename = book.get('fileName', '')
-                    if not filename or not filename.lower().endswith('.epub'):
+                    filename = book.get("fileName", "")
+                    if not filename or not filename.lower().endswith(".epub"):
                         continue
                     dedupe_key = ("booklore", filename.lower())
                     if dedupe_key in seen:
                         continue
                     seen.add(dedupe_key)
-                    candidates.append({
-                        "source_family": "booklore",
-                        "source": "booklore",
-                        "source_key": f"booklore:{filename}",
-                        "title": book.get('title') or Path(filename).stem,
-                        "author": book.get('authors') or '',
-                        "filename": filename,
-                        "id": str(book.get('id') or ''),
-                        "action_kind": "create_mapping",
-                    })
+                    candidates.append(
+                        {
+                            "source_family": "booklore",
+                            "source": "booklore",
+                            "source_key": f"booklore:{filename}",
+                            "title": book.get("title") or Path(filename).stem,
+                            "author": book.get("authors") or "",
+                            "filename": filename,
+                            "id": str(book.get("id") or ""),
+                            "action_kind": "create_mapping",
+                        }
+                    )
             except Exception as e:
                 logger.warning(f"Booklore cache scan failed during suggestions rescan: {e}")
 
@@ -263,16 +277,18 @@ class SuggestionService:
                     if dedupe_key in seen:
                         continue
                     seen.add(dedupe_key)
-                    candidates.append({
-                        "source_family": "filesystem",
-                        "source": "filesystem",
-                        "source_key": f"filesystem:{epub.name}",
-                        "title": epub.stem,
-                        "author": '',
-                        "filename": epub.name,
-                        "path": str(epub),
-                        "action_kind": "create_mapping",
-                    })
+                    candidates.append(
+                        {
+                            "source_family": "filesystem",
+                            "source": "filesystem",
+                            "source_key": f"filesystem:{epub.name}",
+                            "title": epub.stem,
+                            "author": "",
+                            "filename": epub.name,
+                            "path": str(epub),
+                            "action_kind": "create_mapping",
+                        }
+                    )
                     if idx % batch_size == 0:
                         self._update_rescan_status(
                             phase="loading_filesystem",
@@ -297,21 +313,25 @@ class SuggestionService:
                         last_highlighted_at = highlight_range[1].astimezone(UTC).isoformat()
                     except Exception:
                         last_highlighted_at = highlight_range[1].isoformat()
-                candidates.append({
-                    "source_family": "bookfusion",
-                    "source": "bookfusion",
-                    "source_key": f"bookfusion:{book.bookfusion_id}",
-                    "title": book.title or book.filename or '',
-                    "author": book.authors or '',
-                    "bookfusion_ids": [book.bookfusion_id],
-                    "highlight_count": book.highlight_count or 0,
-                    "last_highlighted_at": last_highlighted_at,
-                    "action_kind": "link_existing",
-                })
+                candidates.append(
+                    {
+                        "source_family": "bookfusion",
+                        "source": "bookfusion",
+                        "source_key": f"bookfusion:{book.bookfusion_id}",
+                        "title": book.title or book.filename or "",
+                        "author": book.authors or "",
+                        "bookfusion_ids": [book.bookfusion_id],
+                        "highlight_count": book.highlight_count or 0,
+                        "last_highlighted_at": last_highlighted_at,
+                        "action_kind": "link_existing",
+                    }
+                )
 
         return candidates
 
-    def _apply_bookfusion_evidence(self, source_title: str, source_author: str, match: dict, bookfusion_context: dict) -> dict:
+    def _apply_bookfusion_evidence(
+        self, source_title: str, source_author: str, match: dict, bookfusion_context: dict
+    ) -> dict:
         evidence = list(match.get("evidence") or [])
         score = float(match.get("score") or 0.0)
         norm_title = self._normalize_title(source_title)
@@ -341,7 +361,9 @@ class SuggestionService:
         match["confidence"] = self._score_to_confidence(match["score"])
         return match
 
-    def _rank_candidates_for_book(self, source_title: str, source_author: str, candidates: list[dict], bookfusion_context: dict | None = None) -> list[dict]:
+    def _rank_candidates_for_book(
+        self, source_title: str, source_author: str, candidates: list[dict], bookfusion_context: dict | None = None
+    ) -> list[dict]:
         ranked = []
         for candidate in candidates:
             score, evidence = self._compute_match_score(
@@ -364,7 +386,10 @@ class SuggestionService:
                 match = self._apply_bookfusion_evidence(source_title, source_author, match, bookfusion_context)
             ranked.append(match)
 
-        ranked.sort(key=lambda m: (m.get("score", 0.0), m.get("source_family") == "booklore", m.get("highlight_count", 0)), reverse=True)
+        ranked.sort(
+            key=lambda m: (m.get("score", 0.0), m.get("source_family") == "booklore", m.get("highlight_count", 0)),
+            reverse=True,
+        )
         return ranked[:6]
 
     def queue_suggestion(self, abs_id: str) -> None:
@@ -397,15 +422,17 @@ class SuggestionService:
             all_books = self.database_service.get_all_books()
             mapped_ids = {b.abs_id for b in all_books}
 
-            logger.debug(f"Checking for suggestions: {len(abs_progress_map)} books with progress, {len(mapped_ids)} already mapped")
+            logger.debug(
+                f"Checking for suggestions: {len(abs_progress_map)} books with progress, {len(mapped_ids)} already mapped"
+            )
 
             for abs_id, item_data in abs_progress_map.items():
                 if abs_id in mapped_ids:
                     logger.debug(f"Skipping {abs_id}: already mapped")
                     continue
 
-                duration = item_data.get('duration', 0)
-                current_time = item_data.get('currentTime', 0)
+                duration = item_data.get("duration", 0)
+                current_time = item_data.get("currentTime", 0)
 
                 if duration > 0:
                     pct = current_time / duration
@@ -461,10 +488,10 @@ class SuggestionService:
         # Index audiobooks by cleaned title for fuzzy matching
         abs_by_title: dict[str, list[dict]] = {}
         for ab in all_audiobooks:
-            meta = ab.get('media', {}).get('metadata', {})
-            title = meta.get('title', '')
+            meta = ab.get("media", {}).get("metadata", {})
+            title = meta.get("title", "")
             if title:
-                clean = re.sub(r'\s*[\(\[].*?[\)\]]', '', title).strip().lower()
+                clean = re.sub(r"\s*[\(\[].*?[\)\]]", "", title).strip().lower()
                 if clean:
                     abs_by_title.setdefault(clean, []).append(ab)
 
@@ -473,15 +500,15 @@ class SuggestionService:
             try:
                 positions = self.storyteller_client.get_all_positions_bulk()
                 for title_lower, pos_data in positions.items():
-                    pct = pos_data.get('pct', 0)
-                    uuid = pos_data.get('uuid')
+                    pct = pos_data.get("pct", 0)
+                    uuid = pos_data.get("uuid")
                     if not uuid or pct < 0.01 or pct > 0.70:
                         continue
                     if uuid in mapped_storyteller_uuids:
                         continue
 
                     # Search ABS for a matching audiobook
-                    clean_title = re.sub(r'\s*[\(\[].*?[\)\]]', '', title_lower).strip().lower()
+                    clean_title = re.sub(r"\s*[\(\[].*?[\)\]]", "", title_lower).strip().lower()
                     matches = self._find_abs_audiobook_matches(clean_title, abs_by_title, mapped_abs_ids)
                     if matches:
                         self._save_reverse_suggestion(matches, clean_title, f"storyteller:{uuid}")
@@ -493,8 +520,8 @@ class SuggestionService:
             try:
                 bl_books = self.booklore_client.get_all_books()
                 for bl_book in bl_books:
-                    title = bl_book.get('title', '')
-                    filename = bl_book.get('fileName', '')
+                    title = bl_book.get("title", "")
+                    filename = bl_book.get("fileName", "")
                     if not title:
                         continue
 
@@ -502,7 +529,7 @@ class SuggestionService:
                     if not pct_raw or pct_raw < 0.01 or pct_raw > 0.70:
                         continue
 
-                    clean_title = re.sub(r'\s*[\(\[].*?[\)\]]', '', title).strip().lower()
+                    clean_title = re.sub(r"\s*[\(\[].*?[\)\]]", "", title).strip().lower()
                     source_key = f"booklore:{filename}"
                     matches = self._find_abs_audiobook_matches(clean_title, abs_by_title, mapped_abs_ids)
                     if matches:
@@ -519,24 +546,26 @@ class SuggestionService:
             # Check for substring match in either direction
             if clean_title in indexed_title or indexed_title in clean_title:
                 for ab in audiobooks:
-                    ab_id = ab.get('id')
+                    ab_id = ab.get("id")
                     if ab_id in mapped_abs_ids:
                         continue
-                    meta = ab.get('media', {}).get('metadata', {})
-                    matches.append({
-                        "source": "abs_audiobook",
-                        "abs_id": ab_id,
-                        "title": meta.get('title'),
-                        "author": meta.get('authorName'),
-                        "confidence": "high" if clean_title == indexed_title else "medium",
-                    })
+                    meta = ab.get("media", {}).get("metadata", {})
+                    matches.append(
+                        {
+                            "source": "abs_audiobook",
+                            "abs_id": ab_id,
+                            "title": meta.get("title"),
+                            "author": meta.get("authorName"),
+                            "confidence": "high" if clean_title == indexed_title else "medium",
+                        }
+                    )
         return matches
 
     def _save_reverse_suggestion(self, matches: list[dict], title: str, source_key: str):
         """Save a reverse suggestion (ebook → audiobook) using the first ABS match as source_id."""
         # Use the best ABS match as the anchor
-        best = next((m for m in matches if m.get('confidence') == 'high'), matches[0])
-        abs_id = best['abs_id']
+        best = next((m for m in matches if m.get("confidence") == "high"), matches[0])
+        abs_id = best["abs_id"]
 
         if self.database_service.is_suggestion_ignored(abs_id):
             return
@@ -550,10 +579,10 @@ class SuggestionService:
 
         def _match_key(match):
             return (
-                match.get('abs_id'),
-                match.get('source_key'),
-                match.get('title'),
-                match.get('author'),
+                match.get("abs_id"),
+                match.get("source_key"),
+                match.get("title"),
+                match.get("author"),
             )
 
         for match in (existing.matches if existing else []) + matches_with_provenance:
@@ -567,13 +596,13 @@ class SuggestionService:
             current = merged_matches[prior]
             merged_matches[prior] = {
                 **current,
-                **{k: v for k, v in match.items() if v not in (None, '')},
+                **{k: v for k, v in match.items() if v not in (None, "")},
             }
 
         suggestion = PendingSuggestion(
             source_id=abs_id,
-            title=(existing.title if existing and existing.title else best.get('title', title)),
-            author=(existing.author if existing and existing.author else best.get('author')),
+            title=(existing.title if existing and existing.title else best.get("title", title)),
+            author=(existing.author if existing and existing.author else best.get("author")),
             cover_url=(existing.cover_url if existing and existing.cover_url else cover),
             matches_json=json.dumps(merged_matches),
         )
@@ -614,20 +643,11 @@ class SuggestionService:
         if os.environ.get("SUGGESTIONS_ENABLED", "true").lower() != "true":
             return {"created": 0, "updated": 0, "deleted": 0, "total": 0, "bookfusion_catalog": False}
 
-        if not self.abs_client:
-            return {"created": 0, "updated": 0, "deleted": 0, "total": 0, "bookfusion_catalog": False}
-
-        try:
-            self._update_rescan_status(phase="loading_abs", message="Loading ABS audiobooks...")
-            all_abs_books = self.abs_client.get_all_audiobooks() or []
-        except Exception as e:
-            logger.warning(f"Suggestions rescan failed to load ABS audiobooks: {e}")
-            return {"created": 0, "updated": 0, "deleted": 0, "total": 0, "bookfusion_catalog": False}
-
         mapped_ids = {b.abs_id for b in self.database_service.get_all_books()}
         existing_actionable = {
-            s.source_id: s for s in self.database_service.get_all_actionable_suggestions()
-            if getattr(s, 'source', 'abs') == 'abs'
+            s.source_id: s
+            for s in self.database_service.get_all_actionable_suggestions()
+            if getattr(s, "source", "abs") == "abs"
         }
         bookfusion_context = self._get_bookfusion_context()
         candidates = self._build_library_candidates(bookfusion_context=bookfusion_context, include_filesystem=True)
@@ -635,58 +655,68 @@ class SuggestionService:
         created = 0
         updated = 0
         kept_ids = set()
-        total_books = len(all_abs_books)
 
-        self._update_rescan_status(phase="scoring", message=f"Scoring {total_books} ABS books...")
-        for idx, abs_book in enumerate(all_abs_books, start=1):
-            abs_id = abs_book.get('id')
-            if not abs_id or abs_id in mapped_ids or self.database_service.is_suggestion_ignored(abs_id):
-                continue
+        if self.abs_client:
+            try:
+                self._update_rescan_status(phase="loading_abs", message="Loading ABS audiobooks...")
+                all_abs_books = self.abs_client.get_all_audiobooks() or []
+            except Exception as e:
+                logger.warning(f"Suggestions rescan failed to load ABS audiobooks: {e}")
+                all_abs_books = []
 
-            meta = abs_book.get('media', {}).get('metadata', {})
-            title = meta.get('title') or ''
-            author = meta.get('authorName') or ''
-            matches = self._rank_candidates_for_book(title, author, candidates, bookfusion_context=bookfusion_context)
+            total_books = len(all_abs_books)
+            self._update_rescan_status(phase="scoring", message=f"Scoring {total_books} ABS books...")
+            for idx, abs_book in enumerate(all_abs_books, start=1):
+                abs_id = abs_book.get("id")
+                if not abs_id or abs_id in mapped_ids or self.database_service.is_suggestion_ignored(abs_id):
+                    continue
 
-            if not matches:
-                continue
-
-            kept_ids.add(abs_id)
-            existing = existing_actionable.get(abs_id)
-            suggestion = PendingSuggestion(
-                source_id=abs_id,
-                title=title,
-                author=author,
-                cover_url=f"/api/cover-proxy/{abs_id}",
-                matches_json=json.dumps(matches),
-                status='hidden' if existing and getattr(existing, 'status', None) in ('hidden', 'dismissed') else 'pending',
-            )
-            if abs_id in existing_actionable:
-                updated += 1
-            else:
-                created += 1
-            self.database_service.save_pending_suggestion(suggestion)
-
-            if idx % 25 == 0:
-                self._update_rescan_status(
-                    phase="scoring",
-                    message=f"Scoring ABS books... {idx}/{total_books}",
-                    created=created,
-                    updated=updated,
+                meta = abs_book.get("media", {}).get("metadata", {})
+                title = meta.get("title") or ""
+                author = meta.get("authorName") or ""
+                matches = self._rank_candidates_for_book(
+                    title, author, candidates, bookfusion_context=bookfusion_context
                 )
-                time.sleep(0.01)
+
+                if not matches:
+                    continue
+
+                kept_ids.add(abs_id)
+                existing = existing_actionable.get(abs_id)
+                suggestion = PendingSuggestion(
+                    source_id=abs_id,
+                    title=title,
+                    author=author,
+                    cover_url=f"/api/cover-proxy/{abs_id}",
+                    matches_json=json.dumps(matches),
+                    status="hidden" if existing and getattr(existing, "status", None) == "hidden" else "pending",
+                )
+                if abs_id in existing_actionable:
+                    updated += 1
+                else:
+                    created += 1
+                self.database_service.save_pending_suggestion(suggestion)
+
+                if idx % 25 == 0:
+                    self._update_rescan_status(
+                        phase="scoring",
+                        message=f"Scoring ABS books... {idx}/{total_books}",
+                        created=created,
+                        updated=updated,
+                    )
+                    time.sleep(0.01)
 
         deleted = 0
-        self._update_rescan_status(phase="cleanup", message="Cleaning stale suggestions...")
-        for source_id in list(existing_actionable.keys()):
-            if source_id not in kept_ids:
-                if self.database_service.resolve_suggestion(source_id):
-                    deleted += 1
+        if kept_ids:
+            self._update_rescan_status(phase="cleanup", message="Cleaning stale suggestions...")
+            for source_id in list(existing_actionable.keys()):
+                if source_id not in kept_ids:
+                    if self.database_service.resolve_suggestion(source_id):
+                        deleted += 1
 
         total = len(self.database_service.get_all_actionable_suggestions())
         logger.info(
-            "Suggestions rescan completed: created=%s updated=%s deleted=%s total=%s",
-            created, updated, deleted, total
+            "Suggestions rescan completed: created=%s updated=%s deleted=%s total=%s", created, updated, deleted, total
         )
         return {
             "created": created,
@@ -711,10 +741,10 @@ class SuggestionService:
                 logger.debug(f"Suggestion failed: Could not get details for {abs_id}")
                 return
 
-            media = item.get('media', {})
-            metadata = media.get('metadata', {})
-            title = metadata.get('title') or ''
-            author = metadata.get('authorName') or ''
+            media = item.get("media", {})
+            metadata = media.get("metadata", {})
+            title = metadata.get("title") or ""
+            author = metadata.get("authorName") or ""
             cover = f"/api/cover-proxy/{abs_id}"
             logger.debug(f"Checking suggestions for '{title}' (Author: {author})")
 
@@ -738,16 +768,18 @@ class SuggestionService:
                         filename = book.get("fileName", "")
                         if not filename or not filename.lower().endswith(".epub"):
                             continue
-                        live_candidates.append({
-                            "source_family": "booklore",
-                            "source": "booklore",
-                            "source_key": f"booklore:{filename}",
-                            "title": book.get("title") or Path(filename).stem,
-                            "author": book.get("authors") or "",
-                            "filename": filename,
-                            "id": str(book.get("id") or ""),
-                            "action_kind": "create_mapping",
-                        })
+                        live_candidates.append(
+                            {
+                                "source_family": "booklore",
+                                "source": "booklore",
+                                "source_key": f"booklore:{filename}",
+                                "title": book.get("title") or Path(filename).stem,
+                                "author": book.get("authors") or "",
+                                "filename": filename,
+                                "id": str(book.get("id") or ""),
+                                "action_kind": "create_mapping",
+                            }
+                        )
                     matches.extend(
                         self._rank_candidates_for_book(
                             title,
@@ -759,7 +791,11 @@ class SuggestionService:
                 except Exception as e:
                     logger.warning(f"Booklore live search failed during suggestion: {e}")
 
-            if self.library_service and self.library_service.cwa_client and self.library_service.cwa_client.is_configured():
+            if (
+                self.library_service
+                and self.library_service.cwa_client
+                and self.library_service.cwa_client.is_configured()
+            ):
                 try:
                     cwa_results = self.library_service.cwa_client.search_ebooks(query)
                     for cr in cwa_results or []:
@@ -767,8 +803,8 @@ class SuggestionService:
                             "source_family": "cwa",
                             "source": "cwa",
                             "source_key": f"cwa:{cr.get('id')}",
-                            "title": cr.get('title'),
-                            "author": cr.get('author'),
+                            "title": cr.get("title"),
+                            "author": cr.get("author"),
                             "filename": f"cwa_{cr.get('id', 'unknown')}.{cr.get('ext', 'epub')}",
                             "action_kind": "create_mapping",
                         }
@@ -795,11 +831,7 @@ class SuggestionService:
                 return
 
             suggestion = PendingSuggestion(
-                source_id=abs_id,
-                title=title,
-                author=author,
-                cover_url=cover,
-                matches_json=json.dumps(matches)
+                source_id=abs_id, title=title, author=author, cover_url=cover, matches_json=json.dumps(matches)
             )
             self.database_service.save_pending_suggestion(suggestion)
             match_count = len(matches)

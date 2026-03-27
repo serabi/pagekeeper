@@ -129,7 +129,7 @@
         {% if item.description %}
         <section class="r-detail-section">
             <h3 class="r-section-title">About</h3>
-            <div class="tbr-description">{{ item.description }}</div>
+            <div class="tbr-description">{{ item.description | sanitize_html }}</div>
         </section>
         {% endif %}
 
@@ -208,6 +208,8 @@
         var TBR_ITEM_ID = {{ item.id }};
         var HC_CONFIGURED = {{ 'true' if hc_configured else 'false' }};
     </script>
+    {% include 'partials/confirm_modal.html' %}
+    <script src="/static/js/confirm-modal.js"></script>
     <script src="/static/js/tbr-detail.js?v=1"></script>
 </body>
 </html>

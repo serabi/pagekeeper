@@ -37,6 +37,8 @@ class BookloreSyncClient(SyncClient):
     def get_service_state(self, book: Book, prev_state: State | None, title_snip: str = "", bulk_context: dict = None) -> ServiceState | None:
         # FIX: Use original filename if available (Tri-Link), otherwise standard filename
         epub = book.original_ebook_filename or book.ebook_filename
+        if not epub:
+            return None
 
         if bulk_context is not None:
             lookup_key = Path(epub).name.lower() if epub else ''
@@ -49,7 +51,7 @@ class BookloreSyncClient(SyncClient):
             bl_pct, _ = self.booklore_client.get_progress(epub)
 
         if bl_pct is None:
-            logger.warning("BookLore percentage is None - returning None for service state")
+            logger.debug("BookLore percentage is None - returning None for service state")
             return None
 
         # Get previous BookLore state
@@ -69,7 +71,7 @@ class BookloreSyncClient(SyncClient):
 
     def get_text_from_current_state(self, book: Book, state: ServiceState) -> str | None:
         bl_pct = state.current.get('pct')
-        epub = book.ebook_filename
+        epub = book.original_ebook_filename or book.ebook_filename
         if bl_pct is not None and epub and self.ebook_parser:
             return self.ebook_parser.get_text_at_percentage(epub, bl_pct)
         return None
@@ -82,7 +84,7 @@ class BookloreSyncClient(SyncClient):
         if success:
             try:
                 from src.services.write_tracker import record_write
-                record_write(self.client_name, book.abs_id)
+                record_write(self.client_name, book.id)
             except ImportError:
                 pass
         updated_state = {

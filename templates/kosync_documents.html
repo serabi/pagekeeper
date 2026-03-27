@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>{{ title_prefix }}KoSync Documents - PageKeeper</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/png" href="/static/icon.png">
+    <link rel="apple-touch-icon" href="/static/icon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/variables.css">
+    <link rel="stylesheet" href="/static/css/base.css">
+    <link rel="stylesheet" href="/static/css/layout.css">
+    <link rel="stylesheet" href="/static/css/components.css">
+    <link rel="stylesheet" href="/static/css/kosync.css">
+</head>
+
+<body>
+    {% include 'partials/navbar.html' %}
+
+    <div class="container kosync-shell">
+        <div class="kosync-page-header">
+            <div>
+                <p class="kosync-page-kicker">KoSync</p>
+                <h2 class="kosync-page-title">Document Management</h2>
+                <p class="kosync-page-description">Manage KOReader sync hashes and book linkages</p>
+            </div>
+            <div>
+                <a href="/settings#kosync" class="btn btn-secondary" style="font-size: 12px;">Back to Settings</a>
+            </div>
+        </div>
+
+        <div class="kosync-stats" id="kosync-stats"></div>
+
+        {# Healthy: linked and recently active #}
+        <section class="kosync-section" id="healthy-section">
+            <div class="kosync-section-header">
+                <h3 class="kosync-section-title">Healthy</h3>
+                <button class="kosync-section-toggle" id="toggle-healthy" type="button">hide</button>
+            </div>
+            <div id="healthy-list"></div>
+        </section>
+
+        {# Needs Attention: unlinked docs + orphaned hashes #}
+        <section class="kosync-section" id="attention-section">
+            <div class="kosync-section-header">
+                <h3 class="kosync-section-title">Needs Attention</h3>
+            </div>
+            <p class="kosync-section-help">Unlinked hashes from KOReader devices and orphaned hashes causing sync errors.</p>
+            <div id="attention-list"></div>
+        </section>
+
+        {# Stale: linked but no activity in 30+ days #}
+        <section class="kosync-section" id="stale-section">
+            <div class="kosync-section-header">
+                <h3 class="kosync-section-title">Stale (30+ days)</h3>
+                <button class="kosync-section-toggle" id="toggle-stale" type="button">show</button>
+            </div>
+            <div id="stale-list" style="display: none;"></div>
+        </section>
+    </div>
+
+    {% include 'partials/confirm_modal.html' %}
+
+    <script>
+        window.PK_PAGE_DATA = {
+            documents: {{ documents|tojson }},
+            orphanedBooks: {{ orphaned_books|tojson }}
+        };
+    </script>
+    <script src="/static/js/confirm-modal.js"></script>
+    <script src="/static/js/kosync-documents.js"></script>
+</body>
+
+</html>

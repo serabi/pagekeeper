@@ -9,7 +9,7 @@ from pathlib import Path
 from flask import Blueprint, render_template
 
 from src.blueprints.helpers import (
-    booklore_cover_proxy_prefix,
+    find_booklore_metadata,
     get_abs_service,
     get_container,
     get_database_service,
@@ -17,6 +17,7 @@ from src.blueprints.helpers import (
     get_hardcover_book_url,
     get_service_web_url,
 )
+from src.utils.cover_resolver import resolve_book_covers
 from src.version import APP_VERSION
 
 logger = logging.getLogger(__name__)
@@ -97,6 +98,11 @@ def index():
     for client_name, client in sync_clients.items():
         integrations[client_name.lower()] = client.is_configured()
 
+    # Merge Booklore 2 into booklore flag so templates show the service
+    # when either instance is configured
+    if integrations.get('booklore2') and not integrations.get('booklore'):
+        integrations['booklore'] = True
+
     # BookFusion integration status
     bf_client = container.bookfusion_client()
     integrations["bookfusion"] = bf_client.is_configured()
@@ -106,8 +112,8 @@ def index():
     bf_linked_ids = set()
     bf_highlight_counts = {}
     try:
-        bf_linked_ids = database_service.get_bookfusion_linked_abs_ids()
-        bf_highlight_counts = database_service.get_bookfusion_highlight_counts()
+        bf_linked_ids = database_service.get_bookfusion_linked_book_ids()
+        bf_highlight_counts = database_service.get_bookfusion_highlight_counts_by_book_id()
     except Exception as e:
         logger.warning(f"Could not fetch BookFusion link data: {e}")
 
@@ -132,7 +138,7 @@ def index():
         states = states_by_book.get(book.id, [])
         state_by_client = {state.client_name: state for state in states}
 
-        sync_mode = getattr(book, "sync_mode", "audiobook")
+        sync_mode = book.sync_mode
         if sync_mode == "ebook_only":
             book_type = "ebook-only"
         elif not book.ebook_filename:
@@ -140,26 +146,11 @@ def index():
         else:
             book_type = "linked"
 
-        # Look up Booklore metadata by ebook_filename or original_ebook_filename
-        # Prefer entries that have a title, since we use this for display enrichment
         # bl_meta: filtered to enabled instances (used for covers/deep-links)
-        bl_meta = None
-        for fn in (book.ebook_filename, getattr(book, "original_ebook_filename", None)):
-            if fn:
-                candidates = booklore_by_filename.get(fn.lower(), [])
-                bl_meta = next((b for b in candidates if b.title), candidates[0] if candidates else None)
-                if bl_meta:
-                    break
+        bl_meta = find_booklore_metadata(book, booklore_by_filename)
 
         # bl_meta_enrichment: unfiltered fallback for title/author (stale metadata is fine)
-        bl_meta_enrichment = bl_meta
-        if not bl_meta_enrichment:
-            for fn in (book.ebook_filename, getattr(book, "original_ebook_filename", None)):
-                if fn:
-                    candidates = booklore_by_filename_all.get(fn.lower(), [])
-                    bl_meta_enrichment = next((b for b in candidates if b.title), candidates[0] if candidates else None)
-                    if bl_meta_enrichment:
-                        break
+        bl_meta_enrichment = bl_meta or find_booklore_metadata(book, booklore_by_filename_all)
 
         # Skip ABS metadata enrichment for ebook-only books (synthetic ID won't resolve)
         if book_type == "ebook-only":
@@ -167,24 +158,38 @@ def index():
             abs_author = (bl_meta_enrichment.authors or "") if bl_meta_enrichment else ""
         else:
             _abs_meta = abs_metadata_by_id.get(book.abs_id, {})
-            abs_subtitle = _abs_meta.get("subtitle", "")
-            abs_author = _abs_meta.get("author", "")
+            abs_subtitle = _abs_meta.get("subtitle", "") or book.subtitle or ""
+            abs_author = _abs_meta.get("author", "") or book.author or ""
 
         # Enrich title from Booklore if stored title looks like a filename
         enriched_title = book.title
         if bl_meta_enrichment and bl_meta_enrichment.title:
             stems = set()
-            for fn in (book.ebook_filename, getattr(book, "original_ebook_filename", None)):
+            for fn in (book.ebook_filename, book.original_ebook_filename):
                 if fn:
                     stems.add(Path(fn).stem)
             if book.title in stems or book.title in (
                 book.ebook_filename,
-                getattr(book, "original_ebook_filename", None),
+                book.original_ebook_filename,
             ):
                 enriched_title = bl_meta_enrichment.title
                 # Persist the improved title so it sticks (batched after loop)
                 book.title = bl_meta_enrichment.title
                 books_needing_title_save.append(book)
+
+        # Opportunistic refresh: cache author/subtitle from live ABS data
+        if book_type != "ebook-only" and book.abs_id in abs_metadata_by_id:
+            _live = abs_metadata_by_id[book.abs_id]
+            _live_author = _live.get("author", "")
+            _live_subtitle = _live.get("subtitle", "")
+            if _live_author and _live_author != book.author:
+                book.author = _live_author
+                if book not in books_needing_title_save:
+                    books_needing_title_save.append(book)
+            if _live_subtitle and _live_subtitle != book.subtitle:
+                book.subtitle = _live_subtitle
+                if book not in books_needing_title_save:
+                    books_needing_title_save.append(book)
 
         mapping = {
             "id": book.id,
@@ -198,7 +203,7 @@ def index():
             "status": book.status,
             "sync_mode": sync_mode,
             "book_type": book_type,
-            "activity_flag": getattr(book, "activity_flag", False),
+            "activity_flag": book.activity_flag,
             "unified_progress": 0,
             "duration": book.duration or 0,
             "storyteller_uuid": book.storyteller_uuid,
@@ -208,7 +213,7 @@ def index():
         }
 
         # Storyteller submission status (from bulk-fetched dict)
-        st_submission = st_submissions_by_book.get(book.abs_id)  # still keyed by abs_id from bulk query
+        st_submission = st_submissions_by_book.get(book.id)
         if st_submission:
             mapping["storyteller_submission_status"] = st_submission.status
 
@@ -311,9 +316,9 @@ def index():
             mapping["hardcover_url"] = None
 
         # BookFusion link data
-        is_bf_linked = (book.abs_id in bf_linked_ids) or (book.abs_id or "").startswith("bf-")
+        is_bf_linked = (book.id in bf_linked_ids) or (book.abs_id or "").startswith("bf-")
         mapping["bookfusion_linked"] = is_bf_linked
-        mapping["bookfusion_highlight_count"] = bf_highlight_counts.get(book.abs_id, 0) if book.abs_id else 0
+        mapping["bookfusion_highlight_count"] = bf_highlight_counts.get(book.id, 0)
 
         mapping["unified_progress"] = min(max_progress, 100.0)
         mapping["latest_activity_at"] = latest_update_time or None
@@ -329,27 +334,12 @@ def index():
         else:
             mapping["last_sync"] = "Never"
 
-        if book.abs_id and book_type != "ebook-only":
-            mapping["cover_url"] = abs_service.get_cover_proxy_url(book.abs_id)
-        else:
-            mapping["cover_url"] = None
-
-        # Custom cover URL override (user-pasted) takes precedence over auto-discovered sources
-        if book.custom_cover_url:
-            mapping["cover_url"] = book.custom_cover_url
-
-        # Booklore cover fallback for books without an ABS or custom cover
-        if not mapping["cover_url"] and mapping.get("booklore_id") and bl_meta:
-            prefix = booklore_cover_proxy_prefix(bl_meta.server_id)
-            mapping["cover_url"] = f"{prefix}/{mapping['booklore_id']}"
-
-        # KOSync cover fallback (lazy extraction — covers endpoint extracts on demand)
-        if not mapping["cover_url"] and book.kosync_doc_id:
-            mapping["cover_url"] = f'/covers/{book.kosync_doc_id}.jpg'
-
-        # Hardcover cover fallback
-        if not mapping["cover_url"] and mapping.get("hardcover_cover_url"):
-            mapping["cover_url"] = mapping["hardcover_cover_url"]
+        covers = resolve_book_covers(
+            book, abs_service, database_service, book_type,
+            booklore_meta=bl_meta, hardcover_details=hardcover_details,
+        )
+        mapping["cover_url"] = covers['cover_url']
+        mapping["placeholder_logo"] = covers['placeholder_logo']
 
         duration = mapping.get("duration", 0)
         progress_pct = mapping.get("unified_progress", 0)
@@ -373,6 +363,27 @@ def index():
 
     booklore_label = os.environ.get("BOOKLORE_LABEL", "Booklore") or "Booklore"
 
+    # Unlinked KoSync documents — for dashboard toast + pending identification section
+    kosync_unlinked_count = 0
+    unlinked_reading = []
+    kosync_active = os.environ.get('KOSYNC_ENABLED', '').lower() in ('true', '1', 'yes', 'on') or os.environ.get('KOSYNC_SERVER', '')
+    if kosync_active:
+        try:
+            unlinked_docs = database_service.get_unlinked_kosync_documents()
+            kosync_unlinked_count = len(unlinked_docs)
+            unlinked_reading = [
+                {
+                    'document_hash': doc.document_hash,
+                    'percentage': float(doc.percentage) if doc.percentage else 0,
+                    'device': doc.device,
+                    'last_updated': doc.last_updated.isoformat() if doc.last_updated else None,
+                }
+                for doc in unlinked_docs
+                if doc.percentage and float(doc.percentage) > 0
+            ]
+        except Exception:
+            pass
+
     return render_template(
         "index.html",
         mappings=mappings,
@@ -380,4 +391,6 @@ def index():
         progress=overall_progress,
         app_version=APP_VERSION,
         booklore_label=booklore_label,
+        kosync_unlinked_count=kosync_unlinked_count,
+        unlinked_reading=unlinked_reading,
     )

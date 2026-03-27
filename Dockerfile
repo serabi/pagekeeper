@@ -32,8 +32,10 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir nvidia-cublas-cu12 nvidia-cudnn-cu12; \
     fi
 
-# 3. Create directories
-RUN mkdir -p /app/src /app/templates /app/static /data/audio_cache /data/logs /data/transcripts /storyteller-import /storyteller-data
+# 3. Create non-root user and directories
+RUN useradd -r -u 1000 appuser && \
+    mkdir -p /app/src /app/templates /app/static /data/audio_cache /data/logs /data/transcripts /storyteller-import /storyteller-data && \
+    chown -R appuser:appuser /data /storyteller-import /storyteller-data
 
 # 4. Copy Application Code
 COPY src/ /app/src/
@@ -45,6 +47,8 @@ COPY scripts/ /app/scripts/
 
 COPY start.sh /app/start.sh
 RUN sed -i 's/\r$//' /app/start.sh && chmod +x /app/start.sh
+
+USER appuser
 
 EXPOSE 4477
 

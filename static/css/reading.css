@@ -569,6 +569,17 @@
   width: 100%;
   height: 100%;
   background: var(--gradient-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.r-cover-placeholder .book-cover-placeholder-logo {
+  width: 40%;
+  max-width: 48px;
+  opacity: 0.3;
+  filter: grayscale(1);
+  object-fit: contain;
 }
 
 .r-card-body {
@@ -1041,8 +1052,15 @@
   aspect-ratio: 1 / 1;
   object-fit: cover;
   border-radius: var(--radius);
-  display: block;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+}
+
+.r-hero-cover img {
+  display: block;
+}
+
+.r-hero-cover .book-cover-placeholder-logo {
+  max-width: 56px;
 }
 
 .r-hero-cover--ebook img,
@@ -3121,6 +3139,23 @@ a.r-service-row-name:hover { text-decoration: underline; }
   justify-content: center;
   font-size: 24px;
   color: var(--color-text-faint);
+}
+
+.r-tbr-card-cover-placeholder {
+  width: 100%;
+  height: 100%;
+  background: var(--gradient-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.r-tbr-card-cover-placeholder .book-cover-placeholder-logo {
+  width: 40%;
+  max-width: 36px;
+  opacity: 0.3;
+  filter: grayscale(1);
+  object-fit: contain;
 }
 
 .r-tbr-card-body {

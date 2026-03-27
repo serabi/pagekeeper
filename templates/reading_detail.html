@@ -44,9 +44,13 @@
                     {% if book.cover_url %}
                     <img src="{{ book.cover_url }}" alt=""
                         onerror="{% if book.fallback_cover_url and book.fallback_cover_url != book.cover_url %}this.onerror={% if book.kosync_doc_id %}function(){this.onerror=null; this.src='/covers/{{ book.kosync_doc_id }}.jpg';}{% else %}null{% endif %}; this.src='{{ book.fallback_cover_url|e }}';{% elif book.kosync_doc_id %}this.onerror=null; this.src='/covers/{{ book.kosync_doc_id }}.jpg';{% else %}this.style.display='none'; this.nextElementSibling.classList.remove('hidden');{% endif %}">
-                    <div class="r-cover-placeholder hidden"></div>
+                    <div class="r-cover-placeholder hidden">
+                        {% if book.placeholder_logo %}<img src="{{ book.placeholder_logo }}" alt="" class="book-cover-placeholder-logo">{% endif %}
+                    </div>
                     {% else %}
-                    <div class="r-cover-placeholder"></div>
+                    <div class="r-cover-placeholder">
+                        {% if book.placeholder_logo %}<img src="{{ book.placeholder_logo }}" alt="" class="book-cover-placeholder-logo">{% endif %}
+                    </div>
                     {% endif %}
                     <button type="button" class="r-change-cover-btn" id="change-cover-btn" title="Change cover">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
@@ -790,6 +794,7 @@
         initReadingDetail();
 
         var _rdBookId = {{ book.id }};
+        var _rdAbsId = {{ book.abs_id | tojson }} || _rdBookId;
         var _rdTitle = {{ book.title | tojson }};
         var _rdPendingJournalId = null;
 
@@ -880,7 +885,7 @@
             })
             .catch(function(err) {
                 console.error('Failed to update progress:', err);
-                alert('Failed to save progress. Please try again.');
+                PKModal.alert({ title: 'Error', message: 'Failed to save progress. Please try again.' });
             });
         }
 
@@ -902,11 +907,11 @@
                     if (d.success) {
                         location.reload();
                     } else {
-                        alert(d.error || 'Failed to pause');
+                        PKModal.alert({ title: 'Error', message: d.error || 'Failed to pause' });
                     }
                 })
                 .catch(function() {
-                    alert('Request failed');
+                    PKModal.alert({ title: 'Error', message: 'Request failed' });
                 });
             } else if (action === 'resume') {
                 fetch('/api/resume/' + encodeURIComponent(_rdAbsId), { method: 'POST', headers: {'Content-Type': 'application/json'} })
@@ -915,11 +920,11 @@
                     if (d.success) {
                         location.reload();
                     } else {
-                        alert(d.error || 'Failed to resume');
+                        PKModal.alert({ title: 'Error', message: d.error || 'Failed to resume' });
                     }
                 })
                 .catch(function() {
-                    alert('Request failed');
+                    PKModal.alert({ title: 'Error', message: 'Request failed' });
                 });
             } else if (action === 'dnf') {
                 showRdConfirm('Mark DNF', 'Mark "' + _rdTitle + '" as Did Not Finish? This book will be excluded from syncing.', 'dnf');
@@ -960,11 +965,11 @@
             if (action === 'dnf') {
                 fetch('/api/dnf/' + encodeURIComponent(_rdAbsId), { method: 'POST', headers: {'Content-Type': 'application/json'} })
                 .then(function(r) { return r.json(); })
-                .then(function(d) { if (d.success) location.reload(); else alert(d.error || 'Error'); });
+                .then(function(d) { if (d.success) location.reload(); else PKModal.alert({ title: 'Error', message: d.error || 'Error' }); });
             } else if (action === 'complete') {
                 fetch('/api/mark-complete/' + encodeURIComponent(_rdAbsId), { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({ delete: false }) })
                 .then(function(r) { return r.json(); })
-                .then(function(d) { if (d.success) location.reload(); else alert(d.error || 'Error'); });
+                .then(function(d) { if (d.success) location.reload(); else PKModal.alert({ title: 'Error', message: d.error || 'Error' }); });
             } else if (action === 'clear') {
                 // Post as form — same as dashboard confirm modal
                 var form = document.createElement('form');
@@ -984,8 +989,8 @@
                     if (!r.ok) throw new Error('Request failed');
                     return r.json();
                 })
-                .then(function(d) { if (d.success) location.reload(); else alert(d.error || 'Error'); })
-                .catch(function() { alert('Failed to start re-alignment'); });
+                .then(function(d) { if (d.success) location.reload(); else PKModal.alert({ title: 'Error', message: d.error || 'Error' }); })
+                .catch(function() { PKModal.alert({ title: 'Error', message: 'Failed to start re-alignment' }); });
             } else if (action === 'delete-journal') {
                 var jid = _rdPendingJournalId;
                 _rdPendingJournalId = null;
@@ -1097,5 +1102,7 @@
             });
         })();
     </script>
+    {% include 'partials/confirm_modal.html' %}
+    <script src="/static/js/confirm-modal.js"></script>
 </body>
 </html>

@@ -40,6 +40,7 @@ def normalize_for_cross_format_comparison(book, config, sync_clients, ebook_pars
     """
     has_abs = 'ABS' in config
     ebook_clients = [k for k in config.keys() if k != 'ABS']
+    book_label = book.title or str(book.id)
 
     if not ebook_clients:
         return None
@@ -53,11 +54,12 @@ def normalize_for_cross_format_comparison(book, config, sync_clients, ebook_pars
             full_text, _ = ebook_parser.extract_text_and_map(book_path)
             total_text_len = len(full_text)
         except Exception as e:
-            logger.debug(f"'{book.abs_id}' Could not load ebook for normalization: {e}")
+            logger.debug(f"'{book_label}' Could not load ebook for normalization: {e}")
             return None
         if not total_text_len:
             return None
         normalized = {}
+        used_fallback = False
         for client_name in ebook_clients:
             client = sync_clients.get(client_name)
             if not client:
@@ -68,6 +70,7 @@ def normalize_for_cross_format_comparison(book, config, sync_clients, ebook_pars
                 client_pct = max(0.0, min(1.0, float(client_pct)))
             except (TypeError, ValueError):
                 client_pct = 0.0
+            matched = False
             try:
                 text_snippet = client.get_text_from_current_state(book, client_state)
                 if text_snippet:
@@ -77,17 +80,27 @@ def normalize_for_cross_format_comparison(book, config, sync_clients, ebook_pars
                     )
                     if loc and loc.match_index is not None:
                         normalized[client_name] = loc.match_index
-                        logger.debug(f"'{book.abs_id}' Normalized '{client_name}' {client_pct:.2%} -> char {loc.match_index}")
-                        continue
+                        logger.debug(f"'{book_label}' Normalized '{client_name}' {client_pct:.2%} -> char {loc.match_index}")
+                        matched = True
             except Exception as e:
-                logger.debug(f"'{book.abs_id}' Text-based normalization failed for '{client_name}': {e}")
-            normalized[client_name] = int(client_pct * total_text_len)
-            logger.debug(f"'{book.abs_id}' Normalized '{client_name}' {client_pct:.2%} -> char {int(client_pct * total_text_len)} (pct fallback)")
+                logger.debug(f"'{book_label}' Text-based normalization failed for '{client_name}': {e}")
+            if not matched:
+                used_fallback = True
+                normalized[client_name] = int(client_pct * total_text_len)
+                logger.debug(f"'{book_label}' Normalized '{client_name}' {client_pct:.2%} -> char {int(client_pct * total_text_len)} (pct fallback)")
+
+        if used_fallback:
+            # Mixing text-matched positions with percentage-based estimates is
+            # unreliable — a precise XPath match and a rough percentage-to-char
+            # conversion can produce nearly identical values that invert the true
+            # ordering.  Fall back to raw percentage comparison instead.
+            logger.debug(f"'{book_label}' Discarding character normalization — not all clients had text matches")
+            return None
         return normalized if len(normalized) > 1 else None
 
     # Audio + ebook path
     if not book.transcript_file:
-        logger.debug(f"'{book.abs_id}' No transcript available for cross-format normalization")
+        logger.debug(f"'{book_label}' No transcript available for cross-format normalization")
         return None
 
     normalized = {}
@@ -117,12 +130,12 @@ def normalize_for_cross_format_comparison(book, config, sync_clients, ebook_pars
             txt = full_text[max(0, char_offset - 400):min(total_text_len, char_offset + 400)]
 
             if not txt:
-                logger.debug(f"'{book.abs_id}' Could not get text from '{client_name}' for normalization")
+                logger.debug(f"'{book_label}' Could not get text from '{client_name}' for normalization")
                 continue
 
             if alignment_service:
                 ts_for_text = alignment_service.get_time_for_text(
-                    book.abs_id,
+                    book.id,
                     char_offset_hint=char_offset
                 )
             else:
@@ -130,11 +143,11 @@ def normalize_for_cross_format_comparison(book, config, sync_clients, ebook_pars
 
             if ts_for_text is not None:
                 normalized[client_name] = ts_for_text
-                logger.debug(f"'{book.abs_id}' Normalized '{client_name}' {client_pct:.2%} -> {ts_for_text:.1f}s")
+                logger.debug(f"'{book_label}' Normalized '{client_name}' {client_pct:.2%} -> {ts_for_text:.1f}s")
             else:
-                logger.debug(f"'{book.abs_id}' Could not find timestamp for '{client_name}' text")
+                logger.debug(f"'{book_label}' Could not find timestamp for '{client_name}' text")
         except Exception as e:
-            logger.warning(f"'{book.abs_id}' Cross-format normalization failed for '{client_name}': {sanitize_exception(e)}")
+            logger.warning(f"'{book_label}' Cross-format normalization failed for '{client_name}': {sanitize_exception(e)}")
 
     if len(normalized) > 1:
         return normalized
@@ -145,11 +158,11 @@ class AlignmentService:
         self.database_service = database_service
         self.polisher = polisher
 
-    def has_alignment(self, abs_id: str) -> bool:
-        return bool(abs_id and self._get_alignment(abs_id))
+    def has_alignment(self, book_id: int) -> bool:
+        return bool(book_id and self._get_alignment(book_id))
 
     @time_execution
-    def align_and_store(self, abs_id: str, raw_segments: list[dict], ebook_text: str, spine_chapters: list[dict] = None, source: str = None):
+    def align_and_store(self, book_id: int, raw_segments: list[dict], ebook_text: str, spine_chapters: list[dict] = None, source: str = None):
         """
         Main entry point for "Unified Alignment".
 
@@ -161,7 +174,7 @@ class AlignmentService:
         4. Rebuild: Fix fragmented sentences in transcript using ebook text as a guide.
         5. Store: Save ONLY the mapping and essential metadata to DB.
         """
-        logger.info(f"AlignmentService: Processing {abs_id} (Text: {len(ebook_text)} chars, Segments: {len(raw_segments)})")
+        logger.info(f"AlignmentService: Processing book {book_id} (Text: {len(ebook_text)} chars, Segments: {len(raw_segments)})")
 
         # 1. Validation (Spine Check)
         # Note: This is soft validation. If lengths assume vastly different sizes, warn.
@@ -190,11 +203,11 @@ class AlignmentService:
             return False
 
         # 4. Store to Database
-        self._save_alignment(abs_id, alignment_map, source=source)
+        self._save_alignment(book_id, alignment_map, source=source)
         return True
 
     @time_execution
-    def align_storyteller_and_store(self, abs_id: str, storyteller_chapters: list[dict], ebook_text: str) -> bool:
+    def align_storyteller_and_store(self, book_id: int, storyteller_chapters: list[dict], ebook_text: str) -> bool:
         """Align using Storyteller's native word-level timing data.
 
         Converts wordTimeline entries into segments compatible with the existing
@@ -203,7 +216,7 @@ class AlignmentService:
         Each wordTimeline entry is expected to have 'startTime' (float seconds)
         and 'word' or 'text' (string).
         """
-        logger.info(f"AlignmentService: Processing {abs_id} via Storyteller wordTimeline "
+        logger.info(f"AlignmentService: Processing book {book_id} via Storyteller wordTimeline "
                      f"({len(storyteller_chapters)} chapters, {len(ebook_text)} chars)")
 
         # Build segments from wordTimeline data (~15-second groups)
@@ -245,7 +258,7 @@ class AlignmentService:
             })
 
         if not segments:
-            logger.error(f"AlignmentService: No segments produced from wordTimeline for {abs_id}")
+            logger.error(f"AlignmentService: No segments produced from wordTimeline for book {book_id}")
             return False
 
         logger.info(f"   Built {len(segments)} segments from wordTimeline data")
@@ -261,14 +274,14 @@ class AlignmentService:
                 {"char": 0, "ts": 0.0},
                 {"char": len(ebook_text), "ts": total_duration},
             ]
-            logger.warning(f"   N-gram anchoring failed, using linear fallback for {abs_id}")
+            logger.warning(f"   N-gram anchoring failed, using linear fallback for book {book_id}")
 
-        self._save_alignment(abs_id, alignment_map, source='storyteller')
+        self._save_alignment(book_id, alignment_map, source='storyteller')
         return True
 
-    def get_time_for_text(self, abs_id: str, char_offset_hint: int = None) -> float | None:
+    def get_time_for_text(self, book_id: int, char_offset_hint: int = None) -> float | None:
         """Look up a timestamp from the alignment map using a character offset."""
-        alignment = self._get_alignment(abs_id)
+        alignment = self._get_alignment(book_id)
         if not alignment:
             return None
 
@@ -296,7 +309,7 @@ class AlignmentService:
                 real_end = penultimate
 
         if target_offset > real_end['char']:
-            logger.warning(f"'{abs_id}' Char offset {target_offset} exceeds alignment range "
+            logger.warning(f"book {book_id}: Char offset {target_offset} exceeds alignment range "
                            f"(max {real_end['char']}) — alignment may be partial")
             return None
 
@@ -329,13 +342,13 @@ class AlignmentService:
 
         return float(estimated_time)
 
-    def get_char_for_time(self, abs_id: str, timestamp: float) -> int | None:
+    def get_char_for_time(self, book_id: int, timestamp: float) -> int | None:
         """
         Reverse lookup: Find character offset for a given timestamp.
         Returns None if the timestamp is beyond the alignment data range.
         """
         # 1. Fetch Alignment Map
-        alignment = self._get_alignment(abs_id)
+        alignment = self._get_alignment(book_id)
         if not alignment:
             return None
 
@@ -362,7 +375,7 @@ class AlignmentService:
 
         if target_ts > real_end['ts']:
             # Timestamp is beyond the alignment data — can't determine position
-            logger.warning(f"'{abs_id}' Timestamp {target_ts:.1f}s exceeds alignment range "
+            logger.warning(f"book {book_id}: Timestamp {target_ts:.1f}s exceeds alignment range "
                            f"(max {real_end['ts']:.1f}s) — alignment may be partial")
             return None
 
@@ -530,10 +543,10 @@ class AlignmentService:
         logger.info(f"   Anchored Alignment: Found {len(valid_anchors)} anchors (Total).")
         return final_map
 
-    def get_alignment_info(self, abs_id: str) -> dict | None:
+    def get_alignment_info(self, book_id: int) -> dict | None:
         """Return summary info about a book's alignment data without loading the full map."""
         with self.database_service.get_session() as session:
-            row = session.query(BookAlignment).filter_by(abs_id=abs_id).first()
+            row = session.query(BookAlignment).filter_by(book_id=book_id).first()
             if not row:
                 return None
 
@@ -564,63 +577,60 @@ class AlignmentService:
                     'source': row.source,
                 }
             except (KeyError, TypeError, IndexError):
-                logger.warning(f"Malformed alignment data for {abs_id}")
+                logger.warning(f"Malformed alignment data for book {book_id}")
                 return None
 
-    def delete_alignment(self, abs_id: str):
+    def delete_alignment(self, book_id: int):
         """Delete alignment data for a book."""
         with self.database_service.get_session() as session:
-            session.query(BookAlignment).filter_by(abs_id=abs_id).delete()
-            logger.info(f"Deleted alignment data for {abs_id}")
+            session.query(BookAlignment).filter_by(book_id=book_id).delete()
+            logger.info(f"Deleted alignment data for book {book_id}")
 
-    def realign_book(self, abs_id: str):
+    def realign_book(self, book_id: int):
         """Atomically delete alignment + jobs and requeue book for re-processing."""
         with self.database_service.get_session() as session:
-            session.query(BookAlignment).filter_by(abs_id=abs_id).delete()
-            session.query(Job).filter(Job.abs_id == abs_id).delete()
-            book = session.query(Book).filter_by(abs_id=abs_id).first()
+            session.query(BookAlignment).filter_by(book_id=book_id).delete()
+            session.query(Job).filter(Job.book_id == book_id).delete()
+            book = session.query(Book).filter_by(id=book_id).first()
             if book:
                 book.transcript_file = None
                 book.status = 'pending'
-            logger.info(f"Re-alignment queued for {abs_id}")
+            logger.info(f"Re-alignment queued for book {book_id}")
 
-    def _save_alignment(self, abs_id: str, alignment_map: list[dict], source: str = None, book_id: int = None):
+    def _save_alignment(self, book_id: int, alignment_map: list[dict], source: str = None):
         """Upsert alignment to SQLite."""
         if not alignment_map:
-            logger.warning(f"Refusing to save empty alignment map for {abs_id}")
+            logger.warning(f"Refusing to save empty alignment map for book {book_id}")
             return
 
         with self.database_service.get_session() as session:
             json_blob = json.dumps(alignment_map)
 
             # Check exist
-            existing = session.query(BookAlignment).filter_by(abs_id=abs_id).first()
+            existing = session.query(BookAlignment).filter_by(book_id=book_id).first()
             if existing:
                 existing.alignment_map_json = json_blob
                 existing.last_updated = datetime.utcnow()
                 if source:
                     existing.source = source
             else:
-                if book_id is None:
-                    book = self.database_service.get_book_by_abs_id(abs_id)
-                    book_id = book.id if book else None
-                new_align = BookAlignment(abs_id=abs_id, book_id=book_id, alignment_map_json=json_blob, source=source)
+                new_align = BookAlignment(book_id=book_id, alignment_map_json=json_blob, source=source)
                 session.add(new_align)
 
             # Context manager handles commit
-            logger.info(f"   Saved alignment for {abs_id} to DB.")
+            logger.info(f"   Saved alignment for book {book_id} to DB.")
 
-    def _get_alignment(self, abs_id: str) -> list[dict] | None:
+    def _get_alignment(self, book_id: int) -> list[dict] | None:
         with self.database_service.get_session() as session:
-            entry = session.query(BookAlignment).filter_by(abs_id=abs_id).first()
+            entry = session.query(BookAlignment).filter_by(book_id=book_id).first()
             if not entry:
-                logger.debug(f"No alignment row for {abs_id}")
+                logger.debug(f"No alignment row for book {book_id}")
                 return None
 
             try:
                 raw = json.loads(entry.alignment_map_json)
             except (json.JSONDecodeError, TypeError) as e:
-                logger.warning(f"Corrupt alignment JSON for {abs_id}: {e}")
+                logger.warning(f"Corrupt alignment JSON for book {book_id}: {e}")
                 return None
 
             # Validate structure: each point must have int 'char' and float 'ts'
@@ -630,18 +640,18 @@ class AlignmentService:
                     try:
                         validated.append({'char': int(point['char']), 'ts': float(point['ts'])})
                     except (ValueError, TypeError):
-                        logger.warning(f"Skipping invalid alignment point for {abs_id}: {point}")
+                        logger.warning(f"Skipping invalid alignment point for book {book_id}: {point}")
                 else:
-                    logger.warning(f"Skipping malformed alignment point for {abs_id}: {point}")
+                    logger.warning(f"Skipping malformed alignment point for book {book_id}: {point}")
 
             if not validated:
-                logger.warning(f"Alignment for {abs_id} has no valid points after validation")
+                logger.warning(f"Alignment for book {book_id} has no valid points after validation")
                 return None
             return validated
 
-    def get_book_duration(self, abs_id: str) -> float | None:
+    def get_book_duration(self, book_id: int) -> float | None:
         """Get the total duration of the book from its alignment map."""
-        alignment = self._get_alignment(abs_id)
+        alignment = self._get_alignment(book_id)
         if alignment and len(alignment) > 0:
             # The last point in the alignment map should have the max timestamp
             return float(alignment[-1]['ts'])

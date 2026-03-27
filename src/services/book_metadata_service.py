@@ -16,7 +16,7 @@ def build_book_metadata(book, container, database_service, abs_service, booklore
     """
     abs_id = book.abs_id
     metadata = {}
-    sync_mode = getattr(book, 'sync_mode', 'audiobook')
+    sync_mode = book.sync_mode
 
     # ABS metadata (subtitle, author, narrator, duration, genres, description)
     if sync_mode != 'ebook_only':
@@ -36,6 +36,12 @@ def build_book_metadata(book, container, database_service, abs_service, booklore
                     metadata['duration'] = f"{hrs}h {mins}m" if hrs else f"{mins}m"
         except Exception as e:
             logger.debug("abs_service.get_item_details failed for abs_id=%s: %s", abs_id, e, exc_info=True)
+
+    # Fall back to cached book metadata when ABS data is unavailable
+    if not metadata.get('author') and book.author:
+        metadata['author'] = book.author
+    if not metadata.get('subtitle') and book.subtitle:
+        metadata['subtitle'] = book.subtitle
 
     # Fallback duration from stored book data (in case ABS API call failed or was skipped)
     if not metadata.get('duration') and book.duration and book.duration > 0:
@@ -88,7 +94,7 @@ def build_book_metadata(book, container, database_service, abs_service, booklore
         try:
             if bl_client and bl_client.is_configured():
                 bl_book = bl_client.find_book_by_filename(book.ebook_filename, allow_refresh=False)
-                if not bl_book and getattr(book, 'original_ebook_filename', None):
+                if not bl_book and book.original_ebook_filename:
                     bl_book = bl_client.find_book_by_filename(book.original_ebook_filename, allow_refresh=False)
                 if bl_book:
                     if not metadata.get('description') and bl_book.get('description'):
@@ -104,7 +110,7 @@ def build_book_metadata(book, container, database_service, abs_service, booklore
                          getattr(bl_client, 'base_url', '?'), e)
 
     # BookFusion catalog entry (tags, series)
-    bf_book = database_service.get_bookfusion_book_by_abs_id(abs_id)
+    bf_book = database_service.get_bookfusion_book_by_book_id(book.id)
     if bf_book:
         metadata['bf_tags'] = bf_book.tags or ''
         metadata['bf_series'] = bf_book.series or ''
@@ -121,12 +127,12 @@ def build_book_metadata(book, container, database_service, abs_service, booklore
 
 
 def build_service_info(book, states_by_book, container, abs_service, metadata,
-                       has_bookfusion_link, booklore_client=None):
+                       has_bookfusion_link):
     """Build per-service state data, integration flags, and enabled-service map.
 
     Returns (service_states, integrations, services_enabled).
     """
-    sync_mode = getattr(book, 'sync_mode', 'audiobook')
+    sync_mode = book.sync_mode
     hardcover = metadata.get('_hardcover')
 
     # Build per-service state data for the Services tab
@@ -148,14 +154,14 @@ def build_service_info(book, states_by_book, container, abs_service, metadata,
     storyteller = container.storyteller_client()
     hardcover = container.hardcover_client()
     bookfusion = container.bookfusion_client()
-    booklore = booklore_client or container.booklore_client()
+    bl_group = container.booklore_client_group()
     services_enabled = {
         'abs': abs_service is not None and abs_service.is_available(),
         'kosync': True,  # KoSync is always available (built-in server)
         'storyteller': storyteller is not None and storyteller.is_configured(),
         'hardcover': hardcover is not None and hardcover.is_configured(),
         'bookfusion': bookfusion is not None and bookfusion.is_configured(),
-        'booklore': booklore is not None and booklore.is_configured(),
+        'booklore': bl_group is not None and bl_group.is_configured(),
     }
 
     return service_states, integrations, services_enabled

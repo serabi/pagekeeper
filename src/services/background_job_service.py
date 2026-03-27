@@ -80,7 +80,7 @@ class BackgroundJobService:
             for book in candidates:
                 has_alignment = False
                 if self.alignment_service:
-                    has_alignment = self.alignment_service.has_alignment(book.abs_id)
+                    has_alignment = self.alignment_service.has_alignment(book.id)
 
                 if has_alignment:
                     if book.status != "active":
@@ -266,6 +266,8 @@ class BackgroundJobService:
                     if not book.original_ebook_filename:
                         book.original_ebook_filename = book.ebook_filename
                     self.database_service.save_book(book)
+                    from src.services.kosync_service import ensure_kosync_document
+                    ensure_kosync_document(book, self.database_service)
                     logger.info(f"Locked KOSync ID: {computed_hash}")
         except Exception as e:
             logger.warning(f"Failed to eager-lock KOSync ID: {e}")
@@ -349,7 +351,7 @@ class BackgroundJobService:
             logger.info(f"Aligning transcript ({transcript_source}) using Anchored Alignment...")
             update_progress(0.1, 3)
             success = self.alignment_service.align_and_store(
-                abs_id, raw_transcript, book_text, chapters, source=transcript_source.lower()
+                book.id, raw_transcript, book_text, chapters, source=transcript_source.lower()
             )
             update_progress(0.5, 3)
 
@@ -390,7 +392,7 @@ class BackgroundJobService:
                 st_chapters = self.storyteller_client.get_word_timeline_chapters(book.storyteller_uuid)
                 if st_chapters:
                     # Transcriptions are ready — mark any active submission as done and align
-                    submission = self.database_service.get_active_storyteller_submission(abs_id)
+                    submission = self.database_service.get_active_storyteller_submission_by_book_id(book.id)
                     if submission and submission.status not in ("ready", "failed"):
                         if self.storyteller_submission_service:
                             self.storyteller_submission_service._update_submission_status(submission, "ready")
@@ -399,13 +401,13 @@ class BackgroundJobService:
                 logger.debug(f"Direct Storyteller alignment check failed for '{sanitize_log_data(book.title)}': {e}")
 
         # Fall through: check submission status if no direct alignment was possible
-        submission = self.database_service.get_active_storyteller_submission(abs_id)
+        submission = self.database_service.get_active_storyteller_submission_by_book_id(book.id)
         if submission and submission.status in ("queued", "processing"):
             if self.storyteller_submission_service:
                 fresh_status = self.storyteller_submission_service.check_status(abs_id)
                 if fresh_status == "ready":
                     # Storyteller finished! Update the book's storyteller_uuid and proceed to alignment
-                    updated_sub = self.database_service.get_storyteller_submission(abs_id)
+                    updated_sub = self.database_service.get_storyteller_submission_by_book_id(book.id)
                     if updated_sub and updated_sub.storyteller_uuid and not book.storyteller_uuid:
                         book.storyteller_uuid = updated_sub.storyteller_uuid
                         self.database_service.save_book(book)
@@ -442,7 +444,7 @@ class BackgroundJobService:
             f"Using Storyteller wordTimeline for '{sanitize_log_data(book.title)}' ({len(st_chapters)} chapters)"
         )
         update_progress(0.5, 2)
-        success = self.alignment_service.align_storyteller_and_store(abs_id, st_chapters, book_text)
+        success = self.alignment_service.align_storyteller_and_store(book.id, st_chapters, book_text)
         if success:
             update_progress(1.0, 2)
             return "STORYTELLER_NATIVE"

@@ -22,6 +22,8 @@ class BookRepository(BaseRepository):
     # ── Book CRUD ──
 
     def get_book_by_abs_id(self, abs_id):
+        if not abs_id:
+            return None
         return self._get_one(Book, Book.abs_id == abs_id)
 
     def get_book_by_id(self, book_id):
@@ -172,6 +174,9 @@ class BookRepository(BaseRepository):
         return self._get_all(State)
 
     def save_state(self, state):
+        if not state.book_id and not state.abs_id:
+            logger.error("save_state called without book_id or abs_id — skipping")
+            return None
         # Prefer book_id for upsert lookup; fall back to abs_id for backward compat
         if state.book_id:
             lookup = [State.book_id == state.book_id, State.client_name == state.client_name]

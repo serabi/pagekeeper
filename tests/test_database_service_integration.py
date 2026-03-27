@@ -700,6 +700,140 @@ class TestDatabaseServiceIntegration(unittest.TestCase):
             finally:
                 migration_db_service.db_manager.close()
 
+    # ── T1: get_book_by_ref() resolution — all 5 branches ──
+
+    def test_get_book_by_ref_none(self):
+        """get_book_by_ref(None) returns None."""
+        self.assertIsNone(self.db_service.get_book_by_ref(None))
+
+    def test_get_book_by_ref_integer_id(self):
+        """get_book_by_ref with an integer returns the book by primary key."""
+        book = self.Book(abs_id='ref-int-test', title='Ref Int', status='active')
+        saved = self.db_service.save_book(book)
+        result = self.db_service.get_book_by_ref(saved.id)
+        self.assertIsNotNone(result)
+        self.assertEqual(result.id, saved.id)
+
+    def test_get_book_by_ref_abs_id_string(self):
+        """get_book_by_ref with a string abs_id returns the matching book."""
+        book = self.Book(abs_id='abs-ref-test', title='Ref Abs', status='active')
+        self.db_service.save_book(book)
+        result = self.db_service.get_book_by_ref('abs-ref-test')
+        self.assertIsNotNone(result)
+        self.assertEqual(result.abs_id, 'abs-ref-test')
+
+    def test_get_book_by_ref_numeric_string_fallthrough(self):
+        """get_book_by_ref with a numeric string falls through to book_id lookup."""
+        book = self.Book(abs_id='numeric-fall', title='Numeric Fallthrough', status='active')
+        saved = self.db_service.save_book(book)
+        # Use the numeric book ID as a string — should fall through abs_id miss to int lookup
+        result = self.db_service.get_book_by_ref(str(saved.id))
+        self.assertIsNotNone(result)
+        self.assertEqual(result.id, saved.id)
+
+    def test_get_book_by_ref_nonexistent_string(self):
+        """get_book_by_ref with a non-numeric string that doesn't match any abs_id returns None."""
+        result = self.db_service.get_book_by_ref('does-not-exist')
+        self.assertIsNone(result)
+
+    # ── T2: Book without abs_id — full lifecycle ──
+
+    def test_book_without_abs_id_lifecycle(self):
+        """Create a Book with no abs_id, verify auto-id, retrieve, attach states."""
+        book = self.Book(title='Standalone Ebook', status='not_started', sync_mode='ebook_only')
+        saved = self.db_service.save_book(book, is_new=True)
+        self.assertIsNotNone(saved.id)
+        self.assertIsNone(saved.abs_id)
+
+        retrieved = self.db_service.get_book_by_ref(saved.id)
+        self.assertIsNotNone(retrieved)
+        self.assertEqual(retrieved.title, 'Standalone Ebook')
+
+        # Attach a state
+        state = self.State(
+            book_id=saved.id,
+            client_name='KoSync',
+            timestamp=100.0,
+            percentage=0.25,
+            last_updated=1000.0,
+        )
+        self.db_service.save_state(state)
+        states = self.db_service.get_states_by_book()
+        self.assertIn(saved.id, states)
+        self.assertEqual(len(states[saved.id]), 1)
+
+    # ── T3: save_book() three-way upsert ──
+
+    def test_save_book_with_id(self):
+        """save_book with book.id set updates the existing record."""
+        book = self.Book(abs_id='upsert-by-id', title='Original', status='active')
+        saved = self.db_service.save_book(book, is_new=True)
+        saved.title = 'Updated by ID'
+        self.db_service.save_book(saved)
+        result = self.db_service.get_book_by_ref(saved.id)
+        self.assertEqual(result.title, 'Updated by ID')
+
+    def test_save_book_with_abs_id(self):
+        """save_book with book.abs_id set (no id) upserts by abs_id."""
+        book = self.Book(abs_id='upsert-by-abs', title='Upserted', status='active')
+        self.db_service.save_book(book, is_new=True)
+        book2 = self.Book(abs_id='upsert-by-abs', title='Re-upserted', status='active')
+        self.db_service.save_book(book2)
+        all_books = [b for b in self.db_service.get_all_books() if b.abs_id == 'upsert-by-abs']
+        self.assertEqual(len(all_books), 1)
+        self.assertEqual(all_books[0].title, 'Re-upserted')
+
+    def test_save_book_new_no_abs_id(self):
+        """save_book with neither id nor abs_id creates a new book."""
+        book = self.Book(title='Brand New', status='not_started')
+        saved = self.db_service.save_book(book, is_new=True)
+        self.assertIsNotNone(saved.id)
+        self.assertIsNone(saved.abs_id)
+
+    # ── T4: AlignmentService with book_id ──
+
+    def test_alignment_save_retrieve_delete_by_book_id(self):
+        """Save, retrieve, and delete alignment by book_id."""
+        from unittest.mock import MagicMock
+
+        from src.services.alignment_service import AlignmentService
+
+        book = self.Book(abs_id='align-test', title='Alignment Test', status='active')
+        saved = self.db_service.save_book(book)
+
+        polisher = MagicMock()
+        svc = AlignmentService(self.db_service, polisher)
+
+        # Save alignment
+        svc._save_alignment(saved.id, [{"char": 0, "ts": 0.0}, {"char": 1000, "ts": 60.0}], source='test')
+
+        # has_alignment
+        self.assertTrue(svc.has_alignment(saved.id))
+        self.assertFalse(svc.has_alignment(999999))
+
+        # get_alignment_info
+        info = svc.get_alignment_info(saved.id)
+        self.assertIsNotNone(info)
+        self.assertEqual(info['num_points'], 2)
+
+        # get_time_for_text
+        ts = svc.get_time_for_text(saved.id, char_offset_hint=500)
+        self.assertIsNotNone(ts)
+        self.assertAlmostEqual(ts, 30.0, delta=1.0)
+
+        # get_char_for_time
+        char = svc.get_char_for_time(saved.id, timestamp=30.0)
+        self.assertIsNotNone(char)
+        self.assertAlmostEqual(char, 500, delta=10)
+
+        # get_book_duration
+        dur = svc.get_book_duration(saved.id)
+        self.assertAlmostEqual(dur, 60.0, delta=0.1)
+
+        # delete_alignment
+        svc.delete_alignment(saved.id)
+        self.assertFalse(svc.has_alignment(saved.id))
+
 
 class TestLegacyDatabaseMigration(unittest.TestCase):
     """
@@ -1040,6 +1174,61 @@ class TestLegacyDatabaseMigration(unittest.TestCase):
                 self.fail(f"DatabaseService raised {type(e).__name__} on fresh database: {e}")
 
             self.assertTrue(Path(db_path).exists(), "Database file was not created")
+
+
+
+
+class TestSuggestionSourceScoping(unittest.TestCase):
+    """Tests that suggestion operations are scoped by (source_id, source)."""
+
+    def setUp(self):
+        self.temp_dir = tempfile.mkdtemp()
+        self.test_db_path = str(Path(self.temp_dir) / 'test_database.db')
+        from src.db.database_service import DatabaseService
+        from src.db.models import PendingSuggestion
+        self.db_service = DatabaseService(self.test_db_path)
+        self.PendingSuggestion = PendingSuggestion
+
+    def tearDown(self):
+        if hasattr(self, 'db_service') and hasattr(self.db_service, 'db_manager'):
+            self.db_service.db_manager.close()
+        import shutil
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_suggestion_exists_scoped_by_source(self):
+        """suggestion_exists returns False when the source_id exists under a different source."""
+        suggestion = self.PendingSuggestion(
+            source_id='id1', title='Test', source='kosync',
+        )
+        self.db_service.save_pending_suggestion(suggestion)
+        self.assertTrue(self.db_service.suggestion_exists('id1', source='kosync'))
+        self.assertFalse(self.db_service.suggestion_exists('id1', source='abs'))
+
+    def test_upsert_different_source_creates_two_rows(self):
+        """save_pending_suggestion with same source_id but different source creates distinct rows."""
+        s1 = self.PendingSuggestion(source_id='id1', title='ABS Title', source='abs')
+        s2 = self.PendingSuggestion(source_id='id1', title='KOSync Title', source='kosync')
+        self.db_service.save_pending_suggestion(s1)
+        self.db_service.save_pending_suggestion(s2)
+
+        abs_suggestion = self.db_service.get_suggestion('id1', source='abs')
+        kosync_suggestion = self.db_service.get_suggestion('id1', source='kosync')
+        self.assertIsNotNone(abs_suggestion)
+        self.assertIsNotNone(kosync_suggestion)
+        self.assertEqual(abs_suggestion.title, 'ABS Title')
+        self.assertEqual(kosync_suggestion.title, 'KOSync Title')
+
+    def test_resolve_scoped_by_source(self):
+        """resolve_suggestion only deletes the row matching the given source."""
+        s1 = self.PendingSuggestion(source_id='id1', title='ABS Title', source='abs')
+        s2 = self.PendingSuggestion(source_id='id1', title='KOSync Title', source='kosync')
+        self.db_service.save_pending_suggestion(s1)
+        self.db_service.save_pending_suggestion(s2)
+
+        self.db_service.resolve_suggestion('id1', source='abs')
+
+        self.assertFalse(self.db_service.suggestion_exists('id1', source='abs'))
+        self.assertTrue(self.db_service.suggestion_exists('id1', source='kosync'))
 
 
 if __name__ == '__main__':

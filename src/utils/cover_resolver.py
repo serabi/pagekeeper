@@ -1,8 +1,19 @@
 """Cover URL resolution waterfall for book display."""
 
 
+def resolve_placeholder_logo(book, book_type, booklore_meta):
+    """Determine the placeholder logo based on a book's primary source."""
+    if (book.abs_id or "").startswith("bf-"):
+        return "/static/bookfusion-logo.svg"
+    elif book_type == "ebook-only" and booklore_meta:
+        return "/static/booklore.png"
+    elif book.abs_id:
+        return "/static/audiobookshelf.png"
+    return None
+
+
 def resolve_book_covers(book, abs_service, database_service, book_type,
-                        booklore_meta=None):
+                        booklore_meta=None, hardcover_details=None):
     """Resolve cover URLs for a book using the priority waterfall.
 
     Priority chain:
@@ -13,12 +24,12 @@ def resolve_book_covers(book, abs_service, database_service, book_type,
     ``fallback_cover_url``.
 
     Returns dict with 'cover_url', 'custom_cover_url', 'abs_cover_url',
-    'fallback_cover_url'.
+    'fallback_cover_url', 'placeholder_logo'.
     """
     custom_cover_url = book.custom_cover_url or None
     abs_cover_url = None
-    if book.abs_id and book_type != 'ebook-only':
-        abs_cover_url = abs_service.get_cover_proxy_url(book.abs_id)
+    if book.abs_id and book_type != 'ebook-only' and not book.abs_id.startswith('bf-'):
+        abs_cover_url = f"/api/cover-proxy/{book.abs_id}"
 
     # Cover URL -- preserve custom override, otherwise walk the waterfall.
     cover_url = custom_cover_url
@@ -37,9 +48,9 @@ def resolve_book_covers(book, abs_service, database_service, book_type,
 
     # Hardcover cover fallback
     if not cover_url and book.id:
-        hc_details = database_service.get_hardcover_details(book.id)
-        if hc_details and hc_details.hardcover_cover_url:
-            cover_url = hc_details.hardcover_cover_url
+        hc = hardcover_details if hardcover_details is not None else database_service.get_hardcover_details(book.id)
+        if hc and hc.hardcover_cover_url:
+            cover_url = hc.hardcover_cover_url
 
     non_abs_cover_url = cover_url
     if not custom_cover_url and abs_cover_url:
@@ -53,4 +64,5 @@ def resolve_book_covers(book, abs_service, database_service, book_type,
         'custom_cover_url': custom_cover_url,
         'abs_cover_url': abs_cover_url,
         'fallback_cover_url': fallback_cover_url,
+        'placeholder_logo': resolve_placeholder_logo(book, book_type, booklore_meta),
     }

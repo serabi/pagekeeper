@@ -122,7 +122,7 @@ class StorytellerSyncClient(SyncClient):
             if success:
                 try:
                     from src.services.write_tracker import record_write
-                    record_write('Storyteller', book.abs_id)
+                    record_write('Storyteller', book.id)
                 except ImportError as e:
                     logger.debug(f"Write tracker not available for Storyteller: {e}")
         else:

@@ -21,9 +21,13 @@
 {% if book.cover_url %}
 <img src="{{ book.cover_url|e }}" alt="" loading="lazy" class="r-cover-img"
     {% if book.kosync_doc_id %}data-fallback-id="{{ book.kosync_doc_id|e }}"{% endif %}>
-<div class="r-cover-placeholder hidden"></div>
+<div class="r-cover-placeholder hidden">
+    {% if book.placeholder_logo %}<img src="{{ book.placeholder_logo }}" alt="" class="book-cover-placeholder-logo">{% endif %}
+</div>
 {% else %}
-<div class="r-cover-placeholder"></div>
+<div class="r-cover-placeholder">
+    {% if book.placeholder_logo %}<img src="{{ book.placeholder_logo }}" alt="" class="book-cover-placeholder-logo">{% endif %}
+</div>
 {% endif %}
 {% endmacro %}
 
@@ -286,9 +290,14 @@
                         <div class="r-tbr-card-cover">
                             {% if book.cover_url %}
                             <img src="{{ book.cover_url|e }}" alt="" loading="lazy"
-                                onerror="this.style.display='none';">
+                                onerror="this.style.display='none'; this.nextElementSibling.classList.remove('hidden');">
+                            <div class="r-tbr-card-cover-placeholder hidden">
+                                {% if book.placeholder_logo %}<img src="{{ book.placeholder_logo }}" alt="" class="book-cover-placeholder-logo">{% endif %}
+                            </div>
                             {% else %}
-                            <div class="r-tbr-card-cover-empty"></div>
+                            <div class="r-tbr-card-cover-placeholder">
+                                {% if book.placeholder_logo %}<img src="{{ book.placeholder_logo }}" alt="" class="book-cover-placeholder-logo">{% endif %}
+                            </div>
                             {% endif %}
                         </div>
                         <div class="r-tbr-card-body">

@@ -25,7 +25,12 @@ class TestStorytellerSubmission(unittest.TestCase):
         self.mock_db = Mock()
 
         # Default: no existing reservation (submit_book creates a new record)
-        self.mock_db.get_active_storyteller_submission.return_value = None
+        self.mock_db.get_active_storyteller_submission_by_book_id.return_value = None
+
+        # Service resolves book by abs_id before submission lookups
+        mock_book = Mock()
+        mock_book.id = 1
+        self.mock_db.get_book_by_abs_id.return_value = mock_book
 
         self.service = StorytellerSubmissionService(
             storyteller_client=self.mock_storyteller,
@@ -107,7 +112,7 @@ class TestStorytellerSubmission(unittest.TestCase):
     @patch.object(StorytellerSubmissionService, "_download_file", side_effect=lambda url, dest: dest)
     def test_submit_persists_submission_record_only_on_success(self, mock_download):
         # No existing reservation — should create a new submission record
-        self.mock_db.get_active_storyteller_submission.return_value = None
+        self.mock_db.get_active_storyteller_submission_by_book_id.return_value = None
         result = self.service.submit_book(
             abs_id="book-123",
             title="Test Book",
@@ -196,19 +201,19 @@ class TestStorytellerSubmission(unittest.TestCase):
     # ── check_status ──
 
     def test_check_status_returns_not_found_when_no_submission(self):
-        self.mock_db.get_storyteller_submission.return_value = None
+        self.mock_db.get_storyteller_submission_by_book_id.return_value = None
         assert self.service.check_status("book-123") == "not_found"
 
     def test_check_status_returns_ready_when_already_ready(self):
         submission = Mock()
         submission.status = "ready"
-        self.mock_db.get_storyteller_submission.return_value = submission
+        self.mock_db.get_storyteller_submission_by_book_id.return_value = submission
         assert self.service.check_status("book-123") == "ready"
 
     def test_check_status_returns_failed_when_already_failed(self):
         submission = Mock()
         submission.status = "failed"
-        self.mock_db.get_storyteller_submission.return_value = submission
+        self.mock_db.get_storyteller_submission_by_book_id.return_value = submission
         assert self.service.check_status("book-123") == "failed"
 
     @patch.dict(os.environ, {"STORYTELLER_ASSETS_DIR": ""})
@@ -218,7 +223,7 @@ class TestStorytellerSubmission(unittest.TestCase):
         submission.submission_dir = "Test Book"
         submission.storyteller_uuid = None
         submission.submitted_at = datetime.utcnow()
-        self.mock_db.get_storyteller_submission.return_value = submission
+        self.mock_db.get_storyteller_submission_by_book_id.return_value = submission
         self.mock_storyteller.is_configured.return_value = False
 
         book = Mock()
@@ -235,7 +240,7 @@ class TestStorytellerSubmission(unittest.TestCase):
         submission.submission_dir = "Test Book"
         submission.storyteller_uuid = None
         submission.submitted_at = datetime.utcnow()
-        self.mock_db.get_storyteller_submission.return_value = submission
+        self.mock_db.get_storyteller_submission_by_book_id.return_value = submission
 
         book = Mock()
         book.storyteller_uuid = None
@@ -262,7 +267,7 @@ class TestStorytellerSubmission(unittest.TestCase):
         submission.submission_dir = "Test Book"
         submission.storyteller_uuid = "st-uuid-123"
         submission.submitted_at = datetime.utcnow()
-        self.mock_db.get_storyteller_submission.return_value = submission
+        self.mock_db.get_storyteller_submission_by_book_id.return_value = submission
 
         self.mock_storyteller.get_word_timeline_chapters.return_value = [{"words": []}]
 
@@ -280,7 +285,7 @@ class TestStorytellerSubmission(unittest.TestCase):
         submission.submission_dir = "Test Book"
         submission.storyteller_uuid = "st-uuid-123"
         submission.submitted_at = datetime.utcnow() - timedelta(hours=13)
-        self.mock_db.get_storyteller_submission.return_value = submission
+        self.mock_db.get_storyteller_submission_by_book_id.return_value = submission
 
         with patch.dict(os.environ, {"STORYTELLER_MAX_WAIT_HOURS": "12"}):
             result = self.service.check_status("book-123")
@@ -296,7 +301,7 @@ class TestStorytellerSubmission(unittest.TestCase):
         submission.submission_dir = None
         submission.storyteller_uuid = "st-uuid-456"
         submission.submitted_at = datetime.utcnow()
-        self.mock_db.get_storyteller_submission.return_value = submission
+        self.mock_db.get_storyteller_submission_by_book_id.return_value = submission
 
         self.mock_storyteller.get_word_timeline_chapters.return_value = [{"words": []}]
 
@@ -316,7 +321,7 @@ class TestStorytellerSubmission(unittest.TestCase):
         submission.submission_dir = "Test Book"
         submission.storyteller_uuid = None
         submission.submitted_at = datetime.utcnow()
-        self.mock_db.get_storyteller_submission.return_value = submission
+        self.mock_db.get_storyteller_submission_by_book_id.return_value = submission
 
         book = Mock()
         book.storyteller_uuid = "book-uuid-abc"
@@ -337,7 +342,7 @@ class TestStorytellerSubmission(unittest.TestCase):
         submission.submission_dir = "Test Book"
         submission.storyteller_uuid = None
         submission.submitted_at = datetime.utcnow()
-        self.mock_db.get_storyteller_submission.return_value = submission
+        self.mock_db.get_storyteller_submission_by_book_id.return_value = submission
 
         book = Mock()
         book.storyteller_uuid = None
@@ -358,7 +363,7 @@ class TestStorytellerSubmission(unittest.TestCase):
         submission.submission_dir = "Bury Our Bones in the Midnight Soil"
         submission.storyteller_uuid = None
         submission.submitted_at = datetime.utcnow()
-        self.mock_db.get_storyteller_submission.return_value = submission
+        self.mock_db.get_storyteller_submission_by_book_id.return_value = submission
 
         book = Mock()
         book.storyteller_uuid = None
@@ -384,7 +389,7 @@ class TestStorytellerSubmission(unittest.TestCase):
         submission.submission_dir = "Test Book"
         submission.storyteller_uuid = None
         submission.submitted_at = datetime.utcnow()
-        self.mock_db.get_storyteller_submission.return_value = submission
+        self.mock_db.get_storyteller_submission_by_book_id.return_value = submission
 
         book = Mock()
         book.storyteller_uuid = None
@@ -409,7 +414,7 @@ class TestStorytellerSubmission(unittest.TestCase):
         submission.submission_dir = "What If [Revised]"
         submission.storyteller_uuid = None
         submission.submitted_at = datetime.utcnow()
-        self.mock_db.get_storyteller_submission.return_value = submission
+        self.mock_db.get_storyteller_submission_by_book_id.return_value = submission
 
         book = Mock()
         book.storyteller_uuid = None
@@ -466,7 +471,7 @@ class TestStorytellerSubmission(unittest.TestCase):
         """When submission is already ready, no filesystem/API checks should run."""
         submission = Mock()
         submission.status = "ready"
-        self.mock_db.get_storyteller_submission.return_value = submission
+        self.mock_db.get_storyteller_submission_by_book_id.return_value = submission
         assert self.service.check_status("book-123") == "ready"
         # Should NOT have called update_storyteller_submission_status
         self.mock_db.update_storyteller_submission_status.assert_not_called()

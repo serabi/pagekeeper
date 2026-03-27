@@ -63,7 +63,7 @@
                     </button>
                 </form>
                 <button type="button" class="btn btn-danger"
-                    onclick="showConfirmModal('Clear All', 'Clear entire queue? This cannot be undone.', '/batch-match', 'danger')"
+                    onclick="PKModal.confirmForm({ title: 'Clear All', message: 'Clear entire queue? This cannot be undone.', formAction: '/batch-match', hiddenFields: { action: 'clear_queue' }, confirmLabel: 'Clear All', confirmClass: 'btn btn-danger' })"
                     {% if not queue_summary.total_count %}disabled{% endif %}>
                     Clear All
                 </button>
@@ -82,12 +82,16 @@
             {% set single_st_match = storyteller_books|length == 1 %}
             {% set single_eb_match = ebooks|length == 1 %}
 
+            {% set abs_ok = abs_configured|default(true) %}
+            {% set ebook_ok = has_ebook_sources|default(true) %}
+
             <section class="batch-selection-workspace">
                 <div class="batch-selection-grid">
+                    {% if abs_ok %}
                     <div class="batch-selection-column">
                         <div class="batch-selection-header">
                             <h3><span class="section-number">1</span>Audiobooks</h3>
-                            <p class="section-hint">Choose one audiobook from your ABS library.</p>
+                            <p class="section-hint">Choose one audiobook from your audiobook library.</p>
                         </div>
                         <div class="batch-selection-panel">
                             {% if audiobooks %}
@@ -122,10 +126,12 @@
                             {% endif %}
                         </div>
                     </div>
+                    {% endif %}
 
+                    {% if storyteller_configured %}
                     <div class="batch-selection-column">
                         <div class="batch-selection-header">
-                            <h3><span class="section-number">2</span>Storyteller</h3>
+                            <h3><span class="section-number">{% if abs_ok %}2{% else %}1{% endif %}</span>Storyteller</h3>
                             <p class="section-hint">Optional narrated ebook sync source.</p>
                         </div>
                         <div class="batch-selection-panel">
@@ -170,11 +176,12 @@
                             {% endif %}
                         </div>
                     </div>
+                    {% endif %}
 
                     <div class="batch-selection-column">
                         <div class="batch-selection-header">
-                            <h3><span class="section-number">3</span>eBooks</h3>
-                            <p class="section-hint">Optional ebook source for progress sync.</p>
+                            <h3><span class="section-number">{% if abs_ok and storyteller_configured %}3{% elif abs_ok or storyteller_configured %}2{% else %}1{% endif %}</span>eBooks</h3>
+                            <p class="section-hint">{% if abs_ok %}Optional ebook source for progress sync.{% else %}Choose an ebook for progress sync.{% endif %}</p>
                         </div>
                         <div class="batch-selection-panel">
                             {% if ebooks %}
@@ -213,7 +220,7 @@
                             <div class="empty-state batch-empty-state">
                                 <div class="empty-state-icon"></div>
                                 <h3>No ebooks found</h3>
-                                <p>You can still queue an audio-only mapping.</p>
+                                <p>{% if abs_ok %}You can still queue an audio-only mapping.{% else %}Search to load ebook matches.{% endif %}</p>
                             </div>
                             {% endif %}
                         </div>
@@ -222,7 +229,11 @@
 
                 <div class="batch-selection-footer">
                     <div class="batch-selection-status" id="selectionStatus">
+                        {% if abs_ok %}
                         Select an audiobook to enable queueing.
+                        {% else %}
+                        Select an ebook to enable queueing.
+                        {% endif %}
                     </div>
                     <button type="submit" class="btn btn-success add-to-queue-btn" id="addToQueueBtn" disabled>
                         Add to Queue
@@ -244,7 +255,7 @@
                         <tr>
                             <th>#</th>
                             <th>Audiobook</th>
-                            <th>Storyteller</th>
+                            {% if storyteller_configured %}<th>Storyteller</th>{% endif %}
                             <th>eBook</th>
                             <th>Status</th>
                             <th>Actions</th>
@@ -264,15 +275,17 @@
                                     {% endif %}
                                     <div class="batch-queue-book-copy">
                                         <div class="batch-queue-title" title="{{ item.title }}">{{ item.title }}</div>
-                                        <div class="batch-queue-subtitle">{{ item.abs_id }}</div>
+                                        <div class="batch-queue-subtitle">{{ item.abs_id or 'Ebook only' }}</div>
                                     </div>
                                 </div>
                             </td>
+                            {% if storyteller_configured %}
                             <td>
                                 <span class="batch-queue-cell {% if item.storyteller_selected %}has-value{% endif %}">
                                     {{ item.storyteller_label }}
                                 </span>
                             </td>
+                            {% endif %}
                             <td>
                                 <span class="batch-queue-cell {% if item.ebook_filename %}has-value{% endif %}">
                                     {{ item.ebook_label }}
@@ -284,7 +297,7 @@
                             <td class="batch-queue-actions-cell">
                                 <form method="POST" action="/batch-match" class="d-inline">
                                     <input type="hidden" name="action" value="remove_from_queue">
-                                    <input type="hidden" name="abs_id" value="{{ item.abs_id }}">
+                                    <input type="hidden" name="queue_key" value="{{ item.queue_key|default(item.abs_id) }}">
                                     <button type="submit" class="queue-item-remove batch-row-remove">Remove</button>
                                 </form>
                             </td>
@@ -324,156 +337,11 @@
         </section>
     </div>
 
-    <script>
-        const selectionState = {
-            audiobook: null,
-            storyteller: null,
-            ebook: null,
-            ebookDisplayName: '',
-        };
+    {% include 'partials/confirm_modal.html' %}
 
-        function applySelection(card) {
-            const group = card.dataset.selectGroup;
-            const value = card.dataset.value || '';
-            const targetInputId = card.dataset.targetInput;
-            const targetInput = document.getElementById(targetInputId);
-
-            document.querySelectorAll(`[data-select-group="${group}"]`).forEach((el) => {
-                el.classList.remove('selected');
-            });
-
-            card.classList.add('selected');
-            targetInput.value = value;
-
-            if (group === 'audiobook') {
-                selectionState.audiobook = value || null;
-            } else if (group === 'storyteller') {
-                selectionState.storyteller = value || null;
-            } else if (group === 'ebook') {
-                selectionState.ebook = value || null;
-                selectionState.ebookDisplayName = card.dataset.displayName || value;
-                const displayInput = document.getElementById(card.dataset.displayInput);
-                if (displayInput) {
-                    displayInput.value = selectionState.ebookDisplayName;
-                }
-            }
-
-            if (group !== 'ebook' && !selectionState.ebook) {
-                document.getElementById('selected_ebook_display_name').value = '';
-            }
-
-            updateBatchActionState();
-        }
-
-        function updateBatchActionState() {
-            const addButton = document.getElementById('addToQueueBtn');
-            const statusLabel = document.getElementById('selectionStatus');
-            const hasAudiobook = Boolean(selectionState.audiobook);
-            const hasLinkedSource = Boolean(selectionState.storyteller || selectionState.ebook);
-
-            addButton.disabled = !hasAudiobook;
-            addButton.textContent = hasAudiobook && !hasLinkedSource
-                ? 'Add Audio Only to Queue'
-                : 'Add to Queue';
-
-            if (!hasAudiobook) {
-                statusLabel.textContent = 'Select an audiobook to enable queueing.';
-                return;
-            }
-
-            if (!hasLinkedSource) {
-                statusLabel.textContent = 'Queue will be created as audio-only.';
-                return;
-            }
-
-            if (selectionState.storyteller && selectionState.ebook) {
-                statusLabel.textContent = 'Queue will include both Storyteller and ebook.';
-                return;
-            }
-
-            if (selectionState.storyteller) {
-                statusLabel.textContent = 'Queue will use Storyteller as the linked source.';
-                return;
-            }
-
-            statusLabel.textContent = 'Queue will use the selected ebook source.';
-        }
-
-        (function initBatchMatch() {
-            document.querySelectorAll('.batch-select-card').forEach((card) => {
-                card.addEventListener('click', () => applySelection(card));
-            });
-
-            const preselectedAudiobook = document.querySelector('[data-select-group="audiobook"].selected');
-            if (preselectedAudiobook) {
-                selectionState.audiobook = preselectedAudiobook.dataset.value || null;
-                document.getElementById('selected_audiobook_id').value = selectionState.audiobook || '';
-            }
-
-            const preselectedStoryteller = document.querySelector('[data-select-group="storyteller"].selected');
-            if (preselectedStoryteller) {
-                selectionState.storyteller = preselectedStoryteller.dataset.value || null;
-                document.getElementById('selected_storyteller_uuid').value = preselectedStoryteller.dataset.value || '';
-            }
-
-            const preselectedEbook = document.querySelector('[data-select-group="ebook"].selected');
-            if (preselectedEbook) {
-                selectionState.ebook = preselectedEbook.dataset.value || null;
-                selectionState.ebookDisplayName = preselectedEbook.dataset.displayName || selectionState.ebook || '';
-                document.getElementById('selected_ebook_filename').value = selectionState.ebook || '';
-                document.getElementById('selected_ebook_display_name').value = selectionState.ebookDisplayName;
-            }
-
-            updateBatchActionState();
-        })();
-    </script>
-
-    <!-- Confirm Modal -->
-    <div id="confirm-modal" class="confirm-modal" style="display:none;">
-        <div class="confirm-modal-overlay" onclick="closeConfirmModal()"></div>
-        <div class="confirm-modal-box">
-            <div class="confirm-modal-icon" id="confirm-modal-icon"></div>
-            <h3 class="confirm-modal-title" id="confirm-modal-title"></h3>
-            <p class="confirm-modal-message" id="confirm-modal-message"></p>
-            <div class="confirm-modal-actions">
-                <button class="btn btn-secondary" onclick="closeConfirmModal()">Cancel</button>
-                <form id="confirm-modal-form" method="POST" style="margin:0;">
-                    <input type="hidden" name="action" id="confirm-modal-action" value="">
-                    <button type="submit" class="btn" id="confirm-modal-submit">Confirm</button>
-                </form>
-            </div>
-        </div>
-    </div>
-
-    <script>
-    function showConfirmModal(title, message, formAction, accentType) {
-        const modal = document.getElementById('confirm-modal');
-        if (!modal) return;
-        document.getElementById('confirm-modal-title').textContent = title;
-        document.getElementById('confirm-modal-message').textContent = message;
-        document.getElementById('confirm-modal-form').action = formAction;
-        document.getElementById('confirm-modal-action').value = 'clear_queue';
-        const submitBtn = document.getElementById('confirm-modal-submit');
-        const iconEl = document.getElementById('confirm-modal-icon');
-        submitBtn.className = 'btn';
-        iconEl.className = 'confirm-modal-icon';
-        if (accentType === 'danger') {
-            submitBtn.classList.add('btn-danger');
-            iconEl.textContent = '\u26A0';
-            iconEl.classList.add('confirm-icon-danger');
-        } else {
-            submitBtn.classList.add('btn-warning');
-            iconEl.textContent = '\u26A0';
-            iconEl.classList.add('confirm-icon-warning');
-        }
-        submitBtn.textContent = title;
-        modal.style.display = 'flex';
-    }
-    function closeConfirmModal() {
-        const modal = document.getElementById('confirm-modal');
-        if (modal) modal.style.display = 'none';
-    }
-    </script>
+    <script src="/static/js/utils.js"></script>
+    <script src="/static/js/confirm-modal.js"></script>
+    <script src="/static/js/batch-match.js"></script>
 </body>
 
 </html>

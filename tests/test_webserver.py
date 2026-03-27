@@ -28,8 +28,8 @@ class MockContainer:
         self.mock_database_service = Mock()
         self.mock_database_service.get_all_settings.return_value = {}  # Default empty settings
         self.mock_database_service.get_book_by_ref.return_value = None
-        self.mock_database_service.get_bookfusion_linked_abs_ids.return_value = set()
-        self.mock_database_service.get_bookfusion_highlight_counts.return_value = {}
+        self.mock_database_service.get_bookfusion_linked_book_ids.return_value = set()
+        self.mock_database_service.get_bookfusion_highlight_counts_by_book_id.return_value = {}
         self.mock_ebook_parser = Mock()
         self.mock_sync_clients = Mock()
         self.mock_bookfusion_client = Mock()
@@ -46,7 +46,7 @@ class MockContainer:
         self.mock_sync_manager.abs_client = self.mock_abs_client
         self.mock_sync_manager.booklore_client = self.mock_booklore_client
         self.mock_sync_manager.storyteller_client = self.mock_storyteller_client
-        self.mock_sync_manager.get_abs_title.return_value = 'Test Book Title'
+        self.mock_sync_manager.get_audiobook_title.return_value = 'Test Book Title'
         self.mock_sync_manager.get_duration.return_value = 3600
         self.mock_sync_manager.clear_progress = Mock()
 

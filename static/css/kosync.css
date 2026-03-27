@@ -1,0 +1,340 @@
+/* KoSync Document Management page styles */
+
+.kosync-shell {
+    max-width: 900px;
+    padding-bottom: 60px;
+}
+
+/* ── Page header ── */
+.kosync-page-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.kosync-page-kicker {
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-text-faint);
+    margin: 0 0 4px;
+}
+
+.kosync-page-title {
+    font-family: Outfit, sans-serif;
+    font-size: 24px;
+    font-weight: 700;
+    margin: 0 0 4px;
+    color: var(--color-text);
+}
+
+.kosync-page-description {
+    font-size: 13px;
+    color: var(--color-text-muted);
+    margin: 0;
+    line-height: 1.5;
+}
+
+/* ── Stats strip ── */
+.kosync-stats {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+}
+
+.kosync-stat {
+    font-size: 12px;
+    color: var(--color-text-muted);
+    background: var(--color-surface-2);
+    padding: 4px 12px;
+    border-radius: 20px;
+    white-space: nowrap;
+}
+
+.kosync-stat strong {
+    color: var(--color-text);
+    font-weight: 600;
+}
+
+/* ── Sections ── */
+.kosync-section {
+    margin-bottom: 32px;
+}
+
+.kosync-section-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+.kosync-section-title {
+    font-family: Outfit, sans-serif;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--color-text);
+    margin: 0;
+}
+
+.kosync-section-toggle {
+    font-size: 12px;
+    color: var(--color-text-faint);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
+.kosync-section-toggle:hover {
+    background: var(--color-surface-2);
+    color: var(--color-text-muted);
+}
+
+.kosync-section-help {
+    font-size: 13px;
+    color: var(--color-text-muted);
+    margin: 0 0 12px;
+    line-height: 1.5;
+}
+
+/* ── Cards ── */
+.kosync-card {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 16px;
+    background: var(--color-surface-2);
+    border-radius: 10px;
+    margin-bottom: 8px;
+    transition: background 0.15s;
+}
+
+.kosync-card:hover {
+    background: var(--color-surface-3);
+}
+
+.kosync-card-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.kosync-card-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--color-text);
+    margin: 0 0 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.kosync-card-meta {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    font-size: 12px;
+    color: var(--color-text-faint);
+}
+
+.kosync-hash {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    color: var(--color-text-muted);
+    background: var(--color-surface-1);
+    padding: 2px 6px;
+    border-radius: 4px;
+    letter-spacing: 0.02em;
+}
+
+.kosync-card-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+    align-items: flex-start;
+}
+
+.kosync-card-actions .btn {
+    font-size: 11px;
+    padding: 4px 10px;
+    white-space: nowrap;
+}
+
+/* ── Inline search panel ── */
+.kosync-search-panel {
+    margin-top: 10px;
+    padding: 10px 12px;
+    background: var(--color-surface-1);
+    border-radius: 8px;
+}
+
+.kosync-search-panel .search-box {
+    width: 100%;
+    margin-bottom: 8px;
+    box-sizing: border-box;
+}
+
+.kosync-search-result {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.kosync-search-result:last-child {
+    border-bottom: none;
+}
+
+.kosync-search-result-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.kosync-search-result-title {
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.kosync-search-result-status {
+    font-size: 11px;
+    color: var(--color-text-muted);
+}
+
+/* ── Empty state ── */
+.kosync-empty {
+    text-align: center;
+    padding: 24px;
+    color: var(--color-text-faint);
+    font-size: 13px;
+}
+
+/* ── Tags ── */
+.kosync-tag {
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-bottom: 4px;
+}
+
+.kosync-tag--unlinked {
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+}
+
+.kosync-tag--orphaned {
+    background: rgba(245, 158, 11, 0.15);
+    color: #f59e0b;
+}
+
+/* ── Card variants ── */
+.kosync-card--attention {
+    border-left: 3px solid rgba(239, 68, 68, 0.5);
+}
+
+.kosync-card--stale {
+    opacity: 0.7;
+}
+
+/* ── Meta highlights ── */
+.kosync-meta--highlight {
+    color: var(--color-text);
+    font-weight: 500;
+}
+
+.kosync-meta--warn {
+    color: #f59e0b;
+    font-weight: 500;
+}
+
+/* ── Stat variants ── */
+.kosync-stat--alert strong {
+    color: #ef4444;
+}
+
+.kosync-stat--warn strong {
+    color: #f59e0b;
+}
+
+/* ── Dashboard: Pending Identification ── */
+.pending-id-help {
+    font-size: 13px;
+    color: var(--color-text-muted);
+    margin: 0 0 12px;
+}
+
+.pending-id-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.pending-id-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 14px;
+    background: var(--color-surface-2);
+    border-radius: 8px;
+    border-left: 3px solid rgba(245, 158, 11, 0.5);
+}
+
+.pending-id-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    color: var(--color-text-muted);
+}
+
+.pending-id-pct {
+    font-weight: 600;
+    color: var(--color-text);
+}
+
+.pending-id-device {
+    font-size: 12px;
+}
+
+.pending-id-btn {
+    font-size: 11px;
+    padding: 4px 10px;
+    flex-shrink: 0;
+}
+
+/* ── Mobile responsive ── */
+@media (max-width: 600px) {
+    .kosync-card {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .kosync-card-actions {
+        width: 100%;
+        flex-wrap: wrap;
+    }
+
+    .kosync-card-actions .btn {
+        flex: 1;
+        text-align: center;
+    }
+
+    .kosync-page-header {
+        flex-direction: column;
+    }
+}

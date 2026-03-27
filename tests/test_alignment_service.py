@@ -36,7 +36,7 @@ def test_align_and_store_success(service, mock_db):
     # Ensure DB query returns None (Simulate no existing record)
     session.query.return_value.filter_by.return_value.first.return_value = None
 
-    result = service.align_and_store("test_id", segments, ebook_text)
+    result = service.align_and_store(42, segments, ebook_text)
 
     assert result == True
     session.add.assert_called()
@@ -87,9 +87,9 @@ def test_get_time_for_text(service, mock_db):
     session.query.return_value.filter_by.return_value.first.return_value = mock_entry
 
     # Test Exact
-    ts = service.get_time_for_text("test_id", char_offset_hint=0)
+    ts = service.get_time_for_text(42, char_offset_hint=0)
     assert ts == 0.0
 
     # Test Interpolation (50 chars -> 5.0s)
-    ts = service.get_time_for_text("test_id", char_offset_hint=50)
+    ts = service.get_time_for_text(42, char_offset_hint=50)
     assert ts == 5.0

@@ -91,7 +91,7 @@ class ABSSyncClient(SyncClient):
 
         if transcript_path == TRANSCRIPT_DB_MANAGED:
              if self.alignment_service:
-                 dur = self.alignment_service.get_book_duration(book.abs_id)
+                 dur = self.alignment_service.get_book_duration(book.id)
                  if dur:
                      return min(max(abs_seconds / dur, 0.0), 1.0)
              return None
@@ -120,7 +120,7 @@ class ABSSyncClient(SyncClient):
         # DB Managed (Unified Architecture)
         if book.transcript_file == TRANSCRIPT_DB_MANAGED and self.alignment_service:
             # Inverse lookup: Time -> Char -> Text
-            char_offset = self.alignment_service.get_char_for_time(book.abs_id, abs_ts)
+            char_offset = self.alignment_service.get_char_for_time(book.id, abs_ts)
             if char_offset is not None:
                  # Need book text
                  book_path = self.ebook_parser.resolve_book_path(book.ebook_filename)
@@ -139,7 +139,7 @@ class ABSSyncClient(SyncClient):
             if not path.exists() and self.alignment_service:
                 logger.warning(f"'{book.abs_id}' Legacy transcript file missing: '{path}' — Attempting DB fallback")
                 # Try DB lookup
-                char_offset = self.alignment_service.get_char_for_time(book.abs_id, abs_ts)
+                char_offset = self.alignment_service.get_char_for_time(book.id, abs_ts)
                 if char_offset is not None:
                      logger.info(f"'{book.abs_id}' Found in DB despite missing file — Self-healing state")
                      # We can't easily save the book here without circular dependency or passing DB service
@@ -186,7 +186,7 @@ class ABSSyncClient(SyncClient):
             char_index = request.locator_result.match_index
             if char_index is not None:
                 ts_for_text = self.alignment_service.get_time_for_text(
-                    book.abs_id,
+                    book.id,
                     char_offset_hint=char_index
                 )
             else:

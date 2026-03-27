@@ -13,7 +13,8 @@ from flask import Flask, request
 from markupsafe import Markup
 
 from src.api.hardcover_routes import hardcover_bp, init_hardcover_routes
-from src.api.kosync_server import init_kosync_server, kosync_admin_bp, kosync_sync_bp
+from src.api.kosync_admin import kosync_admin_bp
+from src.api.kosync_server import kosync_sync_bp
 from src.blueprints import register_blueprints
 from src.blueprints.helpers import safe_folder_name
 from src.utils.config_loader import ConfigLoader
@@ -27,7 +28,7 @@ def _reconfigure_logging():
     Reads LOG_LEVEL (default "INFO"), resolves it to a logging level constant, sets the root logger to that level, and logs the outcome. On failure, emits a warning describing the error.
     """
     try:
-        new_level_str = os.environ.get('LOG_LEVEL', 'INFO').upper()
+        new_level_str = os.environ.get("LOG_LEVEL", "INFO").upper()
         new_level = getattr(logging, new_level_str, logging.INFO)
 
         root = logging.getLogger()
@@ -36,6 +37,7 @@ def _reconfigure_logging():
         logger.info(f"Logging level updated to {new_level_str}")
     except Exception as e:
         logger.warning(f"Failed to reconfigure logging: {e}")
+
 
 def apply_settings(app):
     """Hot-reload settings that don't propagate automatically via os.environ.
@@ -54,15 +56,15 @@ def apply_settings(app):
 
     # 2. Reschedule sync_cycle job with new period
     try:
-        sync_mgr = app.config.get('sync_manager')
-        raw_period = os.environ.get('SYNC_PERIOD_MINS', '5')
+        sync_mgr = app.config.get("sync_manager")
+        raw_period = os.environ.get("SYNC_PERIOD_MINS", "5")
         new_period = int(raw_period)
         if new_period <= 0:
             raise ValueError("SYNC_PERIOD_MINS must be an integer greater than 0")
 
-        schedule.clear('sync_cycle')
+        schedule.clear("sync_cycle")
         if sync_mgr:
-            schedule.every(new_period).minutes.do(sync_mgr.sync_cycle).tag('sync_cycle')
+            schedule.every(new_period).minutes.do(sync_mgr.sync_cycle).tag("sync_cycle")
         logger.info(f"Sync schedule updated to every {new_period} minutes")
     except Exception as e:
         errors.append(f"sync reschedule failed: {e}")
@@ -74,12 +76,13 @@ def apply_settings(app):
         errors.append(f"socket listener reconciliation failed: {e}")
 
     # 4. Refresh config values that blueprints read from app.config
-    app.config['ABS_COLLECTION_NAME'] = os.environ.get('ABS_COLLECTION_NAME', 'Synced with KOReader')
-    app.config['SUGGESTIONS_ENABLED'] = os.environ.get('SUGGESTIONS_ENABLED', 'false').lower() == 'true'
+    app.config["ABS_COLLECTION_NAME"] = os.environ.get("ABS_COLLECTION_NAME", "Synced with KOReader")
+    app.config["SUGGESTIONS_ENABLED"] = os.environ.get("SUGGESTIONS_ENABLED", "false").lower() == "true"
 
     # 5. Reconcile Telegram logging handler state
     try:
         from src.utils.logging_utils import reconcile_telegram_logging
+
         reconcile_telegram_logging()
     except Exception as e:
         errors.append(f"telegram logging reconciliation failed: {e}")
@@ -108,36 +111,36 @@ def _reconcile_socket_listener(app):
     """
     from src.services.abs_socket_listener import ABSSocketListener
 
-    instant_sync = os.environ.get('INSTANT_SYNC_ENABLED', 'true').lower() != 'false'
-    socket_enabled = os.environ.get('ABS_SOCKET_ENABLED', 'true').lower() != 'false'
-    abs_server = os.environ.get('ABS_SERVER', '')
-    abs_key = os.environ.get('ABS_KEY', '')
+    instant_sync = os.environ.get("INSTANT_SYNC_ENABLED", "true").lower() != "false"
+    socket_enabled = os.environ.get("ABS_SOCKET_ENABLED", "true").lower() != "false"
+    abs_server = os.environ.get("ABS_SERVER", "")
+    abs_key = os.environ.get("ABS_KEY", "")
     should_run = instant_sync and socket_enabled and abs_server and abs_key
 
-    current: ABSSocketListener | None = app.config.get('abs_listener')
-    current_server = app.config.get('_abs_listener_server', '')
-    current_key = app.config.get('_abs_listener_key', '')
+    current: ABSSocketListener | None = app.config.get("abs_listener")
+    current_server = app.config.get("_abs_listener_server", "")
+    current_key = app.config.get("_abs_listener_key", "")
 
     if should_run and current is None:
         # Start new listener
         listener = ABSSocketListener(
             abs_server_url=abs_server,
             abs_api_token=abs_key,
-            database_service=app.config['database_service'],
-            sync_manager=app.config['sync_manager'],
+            database_service=app.config["database_service"],
+            sync_manager=app.config["sync_manager"],
         )
         threading.Thread(target=listener.start, daemon=True).start()
-        app.config['abs_listener'] = listener
-        app.config['_abs_listener_server'] = abs_server
-        app.config['_abs_listener_key'] = abs_key
+        app.config["abs_listener"] = listener
+        app.config["_abs_listener_server"] = abs_server
+        app.config["_abs_listener_key"] = abs_key
         logger.info("ABS Socket.IO listener started via hot-reload")
 
     elif not should_run and current is not None:
         # Stop running listener
         current.stop()
-        app.config['abs_listener'] = None
-        app.config['_abs_listener_server'] = ''
-        app.config['_abs_listener_key'] = ''
+        app.config["abs_listener"] = None
+        app.config["_abs_listener_server"] = ""
+        app.config["_abs_listener_key"] = ""
         logger.info("ABS Socket.IO listener stopped via hot-reload")
 
     elif should_run and current is not None and (abs_server != current_server or abs_key != current_key):
@@ -146,13 +149,13 @@ def _reconcile_socket_listener(app):
         listener = ABSSocketListener(
             abs_server_url=abs_server,
             abs_api_token=abs_key,
-            database_service=app.config['database_service'],
-            sync_manager=app.config['sync_manager'],
+            database_service=app.config["database_service"],
+            sync_manager=app.config["sync_manager"],
         )
         threading.Thread(target=listener.start, daemon=True).start()
-        app.config['abs_listener'] = listener
-        app.config['_abs_listener_server'] = abs_server
-        app.config['_abs_listener_key'] = abs_key
+        app.config["abs_listener"] = listener
+        app.config["_abs_listener_server"] = abs_server
+        app.config["_abs_listener_key"] = abs_key
         logger.info("ABS Socket.IO listener restarted via hot-reload (credentials changed)")
 
 
@@ -160,6 +163,7 @@ def _reconcile_socket_listener(app):
 container = None
 manager = None
 database_service = None
+
 
 def setup_dependencies(app, test_container=None):
     """
@@ -173,6 +177,7 @@ def setup_dependencies(app, test_container=None):
 
     # Initialize Database Service
     from src.db.migration_utils import initialize_database
+
     database_service = initialize_database(os.environ.get("DATA_DIR", "/data"))
 
     # Load settings from DB
@@ -182,13 +187,13 @@ def setup_dependencies(app, test_container=None):
         logger.info("Settings loaded into environment variables")
 
         # Migrate ABS_LIBRARY_ID -> ABS_LIBRARY_IDS
-        old_lib_id = os.environ.get('ABS_LIBRARY_ID', '')
-        new_lib_ids = os.environ.get('ABS_LIBRARY_IDS', '')
+        old_lib_id = os.environ.get("ABS_LIBRARY_ID", "")
+        new_lib_ids = os.environ.get("ABS_LIBRARY_IDS", "")
         if old_lib_id and not new_lib_ids:
-            old_only_search = os.environ.get('ABS_ONLY_SEARCH_IN_ABS_LIBRARY_ID', 'false')
-            if old_only_search.lower() == 'true':
-                database_service.set_setting('ABS_LIBRARY_IDS', old_lib_id)
-                os.environ['ABS_LIBRARY_IDS'] = old_lib_id
+            old_only_search = os.environ.get("ABS_ONLY_SEARCH_IN_ABS_LIBRARY_ID", "false")
+            if old_only_search.lower() == "true":
+                database_service.set_setting("ABS_LIBRARY_IDS", old_lib_id)
+                os.environ["ABS_LIBRARY_IDS"] = old_lib_id
                 logger.info(f"Migrated ABS_LIBRARY_ID '{old_lib_id}' to ABS_LIBRARY_IDS")
 
         # Force reconfigure logging level based on new settings
@@ -214,6 +219,7 @@ def setup_dependencies(app, test_container=None):
     else:
         # Create production container AFTER loading settings
         from src.utils.di_container import create_container
+
         container = create_container()
 
     # Override the container's database_service with our already-initialized instance
@@ -233,22 +239,34 @@ def setup_dependencies(app, test_container=None):
         COVERS_DIR.mkdir(parents=True, exist_ok=True)
 
     # Store shared state on app.config for blueprint access
-    app.config['container'] = container
-    app.config['sync_manager'] = manager
-    app.config['database_service'] = database_service
-    if hasattr(container, 'abs_service'):
-        app.config['abs_service'] = container.abs_service()
+    app.config["container"] = container
+    app.config["sync_manager"] = manager
+    app.config["database_service"] = database_service
+    if hasattr(container, "abs_service"):
+        app.config["abs_service"] = container.abs_service()
     else:
         from src.services.abs_service import ABSService
-        app.config['abs_service'] = ABSService(container.abs_client())
-    app.config['DATA_DIR'] = DATA_DIR
-    app.config['EBOOK_DIR'] = EBOOK_DIR
-    app.config['COVERS_DIR'] = COVERS_DIR
-    app.config['ABS_COLLECTION_NAME'] = os.environ.get('ABS_COLLECTION_NAME', 'Synced with KOReader')
-    app.config['SUGGESTIONS_ENABLED'] = os.environ.get('SUGGESTIONS_ENABLED', 'false').lower() == 'true'
 
-    # Register KoSync Blueprint and initialize with dependencies
-    init_kosync_server(database_service, container, manager, EBOOK_DIR)
+        app.config["abs_service"] = ABSService(container.abs_client())
+    app.config["DATA_DIR"] = DATA_DIR
+    app.config["EBOOK_DIR"] = EBOOK_DIR
+    app.config["COVERS_DIR"] = COVERS_DIR
+    app.config["ABS_COLLECTION_NAME"] = os.environ.get("ABS_COLLECTION_NAME", "Synced with KOReader")
+    app.config["SUGGESTIONS_ENABLED"] = os.environ.get("SUGGESTIONS_ENABLED", "false").lower() == "true"
+
+    # Register KoSync blueprints and initialize services
+    from src.services.kosync_service import KosyncService
+    from src.utils.debounce_manager import DebounceManager
+    from src.utils.rate_limiter import TokenBucketRateLimiter
+
+    rate_limiter = TokenBucketRateLimiter()
+    kosync_service = KosyncService(database_service, container, manager, EBOOK_DIR)
+    debounce_manager = DebounceManager(database_service, manager, rate_limiter=rate_limiter)
+
+    app.config["kosync_service"] = kosync_service
+    app.config["debounce_manager"] = debounce_manager
+    app.config["rate_limiter"] = rate_limiter
+
     app.register_blueprint(kosync_sync_bp)
     app.register_blueprint(kosync_admin_bp)
 
@@ -276,46 +294,48 @@ def inject_global_vars():
             - get_bool (callable): get_bool(key) returns `True` if get_val(key, 'false')
               yields a case-insensitive value in ('true', '1', 'yes', 'on'), `False` otherwise.
     """
-    pagekeeper_env = os.environ.get('PAGEKEEPER_ENV', '').strip().lower()
-    is_dev_container = pagekeeper_env == 'dev'
-    title_prefix = '[DEV] ' if is_dev_container else ''
+    pagekeeper_env = os.environ.get("PAGEKEEPER_ENV", "").strip().lower()
+    is_dev_container = pagekeeper_env == "dev"
+    title_prefix = "[DEV] " if is_dev_container else ""
 
     def get_val(key, default_val=None):
-        if key in os.environ: return os.environ[key]
+        if key in os.environ:
+            return os.environ[key]
         DEFAULTS = {
-            'TZ': 'America/New_York',
-            'LOG_LEVEL': 'INFO',
-            'DATA_DIR': '/data',
-            'BOOKS_DIR': '/books',
-            'ABS_COLLECTION_NAME': 'Synced with KOReader',
-            'BOOKLORE_SHELF_NAME': 'Kobo',
-            'SYNC_PERIOD_MINS': '5',
-            'SYNC_DELTA_ABS_SECONDS': '60',
-            'SYNC_DELTA_KOSYNC_PERCENT': '0.5',
-            'SYNC_DELTA_BETWEEN_CLIENTS_PERCENT': '0.5',
-            'SYNC_DELTA_KOSYNC_WORDS': '400',
-            'FUZZY_MATCH_THRESHOLD': '80',
-            'WHISPER_MODEL': 'tiny',
-            'JOB_MAX_RETRIES': '5',
-            'JOB_RETRY_DELAY_MINS': '15',
-            'MONITOR_INTERVAL': '3600',
-            'AUDIOBOOKS_DIR': '/audiobooks',
-            'ABS_PROGRESS_OFFSET_SECONDS': '0',
-            'EBOOK_CACHE_SIZE': '3',
-            'KOSYNC_HASH_METHOD': 'content',
-            'TELEGRAM_LOG_LEVEL': 'ERROR',
-            'ABS_ENABLED': 'true',
-            'KOSYNC_ENABLED': 'false',
-            'STORYTELLER_ENABLED': 'false',
-            'BOOKLORE_ENABLED': 'false',
-            'HARDCOVER_ENABLED': 'false',
-            'TELEGRAM_ENABLED': 'false',
-            'SUGGESTIONS_ENABLED': 'false',
-            'BOOKFUSION_ENABLED': 'false',
-            'REPROCESS_ON_CLEAR_IF_NO_ALIGNMENT': 'true'
+            "TZ": "America/New_York",
+            "LOG_LEVEL": "INFO",
+            "DATA_DIR": "/data",
+            "BOOKS_DIR": "/books",
+            "ABS_COLLECTION_NAME": "Synced with KOReader",
+            "BOOKLORE_SHELF_NAME": "Kobo",
+            "SYNC_PERIOD_MINS": "5",
+            "SYNC_DELTA_ABS_SECONDS": "60",
+            "SYNC_DELTA_KOSYNC_PERCENT": "0.5",
+            "SYNC_DELTA_BETWEEN_CLIENTS_PERCENT": "0.5",
+            "SYNC_DELTA_KOSYNC_WORDS": "400",
+            "FUZZY_MATCH_THRESHOLD": "80",
+            "WHISPER_MODEL": "tiny",
+            "JOB_MAX_RETRIES": "5",
+            "JOB_RETRY_DELAY_MINS": "15",
+            "MONITOR_INTERVAL": "3600",
+            "AUDIOBOOKS_DIR": "/audiobooks",
+            "ABS_PROGRESS_OFFSET_SECONDS": "0",
+            "EBOOK_CACHE_SIZE": "3",
+            "KOSYNC_HASH_METHOD": "content",
+            "TELEGRAM_LOG_LEVEL": "ERROR",
+            "ABS_ENABLED": "true",
+            "KOSYNC_ENABLED": "false",
+            "STORYTELLER_ENABLED": "false",
+            "BOOKLORE_ENABLED": "false",
+            "HARDCOVER_ENABLED": "false",
+            "TELEGRAM_ENABLED": "false",
+            "SUGGESTIONS_ENABLED": "false",
+            "BOOKFUSION_ENABLED": "false",
+            "REPROCESS_ON_CLEAR_IF_NO_ALIGNMENT": "true",
         }
-        if key in DEFAULTS: return DEFAULTS[key]
-        return default_val if default_val is not None else ''
+        if key in DEFAULTS:
+            return DEFAULTS[key]
+        return default_val if default_val is not None else ""
 
     def get_bool(key):
         """
@@ -327,22 +347,23 @@ def inject_global_vars():
         Returns:
             bool: `True` if the variable's value (case-insensitive) is one of `'true'`, `'1'`, `'yes'`, or `'on'`; `False` otherwise.
         """
-        val = get_val(key, 'false')
-        return val.lower() in ('true', '1', 'yes', 'on')
+        val = get_val(key, "false")
+        return val.lower() in ("true", "1", "yes", "on")
 
     def get_header_service_url(service_name):
         from src.utils.service_url_helper import get_service_web_url
+
         prefix = service_name.upper()
-        if not get_bool(f'{prefix}_ENABLED'):
-            return ''
+        if not get_bool(f"{prefix}_ENABLED"):
+            return ""
         return get_service_web_url(prefix)
 
     def is_active_path(path):
-        req_path = request.path.rstrip('/') or '/'
-        target_path = path.rstrip('/') or '/'
-        if target_path == '/':
-            return req_path == '/'
-        return req_path == target_path or req_path.startswith(f'{target_path}/')
+        req_path = request.path.rstrip("/") or "/"
+        target_path = path.rstrip("/") or "/"
+        if target_path == "/":
+            return req_path == "/"
+        return req_path == target_path or req_path.startswith(f"{target_path}/")
 
     return dict(
         abs_server=os.environ.get("ABS_SERVER", ""),
@@ -365,18 +386,19 @@ def sync_daemon():
     Schedules the main sync cycle to run every SYNC_PERIOD_MINS minutes and a pending-job checker every minute, performs an initial sync once at startup, then enters a loop that runs scheduled jobs and sleeps between checks. Errors during the initial sync or in the main loop are logged; the daemon continues retrying after failures.
     """
     try:
-        schedule.every(int(SYNC_PERIOD_MINS)).minutes.do(manager.sync_cycle).tag('sync_cycle')
-        schedule.every(1).minutes.do(manager.check_pending_jobs).tag('check_jobs')
+        schedule.every(int(SYNC_PERIOD_MINS)).minutes.do(manager.sync_cycle).tag("sync_cycle")
+        schedule.every(1).minutes.do(manager.check_pending_jobs).tag("check_jobs")
 
         logger.info(f"Sync daemon started (period: {SYNC_PERIOD_MINS} minutes)")
 
         # Wait for the built-in KoSync split-port server to be ready
         def _wait_for_local_services(timeout=30):
-            kosync_port = os.environ.get('KOSYNC_PORT')
-            if not kosync_port or kosync_port == '4477':
+            kosync_port = os.environ.get("KOSYNC_PORT")
+            if not kosync_port or kosync_port == "4477":
                 return  # No split-port server to wait for
 
             import urllib.request
+
             url = f"http://127.0.0.1:{kosync_port}/healthcheck"
             deadline = time.time() + timeout
             while time.time() < deadline:
@@ -434,75 +456,86 @@ def _get_or_create_secret_key() -> str:
 
 def _log_security_warnings():
     """Log warnings for common security misconfigurations at startup."""
-    kosync_user = os.environ.get('KOSYNC_USER', '')
-    kosync_key = os.environ.get('KOSYNC_KEY', '')
-    kosync_port = os.environ.get('KOSYNC_PORT', '')
-    public_url = os.environ.get('KOSYNC_PUBLIC_URL', '')
+    kosync_user = os.environ.get("KOSYNC_USER", "")
+    kosync_key = os.environ.get("KOSYNC_KEY", "")
+    kosync_port = os.environ.get("KOSYNC_PORT", "")
+    public_url = os.environ.get("KOSYNC_PUBLIC_URL", "")
 
     if not kosync_user or not kosync_key:
         logger.warning("SECURITY: KOSYNC_USER/KOSYNC_KEY not configured — sync endpoints will reject all requests")
     elif len(kosync_key) < 8:
         logger.warning("SECURITY: KOSYNC_KEY is shorter than 8 characters — consider using a stronger password")
 
-    if not kosync_port or kosync_port == '4477':
-        logger.warning("SECURITY: Split-port mode not active — dashboard and sync API share port 4477. "
-                        "Set KOSYNC_PORT to a different port before exposing sync to the internet.")
+    if not kosync_port or kosync_port == "4477":
+        logger.warning(
+            "SECURITY: Split-port mode not active — dashboard and sync API share port 4477. "
+            "Set KOSYNC_PORT to a different port before exposing sync to the internet."
+        )
 
     if public_url:
         from urllib.parse import urlsplit, urlunsplit
+
         parts = urlsplit(public_url)
         safe_netloc = parts.hostname or ""
         if parts.port:
             safe_netloc = f"{safe_netloc}:{parts.port}"
         safe_url = urlunsplit((parts.scheme, safe_netloc, parts.path or "", "", ""))
         logger.info(f"KOSync public URL: {safe_url}")
-    elif kosync_port and kosync_port != '4477':
+    elif kosync_port and kosync_port != "4477":
         logger.info("Tip: Set KOSYNC_PUBLIC_URL in settings if you expose KOSync through a reverse proxy")
 
 
-_ALLOWED_HTML_TAGS = {'p', 'br', 'b', 'i', 'em', 'strong', 'ul', 'ol', 'li'}
+_ALLOWED_HTML_TAGS = {"p", "br", "b", "i", "em", "strong", "ul", "ol", "li"}
 
 
 def _sanitize_html(value):
     """Allow only safe formatting tags and strip all attributes/protocols."""
     if not value:
-        return ''
+        return ""
     cleaned = nh3.clean(str(value), tags=_ALLOWED_HTML_TAGS, attributes={})
     return Markup(cleaned)
 
 
 # --- Application Factory ---
 def create_app(test_container=None):
-    STATIC_DIR = os.environ.get('STATIC_DIR', '/app/static')
-    TEMPLATE_DIR = os.environ.get('TEMPLATE_DIR', '/app/templates')
-    app = Flask(__name__, static_folder=STATIC_DIR, static_url_path='/static', template_folder=TEMPLATE_DIR)
+    STATIC_DIR = os.environ.get("STATIC_DIR", "/app/static")
+    TEMPLATE_DIR = os.environ.get("TEMPLATE_DIR", "/app/templates")
+    app = Flask(__name__, static_folder=STATIC_DIR, static_url_path="/static", template_folder=TEMPLATE_DIR)
     app.secret_key = _get_or_create_secret_key()
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+    app.config["SESSION_COOKIE_HTTPONLY"] = True
 
     # Setup dependencies and inject into app context
     setup_dependencies(app, test_container=test_container)
 
     # Register context processors, jinja globals
     app.context_processor(inject_global_vars)
-    app.jinja_env.globals['safe_folder_name'] = safe_folder_name
-    app.jinja_env.filters['sanitize_html'] = _sanitize_html
+    app.jinja_env.globals["safe_folder_name"] = safe_folder_name
+    app.jinja_env.filters["sanitize_html"] = _sanitize_html
 
     # Register all application blueprints
     register_blueprints(app)
+
+    @app.after_request
+    def set_security_headers(response):
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
 
     # Return both app and container for external reference
     return app, container
 
 
 # ---------------- MAIN ----------------
-if __name__ == '__main__':
-
+if __name__ == "__main__":
     # Setup signal handlers to catch unexpected kills
     import signal
+
     def handle_exit_signal(signum, frame):
         logger.warning(f"Received signal {signum} - Shutting down...")
         for handler in logger.handlers:
             handler.flush()
-        if hasattr(logging.getLogger(), 'handlers'):
+        if hasattr(logging.getLogger(), "handlers"):
             for handler in logging.getLogger().handlers:
                 handler.flush()
         sys.exit(0)
@@ -522,25 +555,26 @@ if __name__ == '__main__':
     logger.info("Sync daemon thread started")
 
     # Start ABS Socket.IO listener for real-time / instant sync
-    instant_sync_enabled = os.environ.get('INSTANT_SYNC_ENABLED', 'true').lower() != 'false'
-    abs_socket_enabled = os.environ.get('ABS_SOCKET_ENABLED', 'true').lower() != 'false'
+    instant_sync_enabled = os.environ.get("INSTANT_SYNC_ENABLED", "true").lower() != "false"
+    abs_socket_enabled = os.environ.get("ABS_SOCKET_ENABLED", "true").lower() != "false"
     if instant_sync_enabled and abs_socket_enabled and container.abs_client().is_configured():
         from src.services.abs_socket_listener import ABSSocketListener
+
         abs_listener = ABSSocketListener(
-            abs_server_url=os.environ.get('ABS_SERVER', ''),
-            abs_api_token=os.environ.get('ABS_KEY', ''),
+            abs_server_url=os.environ.get("ABS_SERVER", ""),
+            abs_api_token=os.environ.get("ABS_KEY", ""),
             database_service=database_service,
-            sync_manager=manager
+            sync_manager=manager,
         )
         threading.Thread(target=abs_listener.start, daemon=True).start()
-        app.config['abs_listener'] = abs_listener
-        app.config['_abs_listener_server'] = os.environ.get('ABS_SERVER', '')
-        app.config['_abs_listener_key'] = os.environ.get('ABS_KEY', '')
+        app.config["abs_listener"] = abs_listener
+        app.config["_abs_listener_server"] = os.environ.get("ABS_SERVER", "")
+        app.config["_abs_listener_key"] = os.environ.get("ABS_KEY", "")
         logger.info("ABS Socket.IO listener started (instant sync enabled)")
     else:
-        app.config['abs_listener'] = None
-        app.config['_abs_listener_server'] = ''
-        app.config['_abs_listener_key'] = ''
+        app.config["abs_listener"] = None
+        app.config["_abs_listener_server"] = ""
+        app.config["_abs_listener_key"] = ""
         if not instant_sync_enabled:
             logger.info("ABS Socket.IO listener disabled (INSTANT_SYNC_ENABLED=false)")
         elif not abs_socket_enabled:
@@ -548,6 +582,7 @@ if __name__ == '__main__':
 
     # Start per-client poller
     from src.services.client_poller import ClientPoller
+
     client_poller = ClientPoller(
         database_service=database_service,
         sync_manager=manager,
@@ -574,17 +609,23 @@ if __name__ == '__main__':
     logger.info("Web interface starting on port 4477")
 
     # --- Split-Port Mode ---
-    sync_port = os.environ.get('KOSYNC_PORT')
+    sync_port = os.environ.get("KOSYNC_PORT")
     if sync_port and int(sync_port) != 4477:
+
         def run_sync_only_server(port):
             sync_app = Flask(__name__)
+            sync_app.config["kosync_service"] = app.config["kosync_service"]
+            sync_app.config["debounce_manager"] = app.config["debounce_manager"]
+            sync_app.config["rate_limiter"] = app.config["rate_limiter"]
             sync_app.register_blueprint(kosync_sync_bp)
-            @sync_app.route('/')
+
+            @sync_app.route("/")
             def sync_health():
                 return "Sync Server OK", 200
-            sync_app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+
+            sync_app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
         threading.Thread(target=run_sync_only_server, args=(int(sync_port),), daemon=True).start()
         logger.info(f"Split-Port Mode Active: Sync-only server on port {sync_port}")
 
-    app.run(host='0.0.0.0', port=4477, debug=False)
+    app.run(host="0.0.0.0", port=4477, debug=False)

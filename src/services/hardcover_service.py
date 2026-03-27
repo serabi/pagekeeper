@@ -129,7 +129,7 @@ class HardcoverService:
             )
             hardcover_details.hardcover_status_id = hc_status_id
             self.database_service.save_hardcover_details(hardcover_details)
-            record_write('Hardcover', book.abs_id, {'status': hc_status_id})
+            record_write('Hardcover', book.id, {'status': hc_status_id})
 
             log_hardcover_action(
                 self.database_service, abs_id=book.abs_id,
@@ -174,7 +174,7 @@ class HardcoverService:
             if not result:
                 return {'hardcover_synced': False, 'hardcover_error': 'Hardcover rejected rating update'}
 
-            record_write('Hardcover', book.abs_id, {'rating': rating})
+            record_write('Hardcover', book.id, {'rating': rating})
             log_hardcover_action(
                 self.database_service, abs_id=book.abs_id,
                 book_title=sanitize_log_data(book.title),
@@ -244,7 +244,7 @@ class HardcoverService:
         hardcover_details.hardcover_user_book_id = result['id']
         hardcover_details.hardcover_status_id = result.get('status_id', hc_status_id)
         self.database_service.save_hardcover_details(hardcover_details)
-        record_write('Hardcover', book.abs_id, {'status': hardcover_details.hardcover_status_id})
+        record_write('Hardcover', book.id, {'status': hardcover_details.hardcover_status_id})
         log_hardcover_action(
             self.database_service, abs_id=book.abs_id,
             book_title=sanitize_log_data(book.title),

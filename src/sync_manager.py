@@ -259,7 +259,7 @@ class SyncManager:
         except Exception as e:
             logger.error(f"Error during cache cleanup: {e}")
 
-    def get_abs_title(self, ab):
+    def get_audiobook_title(self, ab):
         media = ab.get('media', {})
         metadata = media.get('metadata', {})
         return metadata.get('title') or ab.get('name', 'Unknown')
@@ -514,8 +514,8 @@ class SyncManager:
         """Fetch active books, pre-fetch bulk states, and trigger suggestions."""
         active_books = []
         if target_book_id:
-            logger.info(f"Instant Sync triggered for book_id={target_book_id}")
             book = self.database_service.get_book_by_id(target_book_id)
+            logger.info(f"Instant Sync triggered for '{sanitize_log_data(book.title)}'" if book else f"Instant Sync triggered for book_id={target_book_id} (not found)")
             if book and book.status == 'active':
                 active_books = [book]
         else:
@@ -541,13 +541,13 @@ class SyncManager:
 
     def _sync_single_book(self, book, bulk_states_per_client):
         """Process a single book in the sync cycle."""
-        abs_id = book.abs_id
+        abs_id = book.abs_id or f"book-{book.id}"
         title_snip = sanitize_log_data(book.title or 'Unknown')
         logger.info(f"'{abs_id}' Syncing '{title_snip}'")
 
         # Migration upgrade
         if self.alignment_service:
-            alignment = self.alignment_service._get_alignment(abs_id)
+            alignment = self.alignment_service._get_alignment(book.id)
             if alignment:
                 if getattr(book, 'transcript_file', None) != 'DB_MANAGED':
                     logger.info(f"   Upgrading '{title_snip}' to DB_MANAGED unified architecture")
@@ -778,7 +778,7 @@ class SyncManager:
                 logger.info(f"'{abs_id}' '{title_snip}' Updated state data for '{client_name}': {state_data}")
                 try:
                     from src.services.write_tracker import record_write
-                    record_write(client_name, abs_id, state_data)
+                    record_write(client_name, book.id, state_data)
                 except ImportError:
                     pass
                 client_state_model = State(

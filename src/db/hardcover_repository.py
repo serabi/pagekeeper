@@ -43,13 +43,6 @@ class HardcoverRepository(BaseRepository):
             ],
         )
 
-    def delete_hardcover_details(self, abs_id):
-        """Delete by abs_id (backward compat)."""
-        return self._delete_one(HardcoverDetails, HardcoverDetails.abs_id == abs_id)
-
-    def delete_hardcover_details_by_book_id(self, book_id):
-        return self._delete_one(HardcoverDetails, HardcoverDetails.book_id == book_id)
-
     def get_all_hardcover_details(self):
         return self._get_all(HardcoverDetails)
 

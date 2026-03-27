@@ -1,28 +1,31 @@
 import base64
 import logging
 import os
-import xml.etree.ElementTree as ET
 from urllib.parse import quote
 
+import defusedxml.ElementTree as ET
 import requests
 
 logger = logging.getLogger(__name__)
 
+
 class CWAClient:
     def __init__(self):
         self.session = requests.Session()
-        self.session.headers.update({
-            "User-Agent": "KOReader/2023.10",
-            "Accept": "application/atom+xml,application/xml,application/xhtml+xml,text/xml;q=0.9,*/*;q=0.8",
-        })
+        self.session.headers.update(
+            {
+                "User-Agent": "KOReader/2023.10",
+                "Accept": "application/atom+xml,application/xml,application/xhtml+xml,text/xml;q=0.9,*/*;q=0.8",
+            }
+        )
         self.search_template = None
 
     @property
     def base_url(self) -> str:
-        raw_url = os.environ.get("CWA_SERVER", "").rstrip('/')
-        if raw_url.endswith('/opds'):
+        raw_url = os.environ.get("CWA_SERVER", "").rstrip("/")
+        if raw_url.endswith("/opds"):
             raw_url = raw_url[:-5]
-        if raw_url and not raw_url.lower().startswith(('http://', 'https://')):
+        if raw_url and not raw_url.lower().startswith(("http://", "https://")):
             raw_url = f"http://{raw_url}"
         return raw_url
 
@@ -55,8 +58,8 @@ class CWAClient:
         """Helper to make requests with fresh auth headers and cleared cookies."""
         try:
             self.session.cookies.clear()
-            kwargs.setdefault('timeout', self.timeout)
-            headers = {**self._get_auth_headers(), **kwargs.pop('headers', {})}
+            kwargs.setdefault("timeout", self.timeout)
+            headers = {**self._get_auth_headers(), **kwargs.pop("headers", {})}
             return self.session.get(url, headers=headers, **kwargs)
         except Exception as e:
             logger.error(f"CWA Request failed: {e}")
@@ -79,8 +82,10 @@ class CWAClient:
 
             # Check for soft login redirect (status 200 but HTML content)
             if r.status_code == 200:
-                if r.text.lstrip().lower().startswith(('<!doctype html', '<html')):
-                    logger.error("CWA Connection Failed: Server returned HTML login page instead of XML. Authentication failed.")
+                if r.text.lstrip().lower().startswith(("<!doctype html", "<html")):
+                    logger.error(
+                        "CWA Connection Failed: Server returned HTML login page instead of XML. Authentication failed."
+                    )
                     return False
 
                 logger.info(f"Connected to CWA at {self.base_url}")
@@ -111,52 +116,54 @@ class CWAClient:
             r = self._make_request(f"{self.base_url}/opds")
 
             # Check if we got an HTML login page disguised as 200 OK
-            if r.text.lstrip().lower().startswith(('<!doctype html', '<html')):
-                 logger.warning("CWA Discovery Failed: Server returned HTML content. Likely authentication failure (Soft Redirect).")
-                 return None
+            if r.text.lstrip().lower().startswith(("<!doctype html", "<html")):
+                logger.warning(
+                    "CWA Discovery Failed: Server returned HTML content. Likely authentication failure (Soft Redirect)."
+                )
+                return None
 
             if r.status_code != 200:
                 logger.warning(f"CWA OPDS Root failed {r.status_code}")
                 return None
 
             root = ET.fromstring(r.text)
-            ns = {'atom': 'http://www.w3.org/2005/Atom'}
+            ns = {"atom": "http://www.w3.org/2005/Atom"}
 
             # Find proper search link (prefer atom+xml)
             search_link = None
 
             # Helper to check link
             def is_valid_search_link(link_elem):
-                return link_elem.get('rel') == 'search'
+                return link_elem.get("rel") == "search"
 
             # 1. Try standard Atom namespace with type check
-            for link in root.findall('atom:link', ns):
+            for link in root.findall("atom:link", ns):
                 if is_valid_search_link(link):
-                    l_type = link.get('type', '')
-                    l_href = link.get('href')
-                    if 'atom+xml' in l_type:
+                    l_type = link.get("type", "")
+                    l_href = link.get("href")
+                    if "atom+xml" in l_type:
                         search_link = l_href
-                        break # Found best match
-                    elif not search_link and 'opensearch' not in l_type:
+                        break  # Found best match
+                    elif not search_link and "opensearch" not in l_type:
                         # Backup candidate (if not explicitly OSD)
                         search_link = l_href
 
             # 2. Fallback: Namespace-agnostic search
             if not search_link:
                 for child in root:
-                    if child.tag.endswith('link') and is_valid_search_link(child):
-                        l_type = child.get('type', '')
-                        l_href = child.get('href')
-                        if 'atom+xml' in l_type:
+                    if child.tag.endswith("link") and is_valid_search_link(child):
+                        l_type = child.get("type", "")
+                        l_href = child.get("href")
+                        if "atom+xml" in l_type:
                             search_link = l_href
                             break
-                        elif not search_link and 'opensearch' not in l_type:
+                        elif not search_link and "opensearch" not in l_type:
                             search_link = l_href
 
             if search_link:
                 self.search_template = search_link
                 # Ensure absolute URL
-                if self.search_template and not self.search_template.startswith('http'):
+                if self.search_template and not self.search_template.startswith("http"):
                     self.search_template = f"{self.base_url}{self.search_template}"
                 logger.info(f"CWA: Discovered search template: {self.search_template}")
                 return self.search_template
@@ -190,12 +197,12 @@ class CWAClient:
             if "{searchTerms}" in template:
                 search_url = template.replace("{searchTerms}", safe_query)
             else:
-                 # If template doesn't have placeholder (weird), try appending
-                 pass
-                 # Actually, let's assume if it returns a base URL, we append query?
-                 # No, defined spec says it should have it.
-                 # If missing, we might fail or try simple replace?
-                 search_url = template.replace("{searchTerms}", safe_query)
+                # If template doesn't have placeholder (weird), try appending
+                pass
+                # Actually, let's assume if it returns a base URL, we append query?
+                # No, defined spec says it should have it.
+                # If missing, we might fail or try simple replace?
+                search_url = template.replace("{searchTerms}", safe_query)
 
         try:
             # Use helper
@@ -216,7 +223,7 @@ class CWAClient:
         results = []
         try:
             # Check for HTML response (common if auth failed or 404 page returned as 200)
-            if xml_content.lstrip().lower().startswith(('<!doctype html', '<html')):
+            if xml_content.lstrip().lower().startswith(("<!doctype html", "<html")):
                 logger.warning("CWA returned HTML content instead of XML. Check configuration/URL.")
                 logger.debug(f"HTML Snippet: {xml_content[:200]}")
                 return []
@@ -224,39 +231,45 @@ class CWAClient:
             # OPDS is Atom-based
             # Namespaces are annoying in ElementTree, ignore them or handle them
             # For simplicity, we'll try to handle standard Atom namespace
-            namespaces = {'atom': 'http://www.w3.org/2005/Atom'}
+            namespaces = {"atom": "http://www.w3.org/2005/Atom"}
 
             root = ET.fromstring(xml_content)
 
             entries = []
             # Check if root is a feed or an entry
-            if root.tag.endswith('entry'):
+            if root.tag.endswith("entry"):
                 entries = [root]
             else:
-                entries = root.findall('atom:entry', namespaces)
+                entries = root.findall("atom:entry", namespaces)
 
             for entry in entries:
-                title_elem = entry.find('atom:title', namespaces)
+                title_elem = entry.find("atom:title", namespaces)
                 title = title_elem.text if title_elem is not None else "Unknown"
 
-                author_elem = entry.find('atom:author/atom:name', namespaces)
+                author_elem = entry.find("atom:author/atom:name", namespaces)
                 author = author_elem.text if author_elem is not None else "Unknown"
 
                 # Find EPUB link
                 epub_link = None
-                for link in entry.findall('atom:link', namespaces):
-                    rel = link.get('rel')
-                    mime = link.get('type')
-                    href = link.get('href')
+                for link in entry.findall("atom:link", namespaces):
+                    rel = link.get("rel")
+                    mime = link.get("type")
+                    href = link.get("href")
 
-                    if mime == "application/epub+zip" or (rel and "http://opds-spec.org/acquisition" in rel and mime == "application/epub+zip"):
+                    if mime == "application/epub+zip" or (
+                        rel and "http://opds-spec.org/acquisition" in rel and mime == "application/epub+zip"
+                    ):
                         epub_link = href
                         break
 
                 if epub_link:
                     # Resolve relative URLs
-                    if not epub_link.startswith('http'):
-                         epub_link = f"{self.base_url}{epub_link}" if epub_link.startswith('/') else f"{self.base_url}/{epub_link}"
+                    if not epub_link.startswith("http"):
+                        epub_link = (
+                            f"{self.base_url}{epub_link}"
+                            if epub_link.startswith("/")
+                            else f"{self.base_url}/{epub_link}"
+                        )
 
                     # Extract ID from entry (OPDS uses atom:id)
                     entry_id = None
@@ -264,37 +277,39 @@ class CWAClient:
 
                     # 1. Try to extract ID from links (Most reliable for Calibre-Web)
                     # Look for /opds/book/123 or /books/123 in any link
-                    for link in entry.findall('atom:link', namespaces):
-                        href = link.get('href', '')
+                    for link in entry.findall("atom:link", namespaces):
+                        href = link.get("href", "")
                         # Regex matches /book/123 or /books/123 anywhere in the path
-                        id_match = re.search(r'/(?:book|books)/(\d+)', href)
+                        id_match = re.search(r"/(?:book|books)/(\d+)", href)
                         if id_match:
                             entry_id = id_match.group(1)
                             break
 
                     # 2. Fallback: Extract from atom:id if link extraction failed
                     if not entry_id:
-                        id_elem = entry.find('atom:id', namespaces)
+                        id_elem = entry.find("atom:id", namespaces)
                         if id_elem is not None and id_elem.text:
                             # STRICTER REGEX: Only match if the ID is purely numeric or ends in a slash-number
                             # Avoid matching UUIDs like ...ae11
-                            match = re.search(r'(?:^|/)(\d+)$', id_elem.text)
+                            match = re.search(r"(?:^|/)(\d+)$", id_elem.text)
                             if match:
                                 entry_id = match.group(1)
                             else:
                                 # Last resort: Clean the title
-                                entry_id = re.sub(r'[^a-zA-Z0-9]', '_', title)[:30]
+                                entry_id = re.sub(r"[^a-zA-Z0-9]", "_", title)[:30]
                         else:
-                            entry_id = re.sub(r'[^a-zA-Z0-9]', '_', title)[:30]
+                            entry_id = re.sub(r"[^a-zA-Z0-9]", "_", title)[:30]
 
-                    results.append({
-                        "id": entry_id,
-                        "title": title,
-                        "author": author,
-                        "download_url": epub_link,
-                        "ext": "epub",
-                        "source": "CWA"
-                    })
+                    results.append(
+                        {
+                            "id": entry_id,
+                            "title": title,
+                            "author": author,
+                            "download_url": epub_link,
+                            "ext": "epub",
+                            "source": "CWA",
+                        }
+                    )
 
             return results
 
@@ -308,7 +323,8 @@ class CWAClient:
         Fetch a specific book by its CWA ID.
         Includes a fallback to direct download link construction if the server crashes (metadata page error).
         """
-        if not self.is_configured(): return None
+        if not self.is_configured():
+            return None
 
         # 1. Try standard OPDS lookup
         endpoints = [f"/opds/book/{cwa_id}", f"/opds/books/{cwa_id}"]
@@ -322,11 +338,11 @@ class CWAClient:
                 r = self._make_request(url)
 
                 # If we get valid XML, parse it
-                if r.status_code == 200 and not r.text.lstrip().lower().startswith(('<!doctype html', '<html')):
+                if r.status_code == 200 and not r.text.lstrip().lower().startswith(("<!doctype html", "<html")):
                     results = self._parse_opds(r.text)
                     if results:
                         for res in results:
-                            if str(res['id']) == str(cwa_id):
+                            if str(res["id"]) == str(cwa_id):
                                 return res
                         if len(results) == 1:
                             return results[0]
@@ -348,7 +364,7 @@ class CWAClient:
             "author": "Unknown",
             "download_url": fallback_url,
             "ext": "epub",
-            "source": "CWA_Fallback"
+            "source": "CWA_Fallback",
         }
 
     def download_ebook(self, download_url, output_path):
@@ -360,7 +376,7 @@ class CWAClient:
 
             with self.session.get(download_url, stream=True, timeout=120) as r:
                 r.raise_for_status()
-                with open(output_path, 'wb') as f:
+                with open(output_path, "wb") as f:
                     for chunk in r.iter_content(chunk_size=8192):
                         f.write(chunk)
 

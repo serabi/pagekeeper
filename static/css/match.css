@@ -57,12 +57,12 @@
   margin: 20px 0;
 }
 
-/* Resource grid (square cards) */
+/* Resource grid (portrait cards, matching audiobook grid) */
 .resource-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 16px;
-  margin: 16px 0;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 24px;
+  margin: 20px 0;
 }
 
 /* Audiobook option card */
@@ -124,28 +124,55 @@
   background: rgba(124, 58, 237, 0.08) !important;
 }
 
-/* Resource card (square) */
+/* Resource card (portrait layout matching audiobook cards) */
 .resource-card {
-  aspect-ratio: 1/1;
   display: flex;
   flex-direction: column;
+  gap: 0;
+  padding: 0;
+  text-align: center;
+  overflow: hidden;
+}
+
+.resource-card .resource-title,
+.resource-card .resource-subtitle,
+.resource-card .source-badge {
+  padding-left: 8px;
+  padding-right: 8px;
+}
+
+.resource-card .resource-title {
+  padding-top: 10px;
+}
+
+.resource-card .source-badge:last-child {
+  margin-bottom: 10px;
+}
+
+/* Ghost/icon-only cards (no cover image) keep compact centered layout */
+.resource-card.ghost-card {
   align-items: center;
   justify-content: center;
   gap: 8px;
   padding: 12px 8px;
-  text-align: center;
+}
+
+.resource-card.ghost-card .resource-title,
+.resource-card.ghost-card .resource-subtitle {
+  padding-top: 0;
 }
 
 .resource-cover-container {
   width: 100%;
-  flex-shrink: 0;
+  aspect-ratio: 2/3;
   overflow: hidden;
+  flex-shrink: 0;
 }
 
 .resource-cover {
   width: 100%;
-  height: auto;
-  border-radius: var(--radius);
+  height: 100%;
+  object-fit: cover;
 }
 
 .resource-icon {
@@ -301,10 +328,15 @@ input[type="radio"] {
 }
 
 .r-match-mode-btn.active,
-.r-match-mode-btn:hover {
+.r-match-mode-btn:hover:not(:disabled) {
   color: var(--color-text);
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.08);
+}
+
+.r-match-mode-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
 }
 
 /* ── Match page workspace (single-column progressive layout) ── */
@@ -815,7 +847,8 @@ button.batch-select-card {
   color: #6ee7b7;
 }
 
-.batch-status-pill.audio-only {
+.batch-status-pill.audio-only,
+.batch-status-pill.ebook-only {
   background: rgba(245, 158, 11, 0.16);
   color: #fbbf24;
 }
@@ -920,8 +953,8 @@ button.batch-select-card {
   }
 
   .resource-grid {
-    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
-    gap: 10px;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 16px;
   }
 
   .mt-16 {

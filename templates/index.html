@@ -80,6 +80,27 @@
         </div>
         {% endif %}
 
+        {% if unlinked_reading %}
+        <div class="book-section" id="pending-id-section">
+            <div class="section-header">
+                <h2>Pending Identification</h2>
+            </div>
+            <p class="pending-id-help">Books being read on KOReader that haven't been matched to your library yet.</p>
+            <div class="pending-id-grid">
+                {% for doc in unlinked_reading %}
+                <div class="pending-id-card">
+                    <div class="pending-id-info">
+                        <span class="kosync-hash">{{ doc.document_hash[:12] }}&hellip;</span>
+                        <span class="pending-id-pct">{{ '%.1f'|format(doc.percentage * 100) }}%</span>
+                        {% if doc.device %}<span class="pending-id-device">{{ doc.device }}</span>{% endif %}
+                    </div>
+                    <a href="/kosync-documents" class="btn btn-secondary pending-id-btn">Manage</a>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
         <div class="book-section">
         <div class="section-header">
             <h2>Currently Reading</h2>
@@ -256,21 +277,7 @@
             </div>
         </div>
 
-        <!-- Generic Confirmation Modal -->
-        <div id="confirm-modal" class="confirm-modal" style="display:none;">
-            <div class="confirm-modal-overlay" onclick="closeConfirmModal()"></div>
-            <div class="confirm-modal-box">
-                <div class="confirm-modal-icon" id="confirm-modal-icon"></div>
-                <h3 class="confirm-modal-title" id="confirm-modal-title"></h3>
-                <p class="confirm-modal-message" id="confirm-modal-message"></p>
-                <div class="confirm-modal-actions">
-                    <button class="btn btn-secondary" onclick="closeConfirmModal()">Cancel</button>
-                    <form id="confirm-modal-form" method="POST" style="margin:0;">
-                        <button type="submit" class="btn" id="confirm-modal-submit">Confirm</button>
-                    </form>
-                </div>
-            </div>
-        </div>
+        {% include 'partials/confirm_modal.html' %}
 
         <!-- Delete Mapping Confirmation Modal -->
         <div id="delete-mapping-modal" class="hc-modal" style="display:none;">
@@ -297,8 +304,26 @@
                 </div>
             </div>
         </div>
+        <script src="/static/js/utils.js"></script>
+        <script src="/static/js/confirm-modal.js"></script>
         <script src="/static/js/dashboard.js"></script>
         <script>initDashboard();</script>
+        {% if kosync_unlinked_count and kosync_unlinked_count > 0 %}
+        <script>
+        setTimeout(function() {
+            var t = document.createElement('div');
+            t.className = 'r-tbr-toast';
+            var a = document.createElement('a');
+            a.href = '/kosync-documents';
+            a.style.cssText = 'color: inherit; text-decoration: underline;';
+            a.textContent = '{{ kosync_unlinked_count }} unmatched KoSync hash{{ "es" if kosync_unlinked_count != 1 else "" }}';
+            t.appendChild(a);
+            t.appendChild(document.createTextNode(' need attention'));
+            document.body.appendChild(t);
+            setTimeout(function(){ t.style.transition='opacity 0.3s'; t.style.opacity='0'; setTimeout(function(){ t.remove(); }, 300); }, 6000);
+        }, 2000);
+        </script>
+        {% endif %}
 </body>
 
 </html>

@@ -86,7 +86,7 @@ def realign_book(book_ref):
     alignment_service = container.alignment_service()
 
     logger.info(f"Re-aligning '{sanitize_log_data(book.title or str(book.id))}'")
-    alignment_service.realign_book(book.abs_id or str(book.id))
+    alignment_service.realign_book(book.id)
     return jsonify({"success": True})
 
 
@@ -189,9 +189,12 @@ def update_hash(book_ref):
             flash("Could not recalculate hash (file not found?)", "error")
             return redirect(url_for('dashboard.index'))
 
-    if updated and book.kosync_doc_id != old_hash:
-        logger.info(f"Hash changed for '{sanitize_log_data(book.title)}' -- triggering instant sync to reconcile progress")
-        threading.Thread(target=manager.sync_cycle, kwargs={'target_book_id': book.id}, daemon=True).start()
+    if updated:
+        from src.services.kosync_service import ensure_kosync_document
+        ensure_kosync_document(book, get_database_service())
+        if book.kosync_doc_id != old_hash:
+            logger.info(f"Hash changed for '{sanitize_log_data(book.title)}' -- triggering instant sync to reconcile progress")
+            threading.Thread(target=manager.sync_cycle, kwargs={'target_book_id': book.id}, daemon=True).start()
 
     flash(f"Updated KoSync Hash for {book.title}", "success")
     return redirect(url_for('dashboard.index'))

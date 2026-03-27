@@ -45,7 +45,7 @@ def test_init_loads_from_db(mock_db):
 
     mock_db.get_all_booklore_books.return_value = [mock_book]
 
-    with patch.dict(os.environ, {"DATA_DIR": "/tmp/data"}):
+    with patch.dict(os.environ, {"BOOKLORE_SERVER": "http://mock", "BOOKLORE_USER": "u", "BOOKLORE_PASSWORD": "p", "DATA_DIR": "/tmp/data"}):
         client = BookloreClient(database_service=mock_db)
 
         assert "test_book.epub" in client._book_cache
@@ -72,7 +72,7 @@ def test_migration_from_legacy_json(mock_db):
          with patch("json.load", return_value=legacy_data):
             with patch.object(Path, "exists", return_value=True):
                  with patch.object(Path, "rename") as mock_rename:
-                    with patch.dict(os.environ, {"DATA_DIR": "/tmp/data"}):
+                    with patch.dict(os.environ, {"BOOKLORE_SERVER": "http://mock", "BOOKLORE_USER": "u", "BOOKLORE_PASSWORD": "p", "DATA_DIR": "/tmp/data"}):
                         BookloreClient(database_service=mock_db)
 
                         # Verification

@@ -129,7 +129,7 @@ class HardcoverSyncClient(SyncClient):
                 return current_status
             hardcover_details.hardcover_status_id = new_status
             self.database_service.save_hardcover_details(hardcover_details)
-            record_write('Hardcover', book.abs_id, {'status': new_status})
+            record_write('Hardcover', book.id, {'status': new_status})
 
             status_names = {1: 'Want to Read', 2: 'Currently Reading', 3: 'Read', 4: 'Paused', 5: 'DNF'}
             log_hardcover_action(
@@ -225,7 +225,7 @@ class HardcoverSyncClient(SyncClient):
                 'status': current_status,
             }
 
-            record_write('Hardcover', book.abs_id, updated_state)
+            record_write('Hardcover', book.id, updated_state)
             return SyncResult(actual_pct, True, updated_state)
 
         except Exception as e:
@@ -259,7 +259,7 @@ class HardcoverSyncClient(SyncClient):
                 'status': current_status,
             }
 
-            record_write('Hardcover', book.abs_id, updated_state)
+            record_write('Hardcover', book.id, updated_state)
             return SyncResult(percentage, True, updated_state)
 
         except Exception as e:

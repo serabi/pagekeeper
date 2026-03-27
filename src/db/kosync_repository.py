@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 
 from .base_repository import BaseRepository
-from .models import KosyncDocument
+from .models import Book, KosyncDocument
 
 
 class KoSyncRepository(BaseRepository):
@@ -26,14 +26,7 @@ class KoSyncRepository(BaseRepository):
     def get_unlinked_kosync_documents(self):
         return self._get_all(
             KosyncDocument,
-            KosyncDocument.linked_abs_id == None,
-            order_by=KosyncDocument.last_updated.desc(),
-        )
-
-    def get_linked_kosync_documents(self):
-        return self._get_all(
-            KosyncDocument,
-            KosyncDocument.linked_abs_id != None,
+            KosyncDocument.linked_book_id == None,
             order_by=KosyncDocument.last_updated.desc(),
         )
 
@@ -64,17 +57,6 @@ class KoSyncRepository(BaseRepository):
     def delete_kosync_document(self, document_hash):
         return self._delete_one(KosyncDocument, KosyncDocument.document_hash == document_hash)
 
-    def get_kosync_document_by_linked_book(self, abs_id):
-        """Get by abs_id (backward compat)."""
-        return self._get_one(KosyncDocument, KosyncDocument.linked_abs_id == abs_id)
-
-    def get_kosync_document_by_linked_book_id(self, book_id):
-        return self._get_one(KosyncDocument, KosyncDocument.linked_book_id == book_id)
-
-    def get_kosync_documents_for_book(self, abs_id):
-        """Get by abs_id (backward compat)."""
-        return self._get_all(KosyncDocument, KosyncDocument.linked_abs_id == abs_id)
-
     def get_kosync_documents_for_book_by_book_id(self, book_id):
         return self._get_all(KosyncDocument, KosyncDocument.linked_book_id == book_id)
 
@@ -88,11 +70,15 @@ class KoSyncRepository(BaseRepository):
             return None
         return self._get_one(KosyncDocument, KosyncDocument.booklore_id == str(booklore_id))
 
-    def is_hash_linked_to_device(self, doc_hash):
-        if not doc_hash:
-            return False
+    def get_orphaned_kosync_books(self):
+        """Get books with kosync_doc_id set but no matching KosyncDocument."""
         with self.get_session() as session:
-            return session.query(KosyncDocument).filter(
-                KosyncDocument.document_hash == doc_hash,
-                KosyncDocument.linked_abs_id != None,
-            ).first() is not None
+            subq = session.query(KosyncDocument.document_hash)
+            results = (session.query(Book)
+                       .filter(Book.kosync_doc_id != None)
+                       .filter(~Book.kosync_doc_id.in_(subq))
+                       .all())
+            for r in results:
+                session.expunge(r)
+            return results
+

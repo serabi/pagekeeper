@@ -96,8 +96,8 @@ function getServiceTestPayload(service) {
     if (service === 'kosync') {
         return {
             server: getInputValue('kosync_external_url'),
-            user: getInputValue('KOSYNC_USER'),
-            key: getInputValue('KOSYNC_KEY')
+            user: getInputValue('KOSYNC_SERVER_USER') || getInputValue('KOSYNC_USER'),
+            key: getInputValue('kosync_server_key_input') || getInputValue('KOSYNC_KEY')
         };
     }
     return {};
@@ -109,12 +109,12 @@ function setTestButtonState(btn, success, detail, originalText) {
         btn.classList.add('btn-success');
     } else {
         btn.textContent = '\u2717 ' + (detail || 'Failed');
-        btn.classList.add('btn-error');
+        btn.classList.add('btn-danger');
     }
     setTimeout(function() {
         btn.textContent = originalText;
         btn.disabled = false;
-        btn.classList.remove('btn-success', 'btn-error');
+        btn.classList.remove('btn-success', 'btn-danger');
     }, 3000);
 }
 
@@ -187,20 +187,20 @@ function fetchBookloreLibs(url, event) {
         .then(function(response) { return response.json(); })
         .then(function(data) {
             if (data.error) {
-                showSettingsModal('Error', data.error);
+                PKModal.alert({ title: 'Error', message: data.error });
                 return;
             }
             if (data.length === 0) {
-                showSettingsModal('No Libraries', 'No libraries found. Check connection or try syncing first.');
+                PKModal.alert({ title: 'No Libraries', message: 'No libraries found. Check connection or try syncing first.' });
                 return;
             }
 
             var lines = data.map(function(lib) {
                 return 'ID: ' + lib.id + '  \u2014  ' + lib.name;
             });
-            showSettingsModal('Found Libraries', lines.join('\n'));
+            PKModal.alert({ title: 'Found Libraries', message: lines.join('\n'), preserveWhitespace: true });
         })
-        .catch(function(err) { showSettingsModal('Error', 'Failed to fetch libraries: ' + err); })
+        .catch(function(err) { PKModal.alert({ title: 'Error', message: 'Failed to fetch libraries: ' + err }); })
         .finally(function() {
             btn.textContent = originalText;
             btn.disabled = false;
@@ -230,15 +230,19 @@ function togglePollSeconds(rowId, mode) {
 function toggleKosyncSourceMode() {
     var isBuiltin = document.getElementById('kosync_mode_builtin').checked;
     var hiddenInput = document.getElementById('kosync_server_input');
-    var externalGroup = document.getElementById('kosync_external_group');
+    var builtinSection = document.getElementById('kosync_builtin_section');
+    var externalSection = document.getElementById('kosync_external_section');
     var externalUrl = document.getElementById('kosync_external_url');
+    if (!hiddenInput || !builtinSection || !externalSection || !externalUrl) return;
     var builtinUrl = 'http://127.0.0.1:' + SETTINGS_CONFIG.kosyncPort;
 
     if (isBuiltin) {
         hiddenInput.value = builtinUrl;
-        externalGroup.classList.add('hidden');
+        builtinSection.classList.remove('hidden');
+        externalSection.classList.add('hidden');
     } else {
-        externalGroup.classList.remove('hidden');
+        builtinSection.classList.add('hidden');
+        externalSection.classList.remove('hidden');
         if (externalUrl.value && externalUrl.value !== builtinUrl) {
             hiddenInput.value = externalUrl.value;
         } else {
@@ -258,41 +262,16 @@ function copyInputValue(inputId) {
     setTimeout(function() { copyText.classList.remove('input-copied'); }, 200);
 }
 
-/* ─── Modal System ─── */
-function showSettingsModal(title, message, onConfirm) {
-    var modal = document.getElementById('settings-modal');
-    document.getElementById('settings-modal-title').textContent = title;
-    /* Use textContent for safety — message is always plain text */
-    document.getElementById('settings-modal-message').textContent = message;
 
-    var confirmBtn = document.getElementById('settings-modal-confirm');
-    var cancelBtn = document.getElementById('settings-modal-cancel');
-
-    if (onConfirm) {
-        confirmBtn.style.display = '';
-        cancelBtn.textContent = 'Cancel';
-        confirmBtn.onclick = function() {
-            closeSettingsModal();
-            onConfirm();
-        };
-    } else {
-        confirmBtn.style.display = 'none';
-        cancelBtn.textContent = 'OK';
-    }
-
-    modal.style.display = 'flex';
-}
-
-function closeSettingsModal() {
-    document.getElementById('settings-modal').style.display = 'none';
-}
 
 /* ─── Tool Actions ─── */
 function clearStaleSuggestions() {
-    showSettingsModal(
-        'Clear Stale Suggestions',
-        'This will permanently delete all suggestions for books that are not currently matched in your bridge. Books you are already syncing will be preserved.',
-        function() {
+    PKModal.confirm({
+        title: 'Clear Stale Suggestions',
+        message: 'This will permanently delete all suggestions for books that are not currently matched in your bridge. Books you are already syncing will be preserved.',
+        confirmLabel: 'Clear',
+        confirmClass: 'btn btn-danger',
+        onConfirm: function() {
             fetch('/api/suggestions/clear_stale', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' }
@@ -300,17 +279,17 @@ function clearStaleSuggestions() {
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
                     if (data.success) {
-                        showSettingsModal('Success', 'Cleared ' + data.count + ' stale suggestions.');
+                        PKModal.alert({ title: 'Success', message: 'Cleared ' + data.count + ' stale suggestions.' });
                     } else {
-                        showSettingsModal('Error', 'Failed to clear suggestions: ' + (data.error || 'Unknown error'));
+                        PKModal.alert({ title: 'Error', message: 'Failed to clear suggestions: ' + (data.error || 'Unknown error') });
                     }
                 })
                 .catch(function(err) {
                     console.error('Error clearing suggestions:', err);
-                    showSettingsModal('Error', 'An error occurred while clearing suggestions.');
+                    PKModal.alert({ title: 'Error', message: 'An error occurred while clearing suggestions.' });
                 });
         }
-    );
+    });
 }
 
 function syncReadingDates(btn) {
@@ -327,14 +306,14 @@ function syncReadingDates(btn) {
                 if (data.updated) parts.push(data.updated + ' updated');
                 if (data.completed) parts.push(data.completed + ' newly completed');
                 if (data.errors) parts.push(data.errors + ' errors');
-                showSettingsModal('Sync Complete', parts.length ? parts.join(', ') + '.' : 'All reading dates are already up to date.');
+                PKModal.alert({ title: 'Sync Complete', message: parts.length ? parts.join(', ') + '.' : 'All reading dates are already up to date.' });
             } else {
-                showSettingsModal('Error', 'Failed: ' + (data.error || 'Unknown error'));
+                PKModal.alert({ title: 'Error', message: 'Failed: ' + (data.error || 'Unknown error') });
             }
         })
         .catch(function(err) {
             console.error('Error syncing reading dates:', err);
-            showSettingsModal('Error', 'An error occurred. Check console for details.');
+            PKModal.alert({ title: 'Error', message: 'An error occurred. Check console for details.' });
         })
         .finally(function() {
             btn.disabled = false;
@@ -427,7 +406,7 @@ function initDynamicForms() {
     if (deviceSelect) {
         deviceSelect.addEventListener('change', function () {
             if (this.value === 'cuda') {
-                showSettingsModal('NVIDIA GPU', 'To use an NVIDIA GPU, you must modify your docker-compose.yml to include the \'deploy\' block with \'capabilities: [gpu]\' and ensure the NVIDIA Container Toolkit is installed on your host.');
+                PKModal.alert({ title: 'NVIDIA GPU', message: 'To use an NVIDIA GPU, you must modify your docker-compose.yml to include the \'deploy\' block with \'capabilities: [gpu]\' and ensure the NVIDIA Container Toolkit is installed on your host.' });
             }
         });
     }

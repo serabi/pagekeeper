@@ -127,15 +127,15 @@ class StorytellerSubmissionService:
             # Update existing reservation or create new submission record
             from src.db.models import StorytellerSubmission
 
-            existing = self.database_service.get_active_storyteller_submission(abs_id)
+            book = self.database_service.get_book_by_abs_id(abs_id)
+            book_id = book.id if book else None
+            existing = self.database_service.get_active_storyteller_submission_by_book_id(book_id) if book_id else None
             if existing:
                 submission = existing
                 self.database_service.update_storyteller_submission_status(
                     existing.id, "queued", submission_dir=dir_name,
                 )
             else:
-                book = self.database_service.get_book_by_abs_id(abs_id)
-                book_id = book.id if book else None
                 submission = StorytellerSubmission(
                     abs_id=abs_id,
                     book_id=book_id,
@@ -165,7 +165,8 @@ class StorytellerSubmissionService:
 
         Returns: 'queued', 'processing', 'ready', 'failed', or 'not_found'.
         """
-        submission = self.database_service.get_storyteller_submission(abs_id)
+        book = self.database_service.get_book_by_abs_id(abs_id)
+        submission = self.database_service.get_storyteller_submission_by_book_id(book.id) if book else None
         if not submission:
             return "not_found"
 
@@ -307,7 +308,10 @@ class StorytellerSubmissionService:
 
     def get_submission(self, abs_id: str):
         """Get the most recent submission for a book, if any."""
-        return self.database_service.get_storyteller_submission(abs_id)
+        book = self.database_service.get_book_by_abs_id(abs_id)
+        if book:
+            return self.database_service.get_storyteller_submission_by_book_id(book.id)
+        return None
 
     def _trigger_processing_after_import(self, title: str, submission) -> str | None:
         """Wait for Storyteller to detect imported files, then trigger processing.

@@ -1,8 +1,8 @@
 """
 Write-suppression tracker — prevents self-triggered feedback loops.
 
-Call record_write(client_name, abs_id) after Stitch successfully pushes
-progress to any client. Call is_own_write(client_name, abs_id) before acting
+Call record_write(client_name, book_id) after Stitch successfully pushes
+progress to any client. Call is_own_write(client_name, book_id) before acting
 on a progress change from that client to suppress round-trip echoes.
 
 Supported client_name values: 'ABS', 'Storyteller', 'BookLore', 'KoSync'
@@ -51,9 +51,9 @@ def _states_match(recorded: dict | None, incoming: dict | None) -> bool:
     return True
 
 
-def record_write(client_name: str, abs_id: str, state: dict | None = None) -> None:
+def record_write(client_name: str, book_id, state: dict | None = None) -> None:
     """Call after Stitch successfully pushes progress to a client."""
-    key = f"{client_name}:{abs_id}"
+    key = f"{client_name}:{book_id}"
     with _writes_lock:
         _recent_writes[key] = {
             'timestamp': time.time(),
@@ -61,9 +61,9 @@ def record_write(client_name: str, abs_id: str, state: dict | None = None) -> No
         }
 
 
-def is_own_write(client_name: str, abs_id: str, suppression_window: int = _DEFAULT_SUPPRESSION_WINDOW, state: dict | None = None) -> bool:
+def is_own_write(client_name: str, book_id, suppression_window: int = _DEFAULT_SUPPRESSION_WINDOW, state: dict | None = None) -> bool:
     """Return True if a recent progress event for this client/book was caused by our own write."""
-    key = f"{client_name}:{abs_id}"
+    key = f"{client_name}:{book_id}"
     with _writes_lock:
         last_write = _recent_writes.get(key)
         if last_write and time.time() - last_write['timestamp'] < suppression_window:

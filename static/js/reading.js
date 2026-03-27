@@ -100,11 +100,13 @@ function initReadingPage(currentYear, activeTab) {
     });
   });
 
+  var _filterTimer;
   [searchInput, mobileSearchInput].forEach(input => {
     if (!input) return;
     input.addEventListener('input', () => {
       syncSearchInputs(input);
-      applyFiltersAndSort();
+      clearTimeout(_filterTimer);
+      _filterTimer = setTimeout(applyFiltersAndSort, 150);
     });
   });
 

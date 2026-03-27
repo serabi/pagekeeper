@@ -7,6 +7,7 @@ from pathlib import Path
 import requests
 
 from src.sync_clients.sync_client_interface import LocatorResult
+from src.utils.constants import DEFAULT_SHELF_NAME
 from src.utils.logging_utils import sanitize_log_data
 
 logger = logging.getLogger(__name__)
@@ -28,7 +29,8 @@ class BookloreClient:
         self.session = requests.Session()
 
         # Load cache from DB (and migrate legacy JSON if needed)
-        self._load_cache()
+        if self.is_configured():
+            self._load_cache()
 
     @property
     def base_url(self) -> str:
@@ -264,6 +266,9 @@ class BookloreClient:
         Refresh the book cache using robust pagination.
         Fetches books in batches to ensure complete library sync.
         """
+        if not self.is_configured():
+            return
+
         all_books_list = []
         page = 0
         batch_size = 200  # Reasonable chunk size
@@ -728,7 +733,7 @@ class BookloreClient:
     def add_to_shelf(self, ebook_filename, shelf_name=None):
         """Add a book to a shelf, creating the shelf if it doesn't exist."""
         if not shelf_name:
-             shelf_name = os.environ.get(f"{self.env_prefix}_SHELF_NAME") or "abs-kosync"
+             shelf_name = os.environ.get(f"{self.env_prefix}_SHELF_NAME") or DEFAULT_SHELF_NAME
 
         try:
             # Find the book
@@ -779,7 +784,7 @@ class BookloreClient:
     def remove_from_shelf(self, ebook_filename, shelf_name=None):
         """Remove a book from a shelf."""
         if not shelf_name:
-             shelf_name = os.environ.get(f"{self.env_prefix}_SHELF_NAME") or "abs-kosync"
+             shelf_name = os.environ.get(f"{self.env_prefix}_SHELF_NAME") or DEFAULT_SHELF_NAME
 
         try:
             # Find the book

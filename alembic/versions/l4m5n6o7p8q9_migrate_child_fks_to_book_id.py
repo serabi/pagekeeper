@@ -17,6 +17,7 @@ import logging
 from typing import Sequence
 
 import sqlalchemy as sa
+from sqlalchemy.exc import OperationalError
 
 from alembic import op
 
@@ -53,7 +54,7 @@ def _log_orphan_count(conn, table: str, fk_col: str = "abs_id") -> None:
         f"WHERE b.id IS NULL"
     )).scalar()
     if count:
-        logger.warning(
+        logger.error(
             "Dropping %d orphaned row(s) from '%s' with no matching book",
             count,
             table,
@@ -293,10 +294,15 @@ def _upgrade_nullable_tables(conn) -> None:
             f"(SELECT id FROM books WHERE books.abs_id = [{table}].[{old_col}]) "
             f"WHERE [{old_col}] IS NOT NULL AND [{new_col}] IS NULL"
         ))
+        orphan_count = conn.execute(sa.text(
+            f"SELECT COUNT(*) FROM [{table}] WHERE [{old_col}] IS NOT NULL AND [{new_col}] IS NULL"
+        )).scalar()
+        if orphan_count:
+            logger.warning("%d row(s) in '%s' could not be linked to a book", orphan_count, table)
         # Create index if it doesn't exist (safe for re-runs)
         try:
             op.create_index(f'ix_{table}_{new_col}', table, [new_col])
-        except Exception:
+        except OperationalError:
             pass  # Index already exists from a previous partial run
 
 
@@ -314,7 +320,7 @@ def downgrade() -> None:
         if _column_exists(conn, table, new_col):
             try:
                 op.drop_index(f'ix_{table}_{new_col}', table_name=table)
-            except Exception:
+            except OperationalError:
                 pass
             with op.batch_alter_table(table, recreate='always') as batch_op:
                 batch_op.drop_column(new_col)

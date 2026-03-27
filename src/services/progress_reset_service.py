@@ -151,7 +151,7 @@ class ProgressResetService:
             return
 
         book = self.database_service.get_book_by_ref(book_id)
-        has_alignment = bool(book and self.alignment_service and self.alignment_service.has_alignment(book.abs_id))
+        has_alignment = bool(book and self.alignment_service and self.alignment_service.has_alignment(book.id))
         if has_alignment:
             logger.info(f"   Alignment map exists for '{sanitize_log_data(str(book_id))}' — no re-transcription needed")
         else:
@@ -186,7 +186,7 @@ class ProgressResetService:
                     'message': 'Reset to 0%' if result.success else 'Failed to reset'
                 }
                 if result.success:
-                    record_write(client_name, book.abs_id)
+                    record_write(client_name, book.id)
                     logger.info(f"Reset '{client_name}' to 0%")
                 else:
                     logger.warning(f"Failed to reset '{client_name}'")

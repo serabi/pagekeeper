@@ -43,7 +43,7 @@ class MockContainer:
 
         # Link up the manager
         self.mock_sync_manager.abs_client = self.mock_abs_client
-        self.mock_sync_manager.get_abs_title.return_value = 'Test Book Title'
+        self.mock_sync_manager.get_audiobook_title.return_value = 'Test Book Title'
         self.mock_sync_manager.get_duration.return_value = 3600
 
     def sync_manager(self): return self.mock_sync_manager
@@ -186,6 +186,7 @@ class TestSuggestionsFeature(unittest.TestCase):
             SimpleNamespace(
                 id=1,
                 source_id='visible-1',
+                source='abs',
                 title='Visible Book',
                 author='Visible Author',
                 cover_url=None,
@@ -196,6 +197,7 @@ class TestSuggestionsFeature(unittest.TestCase):
             SimpleNamespace(
                 id=2,
                 source_id='hidden-1',
+                source='abs',
                 title='Hidden Book',
                 author='Hidden Author',
                 cover_url=None,
@@ -222,8 +224,8 @@ class TestSuggestionsFeature(unittest.TestCase):
 
         self.assertEqual(hide_response.status_code, 200)
         self.assertEqual(unhide_response.status_code, 200)
-        self.mock_container.mock_database_service.hide_suggestion.assert_called_once_with('test-source')
-        self.mock_container.mock_database_service.unhide_suggestion.assert_called_once_with('test-source')
+        self.mock_container.mock_database_service.hide_suggestion.assert_called_once_with('test-source', source='abs')
+        self.mock_container.mock_database_service.unhide_suggestion.assert_called_once_with('test-source', source='abs')
 
 if __name__ == '__main__':
     unittest.main()

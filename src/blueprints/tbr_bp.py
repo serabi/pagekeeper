@@ -132,7 +132,7 @@ def add_tbr_from_library():
 
     item, created = database_service.add_tbr_item(
         title=book.title or book_ref,
-        author=getattr(book, 'author', None),
+        author=book.author,
         source='library',
         book_abs_id=book.abs_id,
         book_id=book.id,
@@ -611,6 +611,7 @@ def search_library_books():
     books = database_service.search_books(q, limit=10)
     return jsonify([
         {
+            'id': b.id,
             'abs_id': b.abs_id,
             'title': b.title,
             'author': getattr(b, 'author', None) or '',
@@ -633,7 +634,7 @@ def link_tbr_to_library(item_id):
     if not book:
         return jsonify({"success": False, "error": "Book not found in library"}), 404
 
-    updated = database_service.link_tbr_to_book(item_id, book.id, book_abs_id=book.abs_id)
+    updated = database_service.link_tbr_to_book(item_id, book.id)
     if not updated:
         return jsonify({"success": False, "error": "TBR item not found"}), 404
 

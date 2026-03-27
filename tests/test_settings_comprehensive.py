@@ -16,7 +16,7 @@ class MockContainer:
         self.mock_database_service = Mock()
         self.mock_database_service.get_all_settings.return_value = {}
         self.mock_sync_manager = Mock()
-        self.mock_sync_manager.get_abs_title.return_value = 'Test'
+        self.mock_sync_manager.get_audiobook_title.return_value = 'Test'
 
     def database_service(self): return self.mock_database_service
     def sync_manager(self): return self.mock_sync_manager

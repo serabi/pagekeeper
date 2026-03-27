@@ -12,39 +12,58 @@ from src.version import APP_VERSION, get_update_status
 
 logger = logging.getLogger(__name__)
 
-settings_bp = Blueprint('settings_page', __name__)
+settings_bp = Blueprint("settings_page", __name__)
 
 URL_SETTING_KEYS = {
-    'ABS_SERVER', 'BOOKLORE_SERVER', 'BOOKLORE_2_SERVER', 'STORYTELLER_API_URL', 'CWA_SERVER', 'KOSYNC_SERVER',
-    'ABS_WEB_URL', 'BOOKLORE_WEB_URL', 'BOOKLORE_2_WEB_URL', 'STORYTELLER_WEB_URL', 'CWA_WEB_URL', 'HARDCOVER_WEB_URL',
-    'ABS_WEB_URL_INTERNAL', 'ABS_WEB_URL_EXTERNAL',
-    'STORYTELLER_WEB_URL_INTERNAL', 'STORYTELLER_WEB_URL_EXTERNAL',
-    'BOOKLORE_WEB_URL_INTERNAL', 'BOOKLORE_WEB_URL_EXTERNAL',
-    'BOOKLORE_2_WEB_URL_INTERNAL', 'BOOKLORE_2_WEB_URL_EXTERNAL',
-    'CWA_WEB_URL_INTERNAL', 'CWA_WEB_URL_EXTERNAL',
-    'HARDCOVER_WEB_URL_EXTERNAL',
-    'KOSYNC_PUBLIC_URL',
+    "ABS_SERVER",
+    "BOOKLORE_SERVER",
+    "BOOKLORE_2_SERVER",
+    "STORYTELLER_API_URL",
+    "CWA_SERVER",
+    "KOSYNC_SERVER",
+    "ABS_WEB_URL",
+    "BOOKLORE_WEB_URL",
+    "BOOKLORE_2_WEB_URL",
+    "STORYTELLER_WEB_URL",
+    "CWA_WEB_URL",
+    "HARDCOVER_WEB_URL",
+    "ABS_WEB_URL_INTERNAL",
+    "ABS_WEB_URL_EXTERNAL",
+    "STORYTELLER_WEB_URL_INTERNAL",
+    "STORYTELLER_WEB_URL_EXTERNAL",
+    "BOOKLORE_WEB_URL_INTERNAL",
+    "BOOKLORE_WEB_URL_EXTERNAL",
+    "BOOKLORE_2_WEB_URL_INTERNAL",
+    "BOOKLORE_2_WEB_URL_EXTERNAL",
+    "CWA_WEB_URL_INTERNAL",
+    "CWA_WEB_URL_EXTERNAL",
+    "HARDCOVER_WEB_URL_EXTERNAL",
+    "KOSYNC_PUBLIC_URL",
 }
 
 SECRET_SETTING_KEYS = {
-    'ABS_KEY', 'STORYTELLER_PASSWORD', 'BOOKLORE_PASSWORD', 'BOOKLORE_2_PASSWORD',
-    'CWA_PASSWORD', 'KOSYNC_KEY', 'TELEGRAM_BOT_TOKEN', 'HARDCOVER_TOKEN',
-    'DEEPGRAM_API_KEY', 'BOOKFUSION_API_KEY', 'BOOKFUSION_UPLOAD_API_KEY',
+    "ABS_KEY",
+    "STORYTELLER_PASSWORD",
+    "BOOKLORE_PASSWORD",
+    "BOOKLORE_2_PASSWORD",
+    "CWA_PASSWORD",
+    "KOSYNC_KEY",
+    "KOSYNC_SERVER_KEY",
+    "TELEGRAM_BOT_TOKEN",
+    "HARDCOVER_TOKEN",
+    "DEEPGRAM_API_KEY",
+    "BOOKFUSION_API_KEY",
+    "BOOKFUSION_UPLOAD_API_KEY",
 }
 
 
 def _is_secret_request_authorized() -> bool:
-    """Authorize secret reveal requests.
-
-    Allowed if either:
-    - Session indicates an admin user, or
-    - Caller presents a valid internal service token.
-    """
-    if bool(session.get('is_admin')):
+    """Authorize secret reveal requests via admin session or service token."""
+    if bool(session.get("is_admin")):
         return True
 
-    expected_token = os.environ.get('INTERNAL_SERVICE_TOKEN', '').strip()
-    provided_token = request.headers.get('X-Internal-Service-Token', '').strip()
+    expected_token = os.environ.get("INTERNAL_SERVICE_TOKEN", "").strip()
+    provided_token = request.headers.get("X-Internal-Service-Token", "").strip()
     if expected_token and secrets_compare(expected_token, provided_token):
         return True
 
@@ -54,7 +73,7 @@ def _is_secret_request_authorized() -> bool:
 def _mask_secret(value: str) -> str:
     """Return a masked secret showing only the last 4 characters."""
     if not value:
-        return ''
+        return ""
     tail = value[-4:] if len(value) >= 4 else value
     return f"{'*' * max(0, len(value) - len(tail))}{tail}"
 
@@ -62,13 +81,14 @@ def _mask_secret(value: str) -> str:
 def secrets_compare(a: str, b: str) -> bool:
     """Constant-time secret comparison."""
     import hmac
+
     return hmac.compare_digest(a, b)
 
 
 def _normalize_url_value(value: str) -> str:
     clean_value = value.strip()
     if not clean_value:
-        return ''
+        return ""
     lower_val = clean_value.lower()
     if not (lower_val.startswith("http://") or lower_val.startswith("https://")):
         return f"http://{clean_value}"
@@ -77,7 +97,7 @@ def _normalize_url_value(value: str) -> str:
 
 def _request_payload() -> dict:
     try:
-        if request.method == 'POST' and request.is_json:
+        if request.method == "POST" and request.is_json:
             return request.get_json(silent=True) or {}
     except RuntimeError:
         pass
@@ -89,20 +109,20 @@ def _request_value(key: str, env_key: str | None = None, *, secret: bool = False
     source_key = env_key or key
 
     if key in payload:
-        value = str(payload.get(key, '') or '').strip()
-        if secret and value == '':
-            value = os.environ.get(source_key, '')
+        value = str(payload.get(key, "") or "").strip()
+        if secret and value == "":
+            value = os.environ.get(source_key, "")
         if normalize_url:
             return _normalize_url_value(value)
         return value
 
-    value = os.environ.get(source_key, '')
+    value = os.environ.get(source_key, "")
     if normalize_url:
         return _normalize_url_value(value)
     return value.strip()
 
 
-@settings_bp.route('/settings', methods=['GET', 'POST'])
+@settings_bp.route("/settings", methods=["GET", "POST"])
 def settings():
     """
     Handle the settings page: persist submitted configuration on POST and render the settings UI on GET.
@@ -121,39 +141,39 @@ def settings():
     """
     database_service = get_database_service()
 
-    if request.method == 'POST':
+    if request.method == "POST":
         bool_keys = [
-            'ABS_ENABLED',
-            'KOSYNC_USE_PERCENTAGE_FROM_SERVER',
-            'SYNC_ABS_EBOOK',
-            'XPATH_FALLBACK_TO_PREVIOUS_SEGMENT',
-            'KOSYNC_ENABLED',
-            'STORYTELLER_ENABLED',
-            'STORYTELLER_FORCE_MODE',
-            'BOOKLORE_ENABLED',
-            'BOOKLORE_2_ENABLED',
-            'CWA_ENABLED',
-            'HARDCOVER_ENABLED',
-            'TELEGRAM_ENABLED',
-            'SUGGESTIONS_ENABLED',
-            'REPROCESS_ON_CLEAR_IF_NO_ALIGNMENT',
-            'INSTANT_SYNC_ENABLED',
-            'ABS_SOCKET_ENABLED',
-            'BOOKFUSION_ENABLED',
+            "ABS_ENABLED",
+            "KOSYNC_USE_PERCENTAGE_FROM_SERVER",
+            "SYNC_ABS_EBOOK",
+            "XPATH_FALLBACK_TO_PREVIOUS_SEGMENT",
+            "KOSYNC_ENABLED",
+            "STORYTELLER_ENABLED",
+            "STORYTELLER_FORCE_MODE",
+            "BOOKLORE_ENABLED",
+            "BOOKLORE_2_ENABLED",
+            "CWA_ENABLED",
+            "HARDCOVER_ENABLED",
+            "TELEGRAM_ENABLED",
+            "SUGGESTIONS_ENABLED",
+            "REPROCESS_ON_CLEAR_IF_NO_ALIGNMENT",
+            "INSTANT_SYNC_ENABLED",
+            "ABS_SOCKET_ENABLED",
+            "BOOKFUSION_ENABLED",
         ]
 
         current_settings = database_service.get_all_settings()
 
         # 1. Handle Boolean Toggles
         for key in bool_keys:
-            is_checked = (key in request.form)
+            is_checked = key in request.form
             val_str = str(is_checked).lower()
             database_service.set_setting(key, val_str)
             os.environ[key] = val_str
 
         # 2. Handle Text Inputs
         for key, value in request.form.items():
-            if key == '_active_tab':
+            if key == "_active_tab":
                 continue
             if key in bool_keys:
                 continue
@@ -172,105 +192,111 @@ def settings():
 
         try:
             from src.web_server import apply_settings
+
             apply_settings(current_app._get_current_object())
-            session['message'] = "Settings saved successfully."
-            session['is_error'] = False
+            session["message"] = "Settings saved successfully."
+            session["is_error"] = False
         except Exception as e:
-            session['message'] = f"Error applying settings: {e}"
-            session['is_error'] = True
+            session["message"] = f"Error applying settings: {e}"
+            session["is_error"] = True
             logger.error(f"Error applying settings: {e}")
 
-        active_tab = request.form.get('_active_tab', 'general')
-        return redirect(url_for('settings_page.settings', tab=active_tab))
+        active_tab = request.form.get("_active_tab", "general")
+        return redirect(url_for("settings_page.settings", tab=active_tab))
 
     # GET Request
-    message = session.pop('message', None)
-    is_error = session.pop('is_error', False)
+    message = session.pop("message", None)
+    is_error = session.pop("is_error", False)
 
     latest_version, update_available = get_update_status()
 
-    return render_template('settings.html',
-                           message=message,
-                           is_error=is_error,
-                           app_version=APP_VERSION,
-                           update_available=update_available,
-                           latest_version=latest_version)
+    return render_template(
+        "settings.html",
+        message=message,
+        is_error=is_error,
+        app_version=APP_VERSION,
+        update_available=update_available,
+        latest_version=latest_version,
+    )
 
 
-@settings_bp.route('/api/settings/secret/<key>', methods=['GET'])
+@settings_bp.route("/api/settings/secret/<key>", methods=["GET"])
 def get_secret(key):
     """Return a stored secret value (for reveal-on-demand UI)."""
-    allowed = {'KOSYNC_KEY'}
-    if key not in allowed:
-        return jsonify({'error': 'Not allowed'}), 403
+    if not _is_secret_request_authorized():
+        return jsonify({"error": "Unauthorized"}), 403
 
-    caller = request.headers.get('X-Forwarded-For', request.remote_addr)
+    allowed = {"KOSYNC_KEY", "KOSYNC_SERVER_KEY"}
+    if key not in allowed:
+        return jsonify({"error": "Not allowed"}), 403
+
+    caller = request.headers.get("X-Forwarded-For", request.remote_addr)
     logger.info(f"AUDIT: Secret requested (key={key}, caller={caller})")
 
-    value = os.environ.get(key, '')
-    return jsonify({'value': value, 'present': bool(value)})
+    value = os.environ.get(key, "")
+    return jsonify({"value": value, "present": bool(value)})
 
 
-@settings_bp.route('/api/kosync/test', methods=['POST'])
+@settings_bp.route("/api/kosync/test", methods=["POST"])
 def test_kosync_connection():
     """Test connection to the configured KoSync server (legacy route)."""
-    return test_connection('kosync')
+    return test_connection("kosync")
 
 
-@settings_bp.route('/api/test-connection/<service>', methods=['GET', 'POST'])
+@settings_bp.route("/api/test-connection/<service>", methods=["GET", "POST"])
 def test_connection(service):
     """Test connectivity to a configured service. Returns JSON with success/detail."""
     testers = {
-        'abs': _test_abs,
-        'kosync': _test_kosync,
-        'storyteller': _test_storyteller,
-        'booklore': _test_booklore,
-        'booklore2': _test_booklore2,
-        'cwa': _test_cwa,
-        'hardcover': _test_hardcover,
-        'telegram': _test_telegram,
-        'bookfusion': _test_bookfusion,
-        'bookfusion_upload': _test_bookfusion_upload,
+        "abs": _test_abs,
+        "kosync": _test_kosync,
+        "storyteller": _test_storyteller,
+        "booklore": _test_booklore,
+        "booklore2": _test_booklore2,
+        "cwa": _test_cwa,
+        "hardcover": _test_hardcover,
+        "telegram": _test_telegram,
+        "bookfusion": _test_bookfusion,
+        "bookfusion_upload": _test_bookfusion_upload,
     }
     tester = testers.get(service)
     if not tester:
-        return jsonify({'success': False, 'detail': 'Unknown service'}), 400
+        return jsonify({"success": False, "detail": "Unknown service"}), 400
     try:
         success, detail = tester()
     except Exception as e:
         logger.warning(f"Connection test for '{service}' failed: {_redact_secrets(str(sanitize_log_data(e)))}")
         success, detail = False, _test_conn_error(e)
-    return jsonify({'success': success, 'detail': detail})
+    return jsonify({"success": success, "detail": detail})
 
 
 def _redact_secrets(msg: str) -> str:
     """Replace any known secret values in a string with a fixed mask."""
     for key in SECRET_SETTING_KEYS:
-        val = os.environ.get(key, '')
+        val = os.environ.get(key, "")
         if val and val in msg:
-            msg = msg.replace(val, '***')
+            msg = msg.replace(val, "***")
     return msg
 
 
 def _test_conn_error(e: Exception) -> str:
     """Return a user-friendly error string from a request exception."""
     msg = str(e)
-    if 'ConnectionError' in type(e).__name__ or 'connection' in msg.lower():
-        return 'Connection refused — is the server running?'
-    if 'Timeout' in type(e).__name__:
-        return 'Request timed out'
-    if 'NameResolutionError' in msg or 'getaddrinfo' in msg:
-        return 'Server hostname could not be resolved — check the URL'
+    if "ConnectionError" in type(e).__name__ or "connection" in msg.lower():
+        return "Connection refused — is the server running?"
+    if "Timeout" in type(e).__name__:
+        return "Request timed out"
+    if "NameResolutionError" in msg or "getaddrinfo" in msg:
+        return "Server hostname could not be resolved — check the URL"
     return _redact_secrets(str(sanitize_log_data(msg)))
 
 
 _HTTP_FRIENDLY = {
-    401: 'Authentication failed — check your username and password',
-    403: 'Access denied — your account may not have permission',
-    404: 'Endpoint not found — check the server URL',
-    500: 'Server returned an internal error',
-    502: 'Bad gateway — is a reverse proxy misconfigured?',
-    503: 'Service unavailable — the server may be starting up',
+    401: "Authentication failed — check your username and password",
+    403: "Access denied — your account may not have permission",
+    404: "Endpoint not found — check the server URL",
+    500: "Server returned an internal error",
+    502: "Bad gateway — is a reverse proxy misconfigured?",
+    503: "Service unavailable — the server may be starting up",
 }
 
 
@@ -278,55 +304,66 @@ def _http_error(status_code: int) -> str:
     """Return a user-friendly message for an HTTP error status."""
     friendly = _HTTP_FRIENDLY.get(status_code)
     if friendly:
-        return f'{friendly} (HTTP {status_code})'
-    return f'Unexpected response (HTTP {status_code})'
+        return f"{friendly} (HTTP {status_code})"
+    return f"Unexpected response (HTTP {status_code})"
 
 
 def _test_abs() -> tuple[bool, str]:
-    url = _request_value('server', 'ABS_SERVER', normalize_url=True).rstrip('/')
-    token = _request_value('token', 'ABS_KEY', secret=True)
+    url = _request_value("server", "ABS_SERVER", normalize_url=True).rstrip("/")
+    token = _request_value("token", "ABS_KEY", secret=True)
     if not url or not token:
-        return False, 'Server URL or API token not configured'
+        return False, "Server URL or API token not configured"
     resp = http_requests.get(
         f"{url}/api/me",
         headers={"Authorization": f"Bearer {token}"},
         timeout=10,
     )
     if resp.status_code == 200:
-        username = resp.json().get('username', 'unknown')
-        return True, f'Connected as {username}'
+        username = resp.json().get("username", "unknown")
+        return True, f"Connected as {username}"
     return False, _http_error(resp.status_code)
 
 
 def _test_kosync() -> tuple[bool, str]:
-    url = _request_value('server', 'KOSYNC_SERVER', normalize_url=True).rstrip('/')
-    user = _request_value('user', 'KOSYNC_USER')
-    key = _request_value('key', 'KOSYNC_KEY', secret=True)
+    from urllib.parse import urlparse
+
+    url = _request_value("server", "KOSYNC_SERVER", normalize_url=True).rstrip("/")
+    hostname = urlparse(url).hostname or "" if url else ""
+    is_external = hostname not in ("127.0.0.1", "::1", "localhost", "")
+    if is_external:
+        user = _request_value("user", "KOSYNC_SERVER_USER") or _request_value("user", "KOSYNC_USER")
+        key = _request_value("key", "KOSYNC_SERVER_KEY", secret=True) or _request_value(
+            "key", "KOSYNC_KEY", secret=True
+        )
+    else:
+        user = _request_value("user", "KOSYNC_USER")
+        key = _request_value("key", "KOSYNC_KEY", secret=True)
     if not url or not user:
-        return False, 'Server URL or credentials not configured'
+        return False, "Server URL or credentials not configured"
 
     headers = {}
     if key:
         from src.utils.kosync_headers import hash_kosync_key, kosync_auth_headers
+
         headers = kosync_auth_headers(user, hash_kosync_key(key))
     try:
         resp = http_requests.get(f"{url}/healthcheck", timeout=5, headers=headers)
         if resp.status_code == 200:
-            return True, 'Connected'
+            return True, "Connected"
         fallback = http_requests.get(f"{url}/syncs/progress/test-connection", timeout=5, headers=headers)
         if fallback.status_code == 200:
-            return True, 'Connected'
+            return True, "Connected"
         return False, _http_error(fallback.status_code)
     except Exception as e:
         return False, _test_conn_error(e)
 
 
 def _test_storyteller() -> tuple[bool, str]:
-    url = _request_value('api_url', 'STORYTELLER_API_URL', normalize_url=True).rstrip('/')
-    user = _request_value('user', 'STORYTELLER_USER')
-    pw = _request_value('password', 'STORYTELLER_PASSWORD', secret=True)
+    url = _request_value("api_url", "STORYTELLER_API_URL", normalize_url=True).rstrip("/")
+    user = _request_value("user", "STORYTELLER_USER")
+    pw = _request_value("password", "STORYTELLER_PASSWORD", secret=True)
     if not url or not user:
-        return False, 'API URL or credentials not configured'
+        return False, "API URL or credentials not configured"
     resp = http_requests.post(
         f"{url}/api/token",
         data={"username": user, "password": pw},
@@ -334,40 +371,40 @@ def _test_storyteller() -> tuple[bool, str]:
         timeout=10,
     )
     if resp.status_code == 200:
-        return True, 'Authenticated'
+        return True, "Authenticated"
     return False, _http_error(resp.status_code)
 
 
 def _test_booklore() -> tuple[bool, str]:
-    return _test_booklore_instance('BOOKLORE')
+    return _test_booklore_instance("BOOKLORE")
 
 
 def _test_booklore2() -> tuple[bool, str]:
-    return _test_booklore_instance('BOOKLORE_2')
+    return _test_booklore_instance("BOOKLORE_2")
 
 
 def _test_booklore_instance(prefix: str) -> tuple[bool, str]:
-    url = _request_value('server', f'{prefix}_SERVER', normalize_url=True).rstrip('/')
-    user = _request_value('user', f'{prefix}_USER')
-    pw = _request_value('password', f'{prefix}_PASSWORD', secret=True)
+    url = _request_value("server", f"{prefix}_SERVER", normalize_url=True).rstrip("/")
+    user = _request_value("user", f"{prefix}_USER")
+    pw = _request_value("password", f"{prefix}_PASSWORD", secret=True)
     if not url or not user:
-        return False, 'Server URL or credentials not configured'
+        return False, "Server URL or credentials not configured"
     resp = http_requests.post(
         f"{url}/api/v1/auth/login",
         json={"username": user, "password": pw},
         timeout=10,
     )
     if resp.status_code == 200:
-        return True, 'Authenticated'
+        return True, "Authenticated"
     return False, _http_error(resp.status_code)
 
 
 def _test_cwa() -> tuple[bool, str]:
-    url = _request_value('server', 'CWA_SERVER', normalize_url=True).rstrip('/')
-    user = _request_value('user', 'CWA_USERNAME')
-    pw = _request_value('password', 'CWA_PASSWORD', secret=True)
+    url = _request_value("server", "CWA_SERVER", normalize_url=True).rstrip("/")
+    user = _request_value("user", "CWA_USERNAME")
+    pw = _request_value("password", "CWA_PASSWORD", secret=True)
     if not url or not user:
-        return False, 'Server URL or credentials not configured'
+        return False, "Server URL or credentials not configured"
     resp = http_requests.get(
         f"{url}/opds",
         auth=(user, pw),
@@ -375,19 +412,19 @@ def _test_cwa() -> tuple[bool, str]:
         allow_redirects=False,
     )
     # CWA redirects to login page on auth failure
-    if resp.status_code == 200 and 'login' not in resp.text[:500].lower():
-        return True, 'Connected'
+    if resp.status_code == 200 and "login" not in resp.text[:500].lower():
+        return True, "Connected"
     if resp.status_code in (301, 302):
-        return False, 'Redirected to login — check credentials'
+        return False, "Redirected to login — check credentials"
     return False, _http_error(resp.status_code)
 
 
 def _test_hardcover() -> tuple[bool, str]:
-    token = _request_value('token', 'HARDCOVER_TOKEN', secret=True)
+    token = _request_value("token", "HARDCOVER_TOKEN", secret=True)
     if not token:
-        return False, 'API token not configured'
+        return False, "API token not configured"
     resp = http_requests.post(
-        'https://api.hardcover.app/v1/graphql',
+        "https://api.hardcover.app/v1/graphql",
         headers={
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
@@ -397,28 +434,28 @@ def _test_hardcover() -> tuple[bool, str]:
     )
     if resp.status_code == 200:
         data = resp.json()
-        if data.get('errors'):
-            err_msg = data['errors'][0].get('message', 'Unknown GraphQL error')
-            return False, f'GraphQL error: {err_msg}'
-        me = data.get('data', {}).get('me')
+        if data.get("errors"):
+            err_msg = data["errors"][0].get("message", "Unknown GraphQL error")
+            return False, f"GraphQL error: {err_msg}"
+        me = data.get("data", {}).get("me")
         if isinstance(me, list):
             me = me[0] if me else {}
         elif not isinstance(me, dict):
             me = {}
-        if not isinstance(me, dict) or not me.get('id'):
-            return False, 'Authentication succeeded but user data is missing'
-        username = me.get('username', 'unknown')
-        return True, f'Connected as {username}'
+        if not isinstance(me, dict) or not me.get("id"):
+            return False, "Authentication succeeded but user data is missing"
+        username = me.get("username", "unknown")
+        return True, f"Connected as {username}"
     return False, _http_error(resp.status_code)
 
 
 def _test_telegram() -> tuple[bool, str]:
-    token = _request_value('bot_token', 'TELEGRAM_BOT_TOKEN', secret=True)
-    chat_id = _request_value('chat_id', 'TELEGRAM_CHAT_ID')
+    token = _request_value("bot_token", "TELEGRAM_BOT_TOKEN", secret=True)
+    chat_id = _request_value("chat_id", "TELEGRAM_CHAT_ID")
     if not token:
-        return False, 'Bot token not configured'
+        return False, "Bot token not configured"
     if not chat_id:
-        return False, 'Chat ID not configured'
+        return False, "Chat ID not configured"
 
     me_resp = http_requests.get(
         f"https://api.telegram.org/bot{token}/getMe",
@@ -428,23 +465,23 @@ def _test_telegram() -> tuple[bool, str]:
         return False, _http_error(me_resp.status_code)
 
     data = me_resp.json()
-    bot_name = data.get('result', {}).get('first_name', 'Bot')
+    bot_name = data.get("result", {}).get("first_name", "Bot")
 
     send_resp = http_requests.post(
         f"https://api.telegram.org/bot{token}/sendMessage",
         data={
-            'chat_id': chat_id,
-            'text': 'PageKeeper test message: Telegram notifications are configured correctly.',
+            "chat_id": chat_id,
+            "text": "PageKeeper test message: Telegram notifications are configured correctly.",
         },
         timeout=10,
     )
     if send_resp.status_code == 200:
-        return True, f'Test message sent via {bot_name}'
+        return True, f"Test message sent via {bot_name}"
 
     try:
-        description = send_resp.json().get('description', '')
+        description = send_resp.json().get("description", "")
     except Exception:
-        description = ''
+        description = ""
     if description:
         return False, _redact_secrets(description)
     return False, _http_error(send_resp.status_code)
@@ -453,12 +490,12 @@ def _test_telegram() -> tuple[bool, str]:
 def _test_bookfusion() -> tuple[bool, str]:
     container = get_container()
     client = container.bookfusion_client()
-    return client.check_connection(api_key_override=_request_value('api_key', 'BOOKFUSION_API_KEY', secret=True))
+    return client.check_connection(api_key_override=_request_value("api_key", "BOOKFUSION_API_KEY", secret=True))
 
 
 def _test_bookfusion_upload() -> tuple[bool, str]:
     container = get_container()
     client = container.bookfusion_client()
     return client.check_upload_connection(
-        api_key_override=_request_value('api_key', 'BOOKFUSION_UPLOAD_API_KEY', secret=True)
+        api_key_override=_request_value("api_key", "BOOKFUSION_UPLOAD_API_KEY", secret=True)
     )

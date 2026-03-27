@@ -162,6 +162,9 @@ class BookFusionClient:
         return os.environ.get('BOOKFUSION_UPLOAD_API_KEY', '')
 
     def is_configured(self) -> bool:
+        enabled_val = os.environ.get('BOOKFUSION_ENABLED', '').lower()
+        if enabled_val == 'false':
+            return False
         return bool(self.highlights_api_key) or bool(self.upload_api_key)
 
     def check_connection(self, api_key_override: str | None = None) -> tuple[bool, str]:

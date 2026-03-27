@@ -30,22 +30,6 @@ class StorytellerRepository(BaseRepository):
             session.expunge(submission)
             return submission
 
-    def get_active_storyteller_submission(self, abs_id):
-        """Get by abs_id (backward compat)."""
-        with self.get_session() as session:
-            sub = (
-                session.query(StorytellerSubmission)
-                .filter(
-                    StorytellerSubmission.abs_id == abs_id,
-                    StorytellerSubmission.status.in_(["queued", "processing"]),
-                )
-                .order_by(StorytellerSubmission.submitted_at.desc())
-                .first()
-            )
-            if sub:
-                session.expunge(sub)
-            return sub
-
     def get_active_storyteller_submission_by_book_id(self, book_id):
         with self.get_session() as session:
             sub = (
@@ -75,19 +59,6 @@ class StorytellerRepository(BaseRepository):
                 if submission_dir is not None:
                     sub.submission_dir = submission_dir
 
-    def get_storyteller_submission(self, abs_id):
-        """Get by abs_id (backward compat)."""
-        with self.get_session() as session:
-            sub = (
-                session.query(StorytellerSubmission)
-                .filter(StorytellerSubmission.abs_id == abs_id)
-                .order_by(StorytellerSubmission.submitted_at.desc())
-                .first()
-            )
-            if sub:
-                session.expunge(sub)
-            return sub
-
     def get_storyteller_submission_by_book_id(self, book_id):
         with self.get_session() as session:
             sub = (
@@ -103,15 +74,16 @@ class StorytellerRepository(BaseRepository):
     def get_all_storyteller_submissions_latest(self):
         """Get the most recent submission per book (for dashboard bulk display).
 
-        Returns a dict of {abs_id: StorytellerSubmission}.
+        Returns a dict of {book_id: StorytellerSubmission}.
         """
         with self.get_session() as session:
             latest = (
                 session.query(
-                    StorytellerSubmission.abs_id,
+                    StorytellerSubmission.book_id,
                     func.max(StorytellerSubmission.submitted_at).label("max_ts"),
                 )
-                .group_by(StorytellerSubmission.abs_id)
+                .filter(StorytellerSubmission.book_id.isnot(None))
+                .group_by(StorytellerSubmission.book_id)
                 .subquery()
             )
 
@@ -119,7 +91,7 @@ class StorytellerRepository(BaseRepository):
                 session.query(StorytellerSubmission)
                 .join(
                     latest,
-                    (StorytellerSubmission.abs_id == latest.c.abs_id)
+                    (StorytellerSubmission.book_id == latest.c.book_id)
                     & (StorytellerSubmission.submitted_at == latest.c.max_ts),
                 )
                 .all()
@@ -128,5 +100,5 @@ class StorytellerRepository(BaseRepository):
             result = {}
             for sub in rows:
                 session.expunge(sub)
-                result[sub.abs_id] = sub
+                result[sub.book_id] = sub
             return result

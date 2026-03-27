@@ -51,7 +51,8 @@ class DatabaseService:
         self._run_alembic_migrations()
 
         # Ensure all tables exist (covers new models not yet in migrations)
-        Base.metadata.create_all(self.db_manager.engine)
+        if not self._migration_failed:
+            Base.metadata.create_all(self.db_manager.engine)
 
         # Safety net: add any model columns missing from existing tables
         # Skip if migrations failed — adding columns without constraints would
@@ -219,31 +220,34 @@ class DatabaseService:
                 existing_cols = {c["name"] for c in inspector.get_columns(table_name)}
                 for col in model.columns:
                     if col.name not in existing_cols:
-                        col_type = col.type.compile(self.db_manager.engine.dialect)
-                        default_clause = ""
-                        if col.default is not None:
-                            default_val = col.default.arg
-                            if callable(default_val):
-                                try:
-                                    default_val = default_val()
-                                except TypeError:
+                        try:
+                            col_type = col.type.compile(self.db_manager.engine.dialect)
+                            default_clause = ""
+                            if col.default is not None:
+                                default_val = col.default.arg
+                                if callable(default_val):
                                     try:
-                                        default_val = default_val(None)
-                                    except Exception:
-                                        default_val = None
-                            if isinstance(default_val, bool):
-                                default_clause = f" DEFAULT {'TRUE' if default_val else 'FALSE'}"
-                            elif isinstance(default_val, str):
-                                escaped = default_val.replace("'", "''")
-                                default_clause = f" DEFAULT '{escaped}'"
-                            elif isinstance(default_val, (int, float)):
-                                default_clause = f" DEFAULT {default_val}"
+                                        default_val = default_val()
+                                    except TypeError:
+                                        try:
+                                            default_val = default_val(None)
+                                        except Exception:
+                                            default_val = None
+                                if isinstance(default_val, bool):
+                                    default_clause = f" DEFAULT {'TRUE' if default_val else 'FALSE'}"
+                                elif isinstance(default_val, str):
+                                    escaped = default_val.replace("'", "''")
+                                    default_clause = f" DEFAULT '{escaped}'"
+                                elif isinstance(default_val, (int, float)):
+                                    default_clause = f" DEFAULT {default_val}"
 
-                        alter = f"ALTER TABLE {table_name} ADD COLUMN {col.name} {col_type}{default_clause}"
-                        with self.db_manager.engine.connect() as conn:
-                            conn.execute(text(alter))
-                            conn.commit()
-                        logger.info(f"Added missing column: {table_name}.{col.name}")
+                            alter = f"ALTER TABLE {table_name} ADD COLUMN {col.name} {col_type}{default_clause}"
+                            with self.db_manager.engine.connect() as conn:
+                                conn.execute(text(alter))
+                                conn.commit()
+                            logger.info(f"Added missing column: {table_name}.{col.name}")
+                        except Exception as e:
+                            logger.warning("Could not add column %s.%s: %s", table_name, col.name, e)
         except Exception as e:
             logger.warning(f"Column check failed (non-fatal): {e}")
 
@@ -336,8 +340,7 @@ class DatabaseService:
                 hc_id = int(details.hardcover_book_id)
                 tbr_item = self._tbr.find_tbr_by_hardcover_id(hc_id)
                 if tbr_item and not tbr_item.book_id:
-                    self._tbr.link_tbr_to_book(tbr_item.id, details.book_id,
-                                               book_abs_id=details.abs_id)
+                    self._tbr.link_tbr_to_book(tbr_item.id, details.book_id)
             except (TypeError, ValueError):
                 pass
         return result
@@ -357,12 +360,6 @@ class DatabaseService:
 
     def set_bookfusion_sync_cursor(self, cursor):
         return self._settings.set_setting("BOOKFUSION_SYNC_CURSOR", cursor)
-
-    def find_tbr_by_abs_id(self, abs_id):
-        return self._tbr.find_by_abs_id(abs_id)
-
-    def delete_tbr_by_abs_id(self, abs_id):
-        return self._tbr.delete_by_abs_id(abs_id)
 
     def find_tbr_by_book_id(self, book_id):
         return self._tbr.find_by_book_id(book_id)
@@ -390,8 +387,8 @@ class DatabaseService:
     def delete_tbr_item(self, item_id):
         return self._tbr.delete_tbr_item(item_id)
 
-    def link_tbr_to_book(self, item_id, book_id, book_abs_id=None):
-        return self._tbr.link_tbr_to_book(item_id, book_id, book_abs_id=book_abs_id)
+    def link_tbr_to_book(self, item_id, book_id):
+        return self._tbr.link_tbr_to_book(item_id, book_id)
 
     def find_tbr_by_hardcover_id(self, hc_book_id):
         return self._tbr.find_tbr_by_hardcover_id(hc_book_id)

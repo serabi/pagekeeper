@@ -108,8 +108,8 @@ class TestEbookOnlyNormalization:
         )
         assert result is None
 
-    def test_falls_back_to_pct_when_text_extraction_fails(self):
-        """When get_text_from_current_state returns None, fall back to pct * total_len."""
+    def test_returns_none_when_text_extraction_fails(self):
+        """When text match fails for any client, return None to force raw percentage comparison."""
         full_text = "B" * 80_000
         parser = MagicMock()
         parser.resolve_book_path.return_value = '/books/book.epub'
@@ -131,10 +131,12 @@ class TestEbookOnlyNormalization:
         }
         result = mgr._normalize_for_cross_format_comparison(_make_book(), config)
 
-        assert result == {'KoSync': 20_000, 'Booklore': 60_000}
+        # Fallback-only normalization is unreliable — returns None so sync
+        # manager uses raw percentage comparison instead
+        assert result is None
 
-    def test_falls_back_to_pct_when_find_text_location_returns_none(self):
-        """When text is found but can't be located in the EPUB, fall back to pct."""
+    def test_returns_none_when_find_text_location_returns_none(self):
+        """When text is found but can't be located in the EPUB, return None."""
         full_text = "C" * 50_000
         parser = MagicMock()
         parser.resolve_book_path.return_value = '/books/book.epub'
@@ -157,7 +159,7 @@ class TestEbookOnlyNormalization:
         }
         result = mgr._normalize_for_cross_format_comparison(_make_book(), config)
 
-        assert result == {'KoSync': 20_000, 'Booklore': 30_000}
+        assert result is None
 
 
 # ── Integration: _determine_leader picks correct leader via char offsets ──

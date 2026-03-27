@@ -129,12 +129,14 @@ class TestABSSocketListenerDebounce(unittest.TestCase):
         book = self._make_active_book("nested-id")
         self.mock_db.get_book_by_abs_id.return_value = book
 
-        self.listener._handle_progress_event({
-            "id": "34621755-32df-4876-b235-abc123",
-            "sessionId": "session-1",
-            "deviceDescription": "Windows 10 / Firefox",
-            "data": {"libraryItemId": "nested-id", "progress": 0.42}
-        })
+        self.listener._handle_progress_event(
+            {
+                "id": "34621755-32df-4876-b235-abc123",
+                "sessionId": "session-1",
+                "deviceDescription": "Windows 10 / Firefox",
+                "data": {"libraryItemId": "nested-id", "progress": 0.42},
+            }
+        )
         self.assertIn("nested-id", self.listener._pending)
 
     def test_handles_top_level_library_item_id(self):
@@ -166,159 +168,126 @@ class TestABSSocketListenerDebounce(unittest.TestCase):
 class TestKosyncPutInstantSync(unittest.TestCase):
     """Test that KoSync PUT records debounce events for active linked books.
 
-    Sync fires via _kosync_debounce_loop (background thread). These tests verify
-    that events are correctly recorded in (or excluded from) the debounce queue —
-    the actual fire timing is handled by the debounce loop, not tested here.
+    These tests call KosyncService.handle_put_progress directly with a mock
+    debounce_manager, verifying that events are correctly recorded (or not).
     """
 
     def setUp(self):
         import os
-        os.environ.setdefault('DATA_DIR', '/tmp/test_kosync_instant')
-        os.environ.setdefault('KOSYNC_USER', 'testuser')
-        os.environ.setdefault('KOSYNC_KEY', 'testpass')
-        os.environ['INSTANT_SYNC_ENABLED'] = 'true'
 
-        import src.api.kosync_server as ks
-        # Reset debounce state so each test starts clean
-        ks._debounce_thread_started = False
-        with ks._kosync_debounce_lock:
-            ks._kosync_debounce.clear()
+        os.environ.setdefault("DATA_DIR", "/tmp/test_kosync_instant")
+        os.environ["INSTANT_SYNC_ENABLED"] = "true"
 
     def tearDown(self):
         import os
-        os.environ.pop('INSTANT_SYNC_ENABLED', None)
 
-    def _make_put_context(self, doc_hash, percentage=0.55, device='TestDevice'):
-        from flask import Flask
-        app = Flask(__name__)
-        return app.test_request_context(
-            '/syncs/progress',
-            method='PUT',
-            json={
-                'document': doc_hash,
-                'percentage': percentage,
-                'progress': '/body/test',
-                'device': device,
-                'device_id': 'D1',
-            },
-            content_type='application/json',
-        )
+        os.environ.pop("INSTANT_SYNC_ENABLED", None)
 
     def test_put_records_debounce_event_for_active_linked_book(self):
         """PUT for a linked active book should record a debounce event."""
-        import src.api.kosync_server as ks
-        from src.db.models import KosyncDocument
+        from src.services.kosync_service import KosyncService
 
         mock_db = MagicMock()
-        original_db = ks._database_service
-        ks._database_service = mock_db
-        original_manager = ks._manager
-        ks._manager = MagicMock()
+        mock_manager = MagicMock()
+        svc = KosyncService(mock_db, MagicMock(), mock_manager)
 
-        try:
-            mock_book = MagicMock()
-            mock_book.abs_id = "test-instant-sync"
-            mock_book.title = "Instant Sync Book"
-            mock_book.status = "active"
-            mock_book.kosync_doc_id = "x" * 32
+        mock_book = MagicMock()
+        mock_book.id = 42
+        mock_book.abs_id = "test-instant-sync"
+        mock_book.title = "Instant Sync Book"
+        mock_book.status = "active"
+        mock_book.activity_flag = False
 
-            mock_doc = MagicMock(spec=KosyncDocument)
-            mock_doc.linked_abs_id = "test-instant-sync"
-            mock_doc.percentage = 0.3
-            mock_doc.device_id = "D1"
+        mock_doc = MagicMock()
+        mock_doc.linked_abs_id = "test-instant-sync"
+        mock_doc.percentage = 0.3
+        mock_doc.device_id = "D1"
 
-            mock_db.get_kosync_document.return_value = mock_doc
-            mock_db.get_book_by_abs_id.return_value = mock_book
-            mock_db.get_book_by_kosync_id.return_value = None
+        mock_db.get_kosync_document.return_value = mock_doc
+        mock_db.get_book_by_abs_id.return_value = mock_book
 
-            with self._make_put_context('x' * 32):
-                ks.kosync_put_progress.__wrapped__()
+        mock_debounce = MagicMock()
 
-            # Event should be queued for the debounce loop to fire
-            with ks._kosync_debounce_lock:
-                self.assertIn("test-instant-sync", ks._kosync_debounce)
-                self.assertFalse(ks._kosync_debounce["test-instant-sync"]["synced"])
-                self.assertEqual(ks._kosync_debounce["test-instant-sync"]["title"], "Instant Sync Book")
+        with patch.dict("os.environ", {"KOSYNC_FURTHEST_WINS": "false", "INSTANT_SYNC_ENABLED": "true"}):
+            svc.handle_put_progress(
+                {
+                    "document": "x" * 32,
+                    "percentage": 0.55,
+                    "progress": "/body/test",
+                    "device": "TestDevice",
+                    "device_id": "D1",
+                },
+                "127.0.0.1",
+                debounce_manager=mock_debounce,
+            )
 
-        finally:
-            ks._database_service = original_db
-            ks._manager = original_manager
+        mock_debounce.record_event.assert_called_once_with(42, "Instant Sync Book")
 
     def test_instant_sync_disabled_skips_debounce(self):
         """PUT should NOT record a debounce event when INSTANT_SYNC_ENABLED=false."""
-        import os
+        from src.services.kosync_service import KosyncService
 
-        import src.api.kosync_server as ks
-        from src.db.models import KosyncDocument
-
-        os.environ['INSTANT_SYNC_ENABLED'] = 'false'
         mock_db = MagicMock()
-        original_db = ks._database_service
-        ks._database_service = mock_db
-        original_manager = ks._manager
-        ks._manager = MagicMock()
+        mock_manager = MagicMock()
+        svc = KosyncService(mock_db, MagicMock(), mock_manager)
 
-        try:
-            mock_book = MagicMock()
-            mock_book.abs_id = "test-disabled"
-            mock_book.title = "Disabled Book"
-            mock_book.status = "active"
-            mock_book.kosync_doc_id = "d" * 32
+        mock_book = MagicMock()
+        mock_book.abs_id = "test-disabled"
+        mock_book.title = "Disabled Book"
+        mock_book.status = "active"
+        mock_book.activity_flag = False
 
-            mock_doc = MagicMock(spec=KosyncDocument)
-            mock_doc.linked_abs_id = "test-disabled"
-            mock_doc.percentage = 0.1
-            mock_doc.device_id = "D1"
+        mock_doc = MagicMock()
+        mock_doc.linked_abs_id = "test-disabled"
+        mock_doc.percentage = 0.1
+        mock_doc.device_id = "D1"
 
-            mock_db.get_kosync_document.return_value = mock_doc
-            mock_db.get_book_by_abs_id.return_value = mock_book
-            mock_db.get_book_by_kosync_id.return_value = None
+        mock_db.get_kosync_document.return_value = mock_doc
+        mock_db.get_book_by_abs_id.return_value = mock_book
 
-            with self._make_put_context('d' * 32):
-                ks.kosync_put_progress.__wrapped__()
+        mock_debounce = MagicMock()
 
-            # No debounce event should have been recorded
-            with ks._kosync_debounce_lock:
-                self.assertNotIn("test-disabled", ks._kosync_debounce)
+        with patch.dict("os.environ", {"KOSYNC_FURTHEST_WINS": "false", "INSTANT_SYNC_ENABLED": "false"}):
+            svc.handle_put_progress(
+                {"document": "d" * 32, "percentage": 0.55, "device": "TestDevice", "device_id": "D1"},
+                "127.0.0.1",
+                debounce_manager=mock_debounce,
+            )
 
-        finally:
-            ks._database_service = original_db
-            ks._manager = original_manager
+        mock_debounce.record_event.assert_not_called()
 
     def test_put_does_not_record_debounce_event_for_inactive_book(self):
         """PUT for a linked but inactive book should NOT record a debounce event."""
-        import src.api.kosync_server as ks
+        from src.services.kosync_service import KosyncService
 
         mock_db = MagicMock()
-        original_db = ks._database_service
-        ks._database_service = mock_db
-        original_manager = ks._manager
-        ks._manager = MagicMock()
+        mock_manager = MagicMock()
+        svc = KosyncService(mock_db, MagicMock(), mock_manager)
 
-        try:
-            mock_book = MagicMock()
-            mock_book.abs_id = "test-inactive"
-            mock_book.title = "Inactive Book"
-            mock_book.status = "pending"
+        mock_book = MagicMock()
+        mock_book.abs_id = "test-inactive"
+        mock_book.title = "Inactive Book"
+        mock_book.status = "pending"
+        mock_book.activity_flag = False
 
-            mock_doc = MagicMock()
-            mock_doc.linked_abs_id = "test-inactive"
-            mock_doc.percentage = 0.1
-            mock_doc.device_id = "D1"
+        mock_doc = MagicMock()
+        mock_doc.linked_abs_id = "test-inactive"
+        mock_doc.percentage = 0.1
+        mock_doc.device_id = "D1"
 
-            mock_db.get_kosync_document.return_value = mock_doc
-            mock_db.get_book_by_abs_id.return_value = mock_book
-            mock_db.get_book_by_kosync_id.return_value = None
+        mock_db.get_kosync_document.return_value = mock_doc
+        mock_db.get_book_by_abs_id.return_value = mock_book
 
-            with self._make_put_context('y' * 32):
-                ks.kosync_put_progress.__wrapped__()
+        mock_debounce = MagicMock()
 
-            with ks._kosync_debounce_lock:
-                self.assertNotIn("test-inactive", ks._kosync_debounce)
+        with patch.dict("os.environ", {"KOSYNC_FURTHEST_WINS": "false", "INSTANT_SYNC_ENABLED": "true"}):
+            svc.handle_put_progress(
+                {"document": "y" * 32, "percentage": 0.55, "device": "TestDevice", "device_id": "D1"},
+                "127.0.0.1",
+                debounce_manager=mock_debounce,
+            )
 
-        finally:
-            ks._database_service = original_db
-            ks._manager = original_manager
+        mock_debounce.record_event.assert_not_called()
 
 
 if __name__ == "__main__":
