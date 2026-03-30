@@ -153,7 +153,7 @@ class SuggestionRepository(BaseRepository):
                 .filter(
                     PendingSuggestion.source == "abs",
                     PendingSuggestion.status.in_(self.ACTIONABLE_STATUSES),
-                    not_(PendingSuggestion.source_id.in_(session.query(Book.abs_id))),
+                    not_(PendingSuggestion.source_id.in_(session.query(Book.abs_id).filter(Book.abs_id.isnot(None)))),
                 )
                 .delete(synchronize_session=False)
             )

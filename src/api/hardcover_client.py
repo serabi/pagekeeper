@@ -808,7 +808,7 @@ class HardcoverClient:
         # Use cached read ID if available, otherwise fetch
         existing_read = None
         if cached_read_id:
-            existing_read = {"id": cached_read_id, "started_at": None, "finished_at": None}
+            existing_read = {"id": cached_read_id, "started_at": "cached", "finished_at": "cached"}
         else:
             read_query = """
             query ($userBookId: Int!) {

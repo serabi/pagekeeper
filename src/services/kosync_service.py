@@ -4,6 +4,7 @@ Handles EPUB discovery, hash-to-book linking, auto-discovery, and
 document management. Route handlers in kosync_server.py delegate here.
 """
 
+import calendar
 import json
 import logging
 import os
@@ -159,6 +160,7 @@ class KosyncService:
 
         except Exception as e:
             logger.error(f"Error in EPUB auto-discovery: {e}")
+            return None
 
         logger.info("Auto-discovery finished. No match found")
         return None
@@ -667,7 +669,7 @@ class KosyncService:
 
         response_timestamp = now.isoformat() + "Z"
         if device and device.lower() == "booknexus":
-            response_timestamp = int(now.timestamp())
+            response_timestamp = int(calendar.timegm(now.timetuple()))
 
         return {"document": doc_hash, "timestamp": response_timestamp}, 200
 

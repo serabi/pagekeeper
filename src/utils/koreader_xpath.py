@@ -214,19 +214,21 @@ class KoReaderXPathService:
         current_occurrence = 0
 
         for el in tree.iter():
+            # Check el.text first (text before first child)
             if el.text and el.text == search_text:
                 if current_occurrence == occurrence_index:
                     return self._build_crengine_safe_text_xpath(el, target_item["spine_index"], target_item["content"])
                 current_occurrence += 1
 
-            if el.tail and el.tail == search_text:
-                if current_occurrence == occurrence_index:
-                    parent = el.getparent()
-                    node_to_build = parent if parent is not None else el
-                    return self._build_crengine_safe_text_xpath(
-                        node_to_build, target_item["spine_index"], target_item["content"]
-                    )
-                current_occurrence += 1
+            # Check tail text of each child in document order
+            for child in el:
+                if child.tail and child.tail == search_text:
+                    if current_occurrence == occurrence_index:
+                        node_to_build = el
+                        return self._build_crengine_safe_text_xpath(
+                            node_to_build, target_item["spine_index"], target_item["content"]
+                        )
+                    current_occurrence += 1
 
         logger.warning(f"Hybrid Anchor mapping failed for '{search_text}'. Falling back to BS4 structural path.")
         return None
@@ -452,16 +454,19 @@ class KoReaderXPathService:
 
     def _resolve_via_text_anchor(self, target_node, target_item, target_offset, full_text):
         """Resolve XPath by finding the target node's text in the BS4 chapter text."""
-        node_text = ""
+        child_text = ""
         if target_node.text:
-            node_text += target_node.text.strip()
+            child_text += target_node.text.strip()
         if target_node.tail:
-            node_text += " " + target_node.tail.strip()
+            child_text += " " + target_node.tail.strip()
 
+        node_text = child_text
+        used_parent = False
         if len(node_text) < 20:
             parent = target_node.getparent()
             if parent is not None:
                 node_text = parent.text_content().strip()
+                used_parent = True
 
         clean_anchor = " ".join(node_text.split())
         if not clean_anchor:
@@ -471,7 +476,15 @@ class KoReaderXPathService:
         local_start_index = bs4_chapter_text.find(clean_anchor)
 
         if local_start_index != -1:
-            safe_offset = min(target_offset, len(clean_anchor))
+            if used_parent and child_text:
+                clean_child = " ".join(child_text.split())
+                child_pos = clean_anchor.find(clean_child)
+                if child_pos != -1:
+                    safe_offset = child_pos + min(target_offset, len(clean_child))
+                else:
+                    safe_offset = min(target_offset, len(clean_anchor))
+            else:
+                safe_offset = min(target_offset, len(clean_anchor))
             global_index = target_item["start"] + local_start_index + safe_offset
             start = max(0, global_index)
             end = min(len(full_text), global_index + 600)

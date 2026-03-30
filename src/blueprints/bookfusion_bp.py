@@ -65,8 +65,8 @@ def upload_book():
         return jsonify({"error": "No data provided"}), 400
 
     book_id = data.get("book_id")
-    title = str(data.get("title", ""))
-    authors = str(data.get("authors", ""))
+    title = data.get("title") or ""
+    authors = data.get("authors") or ""
     filename = data.get("fileName", "")
 
     if not book_id:
@@ -344,7 +344,9 @@ def link_highlight():
     db_service = get_database_service()
     if abs_id:
         book = db_service.get_book_by_ref(abs_id)
-        book_id = book.id if book else None
+        if not book:
+            return jsonify({"error": "Book not found"}), 404
+        book_id = book.id
     else:
         book_id = None
     db_service.link_bookfusion_highlights_by_book_id(bookfusion_book_id, book_id)

@@ -244,4 +244,4 @@ class TestHelperMethods:
         p = tree.xpath("//p")[0]
         xpath = self.service._build_xpath(p)
         # Single p child shouldn't need an index
-        assert "p[" not in xpath or "p[1]" not in xpath
+        assert "p[" not in xpath
