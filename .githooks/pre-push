@@ -1,0 +1,52 @@
+#!/bin/sh
+
+set -eu
+
+repo_root="$(git rev-parse --show-toplevel)"
+verify_script="$repo_root/scripts/git/verify-public-tree.sh"
+remote="$1"
+
+if [ "$remote" != "origin" ]; then
+    exit 0
+fi
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+    case "$remote_ref" in
+        refs/tags/*)
+            continue
+            ;;
+    esac
+
+    branch="$(echo "$remote_ref" | sed 's|refs/heads/||')"
+    expected_local_ref="refs/heads/$branch"
+
+    if [ "$branch" != "dev" ] && [ "$branch" != "main" ]; then
+        echo "Blocked: refusing to push '$branch' to origin." >&2
+        echo "Push private branches to the 'private' remote instead." >&2
+        exit 1
+    fi
+
+    if [ "$local_ref" != "$expected_local_ref" ]; then
+        echo "Blocked: push local '$local_ref' to matching public branch '$branch' instead of rewriting refs." >&2
+        exit 1
+    fi
+
+    if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
+        echo "Blocked: refusing to delete '$branch' on origin." >&2
+        exit 1
+    fi
+
+    "$verify_script" --ref "$local_sha"
+
+    if [ "$branch" = "main" ]; then
+        echo "You're pushing directly to main on origin." >&2
+        printf "Continue? [y/N] " >&2
+        read -r answer < /dev/tty
+        if [ "$answer" != "y" ] && [ "$answer" != "Y" ]; then
+            echo "Push aborted." >&2
+            exit 1
+        fi
+    fi
+done
+
+exit 0

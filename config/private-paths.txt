@@ -1,0 +1,10 @@
+# Paths stripped from public branches during promotion.
+# Keep entries relative to the repository root.
+AGENTS.md
+CLAUDE.md
+.claude/
+.github/copilot-instructions.md
+dev/
+private/
+DOCKER-PREPARATION.md
+migrations/

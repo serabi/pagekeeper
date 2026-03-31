@@ -2,46 +2,50 @@
 
 ## Git Flow
 
-PageKeeper uses a three-tier branch strategy with separate public and private remotes.
+PageKeeper uses separate public and private remotes with public-first and private-first workflows.
 
 ### Remotes
 
 | Remote | Repo | Visibility | Purpose |
 |--------|------|------------|---------|
-| `origin` | `serabi/pagekeeper` | Public | Releases and contributions |
-| `private` | `serabi/pagekeeper-dev` | Private | Full working history |
+| `origin` | `serabi/pagekeeper` | Public | Public development and releases |
+| `private` | `serabi/pagekeeper-dev` | Private | Private drafts and mirrored public history |
 
 ### Branches
 
 | Branch | Remote | Purpose |
 |--------|--------|---------|
-| `dev-private` | `private` | Working branch — all development happens here |
-| `dev` | `origin` | Public integration branch — squash-merged from dev-private |
-| `main` | `origin` | Stable releases — squash-merged from dev |
+| `draft` | `private` | Private unpublished work |
+| `dev` | `origin` | Public development and integration |
+| `main` | `origin` | Public release branch |
+| `dev` | `private` | Mirror of `origin/dev` |
+| `main` | `private` | Mirror of `origin/main` |
 
 ### Workflow
 
-1. **Feature work**: Create feature branches from `dev-private`, merge back into `dev-private`, push to `private` remote.
-2. **Promote to public dev**: Use `.git/promote.sh dev-private dev "commit message"` — this squash-merges and automatically strips private-only files.
-3. **Release to main**: Use `.git/promote.sh dev main "release message"` — same process.
-4. **Never push `dev-private` or feature branches to `origin`** — the pre-push hook blocks this.
+1. **Public-first work**: Work on `dev`, push to `origin/dev`, then sync the mirror with `scripts/git/sync-private-mirrors.sh dev`.
+2. **Private-first work**: Work on `draft`, push to `private/draft`, then publish with `scripts/git/promote.sh draft dev "commit message"`.
+3. **Release to main**: Use `scripts/git/promote.sh dev main "release message"` and then `scripts/git/sync-private-mirrors.sh main`.
+4. **Install hooks**: Run `scripts/git/install-hooks.sh` once per clone.
+5. **Never push `draft` or private feature branches to `origin`** — the versioned pre-push hook blocks this.
 
 ### Private-Only Files
 
-These files exist on `dev-private` but are stripped by the promote script before reaching public branches:
+These paths are treated as private-only by `config/private-paths.txt` and are stripped before content reaches public branches:
 
 - `CLAUDE.md`, `AGENTS.md` — AI instructions
 - `.claude/` — hooks and config
 - `.github/copilot-instructions.md` — Copilot config
-- `dev/` — internal planning docs
+- `dev/` — legacy private planning docs that should eventually move under `private/`
+- `private/` — future private-first content
 - `DOCKER-PREPARATION.md` — internal setup notes
 - `migrations/` — internal architecture docs
 
 ### Push Rules
 
-- `origin` only accepts `main` and `dev` (enforced by pre-push hook and git config)
+- `origin` only accepts `main` and `dev` (enforced by `.githooks/pre-push`)
 - Pushing to `main` on origin prompts for confirmation
-- `private` remote has no restrictions
+- `private/dev` and `private/main` should remain exact mirrors of the public branches
 
 ## Styling Reference
 
