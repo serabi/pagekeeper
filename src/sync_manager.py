@@ -156,17 +156,23 @@ class SyncManager:
         # Check configured sync clients
         for client_name, client in (self.sync_clients or {}).items():
             try:
-                client.check_connection()
-                logger.info(f"'{client_name}' connection verified")
+                if client.check_connection():
+                    logger.info(f"'{client_name}' connection verified")
+                    continue
+                first_err = RuntimeError("check_connection() returned False")
             except Exception as first_err:
-                time.sleep(2)
-                try:
-                    client.check_connection()
+                pass
+
+            time.sleep(2)
+            try:
+                if client.check_connection():
                     logger.info(f"'{client_name}' connection verified (retry)")
-                except Exception as e:
-                    logger.warning(
-                        f"'{client_name}' connection failed after retry: {sanitize_exception(e)} (first attempt: {sanitize_exception(first_err)})"
-                    )
+                else:
+                    raise RuntimeError("check_connection() returned False")
+            except Exception as e:
+                logger.warning(
+                    f"'{client_name}' connection failed after retry: {sanitize_exception(e)} (first attempt: {sanitize_exception(first_err)})"
+                )
 
         # Check CWA Integration Status
         if self.library_service and self.library_service.cwa_client:

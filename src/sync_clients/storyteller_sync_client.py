@@ -53,15 +53,14 @@ class StorytellerSyncClient(SyncClient):
         try:
             st_pct, st_ts, st_href, st_frag = self.storyteller_client.get_position_details(uuid)
         except Exception as e:
-            logger.warning(f"'{title_snip}' Storyteller UUID fetch failed for '{uuid}': {e}")
+            logger.debug(f"'{title_snip}' Storyteller UUID fetch failed for '{uuid}': {e}")
             return None
 
         # Calculate delta
         prev_storyteller_pct = prev_state.percentage if prev_state else 0
 
-        # If st_pct is None here, it means the book exists but has no position yet (or fetch failed).
-        # We treat it as 0% for calculation if it returned valid None, or bail if it crashed.
-        # But get_position_details usually returns None tuple on failure, so we check st_pct.
+        # If st_pct is None here, it means the book exists but has no position yet.
+        # Request failures are handled above by returning None for the whole service state.
         if st_pct is None:
             st_pct = 0.0
             st_ts = 0

@@ -19,6 +19,10 @@ class StorytellerAPIClient:
         self._token = None
         self._token_timestamp = 0
         self._token_max_age = 30
+        self._connection_retry_after = 0.0
+        self._failure_signature: str | None = None
+        self._failure_logged_at = 0.0
+        self._suppressed_failure_count = 0
         self.session = requests.Session()
         self.session.headers.update({"Content-Type": "application/json"})
 
@@ -41,19 +45,51 @@ class StorytellerAPIClient:
         """Call at start of each sync cycle to refresh."""
         self._book_cache = {}
 
+    @property
+    def _failure_cooldown_seconds(self) -> int:
+        try:
+            return max(1, int(os.environ.get("STORYTELLER_RETRY_COOLDOWN_SECONDS", "60")))
+        except ValueError:
+            return 60
+
     def is_configured(self):
         enabled_val = os.environ.get("STORYTELLER_ENABLED", "").lower()
         if enabled_val == "false":
             return False
         return bool(self.username and self.password)
 
+    def _connection_backoff_active(self) -> bool:
+        return time.time() < self._connection_retry_after
+
+    def _mark_connection_success(self) -> None:
+        self._connection_retry_after = 0.0
+        self._failure_signature = None
+        self._failure_logged_at = 0.0
+        self._suppressed_failure_count = 0
+
+    def _mark_connection_failure(self, message: str) -> None:
+        now = time.time()
+        if message == self._failure_signature and now < (self._failure_logged_at + self._failure_cooldown_seconds):
+            self._suppressed_failure_count += 1
+        else:
+            suffix = ""
+            if message == self._failure_signature and self._suppressed_failure_count:
+                suffix = f" (suppressed {self._suppressed_failure_count} similar errors)"
+            logger.error(f"{message}{suffix}")
+            self._failure_signature = message
+            self._failure_logged_at = now
+            self._suppressed_failure_count = 0
+        self._connection_retry_after = now + self._failure_cooldown_seconds
+
     def _get_fresh_token(self) -> str | None:
         if self._token and (time.time() - self._token_timestamp) < self._token_max_age:
             return self._token
         if not self.username or not self.password:
             return None
+        if self._connection_backoff_active():
+            return None
         try:
-            response = requests.post(
+            response = self.session.post(
                 f"{self.base_url}/api/token",
                 data={"username": self.username, "password": self.password},
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
@@ -63,14 +99,18 @@ class StorytellerAPIClient:
                 data = response.json()
                 self._token = data.get("access_token")
                 self._token_timestamp = time.time()
+                self._mark_connection_success()
                 return self._token
+            self._mark_connection_failure(f"Storyteller login failed: HTTP {response.status_code}")
         except Exception as e:
-            logger.error(f"Storyteller login error: {e}")
+            self._mark_connection_failure(f"Storyteller login error: {e}")
         return None
 
     def _make_request(self, method: str, endpoint: str, json_data: dict = None) -> requests.Response | None:
         token = self._get_fresh_token()
         if not token:
+            return None
+        if self._connection_backoff_active():
             return None
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
         try:
@@ -83,9 +123,10 @@ class StorytellerAPIClient:
                     return None
                 headers["Authorization"] = f"Bearer {token}"
                 response = self.session.request(method, url, headers=headers, json=json_data, timeout=10)
+            self._mark_connection_success()
             return response
         except Exception as e:
-            logger.error(f"Storyteller API request failed ('{method}' '{endpoint}'): {e}")
+            self._mark_connection_failure(f"Storyteller API request failed ('{method}' '{endpoint}'): {e}")
             return None
 
     def check_connection(self) -> bool:
@@ -108,6 +149,8 @@ class StorytellerAPIClient:
         Returns: (percentage, timestamp, href, fragment_id)
         """
         response = self._make_request("GET", f"/api/v2/books/{book_uuid}/positions")
+        if response is None:
+            raise ConnectionError("Storyteller positions request unavailable")
         if response and response.status_code == 200:
             data = response.json()
             locator = data.get("locator", {})
@@ -124,7 +167,10 @@ class StorytellerAPIClient:
 
             return pct, ts, href, fragment
 
-        return None, None, None, None
+        if response.status_code == 404:
+            return None, None, None, None
+
+        raise RuntimeError(f"Storyteller positions request failed: HTTP {response.status_code}")
 
     def get_all_positions_bulk(self) -> dict:
         """Fetch all book positions in one pass. Returns {title_lower: {pct, ts, href, frag, uuid}}"""
