@@ -93,7 +93,6 @@ while IFS= read -r path || [ -n "$path" ]; do
             ;;
     esac
     git rm -r -f --ignore-unmatch --quiet -- "$path" >/dev/null 2>&1 || true
-    rm -rf -- "$path" >/dev/null 2>&1 || true
 done < "$config_file"
 
 "$verify_script"
