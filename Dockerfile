@@ -5,6 +5,7 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     FLASK_APP=web_server.py \
     PYTHONPATH="/app" \
+    HF_HOME=/data/huggingface \
     LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/usr/local/lib/python3.13/site-packages/nvidia/cublas/lib:/usr/local/lib/python3.13/site-packages/nvidia/cudnn/lib"
 
 WORKDIR /app
@@ -34,7 +35,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 
 # 3. Create non-root user and directories
 RUN useradd -r -u 1000 appuser && \
-    mkdir -p /app/src /app/templates /app/static /data/audio_cache /data/logs /data/transcripts /storyteller-import /storyteller-data && \
+    mkdir -p /app/src /app/templates /app/static /data/audio_cache /data/huggingface /data/logs /data/transcripts /storyteller-import /storyteller-data && \
     chown -R appuser:appuser /data /storyteller-import /storyteller-data
 
 # 4. Copy Application Code
