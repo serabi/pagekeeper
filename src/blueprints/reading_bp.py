@@ -344,6 +344,9 @@ def reading_detail(book_ref):
         or database_service.is_bookfusion_linked_by_book_id(book.id)
     )
 
+    # Check if book is eligible for BookFusion upload (has ebook file)
+    bookfusion_upload_eligible = bool(book.ebook_filename or book.original_ebook_filename)
+
     container = get_container()
     metadata = build_book_metadata(book, container, database_service, abs_service)
     hardcover = metadata.get("_hardcover")
@@ -401,6 +404,7 @@ def reading_detail(book_ref):
         journals=journals,
         bf_highlights=bf_highlights,
         has_bookfusion_link=has_bookfusion_link,
+        bookfusion_upload_eligible=bookfusion_upload_eligible,
         has_linked_tbr=has_linked_tbr,
         metadata=metadata,
         services_enabled=services_enabled,

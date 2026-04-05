@@ -528,4 +528,37 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     setupDirtyCheck();
+
+    // BookFusion re-sync all button handler
+    var bfResyncBtn = document.getElementById('bf-resync-all-btn');
+    if (bfResyncBtn) {
+        bfResyncBtn.addEventListener('click', function() {
+            if (!confirm('This will re-download all highlights from BookFusion. Continue?')) {
+                return;
+            }
+            bfResyncBtn.disabled = true;
+            bfResyncBtn.textContent = 'Syncing...';
+            fetch('/api/bookfusion/sync-highlights', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ full_resync: true })
+            })
+            .then(function(r) { return r.json(); })
+            .then(function(data) {
+                if (data.success) {
+                    bfResyncBtn.textContent = 'Synced (' + data.new_highlights + ' new)';
+                    bfResyncBtn.classList.add('done');
+                } else {
+                    bfResyncBtn.textContent = data.error || 'Failed';
+                    bfResyncBtn.classList.add('error');
+                    bfResyncBtn.disabled = false;
+                }
+            })
+            .catch(function() {
+                bfResyncBtn.textContent = 'Error';
+                bfResyncBtn.classList.add('error');
+                bfResyncBtn.disabled = false;
+            });
+        });
+    }
 });

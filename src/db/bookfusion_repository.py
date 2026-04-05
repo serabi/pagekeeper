@@ -180,6 +180,18 @@ class BookFusionRepository(BaseRepository):
     def get_bookfusion_book_by_book_id(self, book_id):
         return self._get_one(BookfusionBook, BookfusionBook.matched_book_id == book_id)
 
+    def get_bookfusion_books_by_book_id(self, book_id):
+        """Get all BookFusion catalog entries linked to a specific PageKeeper book."""
+        with self.get_session() as session:
+            books = session.query(BookfusionBook).filter(BookfusionBook.matched_book_id == book_id).all()
+            for b in books:
+                session.expunge(b)
+            return books
+
+    def save_bookfusion_book(self, bookfusion_book):
+        """Save a single BookFusion catalog entry."""
+        return self._save_new(bookfusion_book)
+
     def unlink_bookfusion_by_book_id(self, book_id):
         with self.get_session() as session:
             session.query(BookfusionBook).filter(BookfusionBook.matched_book_id == book_id).update(

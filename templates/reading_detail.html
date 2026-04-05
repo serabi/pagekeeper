@@ -281,20 +281,23 @@
                     {% endif %}
                     {% endif %}
 
-                    {# ── BookFusion ── #}
+                    {# ── BookFusion ──}
                     {% if services_enabled.bookfusion %}
                     {% if integrations.bookfusion %}
                     <div class="r-service-row">
                         <img src="/static/bookfusion-logo.svg" alt="BF" class="r-service-row-icon">
-                        <a href="/bookfusion" class="r-service-row-name">BookFusion</a>
+                        <span class="r-service-row-name">BookFusion</span>
                         <span class="r-service-row-value">Linked</span>
+                        <button type="button" class="r-service-row-action" id="bf-refresh-btn"
+                                data-abs-id="{{ book.abs_id }}">Refresh</button>
                     </div>
-                    {% else %}
-                    <a href="/bookfusion?tab=library&q={{ book.title|urlencode }}" class="r-service-row r-service-row--unlinked">
+                    {% elif bookfusion_upload_eligible %}
+                    <div class="r-service-row r-service-row--unlinked">
                         <img src="/static/bookfusion-logo.svg" alt="BF" class="r-service-row-icon">
                         <span class="r-service-row-name">BookFusion</span>
-                        <span class="r-service-row-link-action">Link</span>
-                    </a>
+                        <button type="button" class="r-service-row-link-action" id="bf-upload-btn"
+                                data-abs-id="{{ book.abs_id }}">Upload</button>
+                    </div>
                     {% endif %}
                     {% endif %}
                 </div>
@@ -536,8 +539,12 @@
                     <h3 class="r-section-title">BookFusion Highlights</h3>
                     <p class="r-section-description">{{ bf_highlights|length }} highlight{{ 's' if bf_highlights|length != 1 }}</p>
                 </div>
-                <button class="btn btn-primary btn-sm" id="bulk-import-highlights" type="button"
-                        data-book-id="{{ book.id }}">Import All to Journal</button>
+                <div class="r-highlights-actions">
+                    <button class="btn btn-secondary btn-sm" id="bf-refresh-highlights-btn" type="button"
+                            data-abs-id="{{ book.abs_id }}">Refresh</button>
+                    <button class="btn btn-primary btn-sm" id="bulk-import-highlights" type="button"
+                            data-book-id="{{ book.id }}">Import to Journal</button>
+                </div>
             </div>
             <div class="r-highlights-body">
                 {% set current_chapter = namespace(value='') %}
@@ -797,6 +804,139 @@
         var _rdAbsId = {{ book.abs_id | tojson }} || _rdBookId;
         var _rdTitle = {{ book.title | tojson }};
         var _rdPendingJournalId = null;
+
+        // BookFusion upload button handler
+        (function() {
+            var uploadBtn = document.getElementById('bf-upload-btn');
+            if (uploadBtn) {
+                uploadBtn.addEventListener('click', function() {
+                    var absId = this.dataset.absId;
+                    uploadBtn.disabled = true;
+                    uploadBtn.textContent = 'Uploading...';
+                    fetch('/api/bookfusion/upload', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ abs_id: absId })
+                    })
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                        if (data.success) {
+                            uploadBtn.textContent = 'Uploaded';
+                            uploadBtn.classList.add('done');
+                            setTimeout(function() { window.location.reload(); }, 1000);
+                        } else {
+                            uploadBtn.textContent = data.error || 'Failed';
+                            uploadBtn.classList.add('error');
+                            uploadBtn.disabled = false;
+                        }
+                    })
+                    .catch(function() {
+                        uploadBtn.textContent = 'Error';
+                        uploadBtn.classList.add('error');
+                        uploadBtn.disabled = false;
+                    });
+                });
+            }
+        })();
+
+        // BookFusion refresh button handler (service row)
+        (function() {
+            var refreshBtn = document.getElementById('bf-refresh-btn');
+            if (refreshBtn) {
+                refreshBtn.addEventListener('click', function() {
+                    var absId = this.dataset.absId;
+                    refreshBtn.disabled = true;
+                    refreshBtn.textContent = 'Syncing...';
+                    fetch('/api/bookfusion/sync-book', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ abs_id: absId })
+                    })
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                        if (data.success) {
+                            refreshBtn.textContent = 'Synced';
+                            setTimeout(function() { window.location.reload(); }, 1000);
+                        } else {
+                            refreshBtn.textContent = data.error || 'Failed';
+                            refreshBtn.classList.add('error');
+                            refreshBtn.disabled = false;
+                        }
+                    })
+                    .catch(function() {
+                        refreshBtn.textContent = 'Error';
+                        refreshBtn.classList.add('error');
+                        refreshBtn.disabled = false;
+                    });
+                });
+            }
+        })();
+
+        // BookFusion refresh highlights button handler (highlights tab)
+        (function() {
+            var refreshHighlightsBtn = document.getElementById('bf-refresh-highlights-btn');
+            if (refreshHighlightsBtn) {
+                refreshHighlightsBtn.addEventListener('click', function() {
+                    var absId = this.dataset.absId;
+                    refreshHighlightsBtn.disabled = true;
+                    refreshHighlightsBtn.textContent = 'Syncing...';
+                    fetch('/api/bookfusion/sync-book', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ abs_id: absId })
+                    })
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                        if (data.success) {
+                            refreshHighlightsBtn.textContent = 'Synced';
+                            setTimeout(function() { window.location.reload(); }, 1000);
+                        } else {
+                            refreshHighlightsBtn.textContent = data.error || 'Failed';
+                            refreshHighlightsBtn.classList.add('error');
+                            refreshHighlightsBtn.disabled = false;
+                        }
+                    })
+                    .catch(function() {
+                        refreshHighlightsBtn.textContent = 'Error';
+                        refreshHighlightsBtn.classList.add('error');
+                        refreshHighlightsBtn.disabled = false;
+                    });
+                });
+            }
+        })();
+
+        // BookFusion import to journal handler
+        (function() {
+            var importBtn = document.getElementById('bulk-import-highlights');
+            if (importBtn) {
+                importBtn.addEventListener('click', function() {
+                    var bookId = this.dataset.bookId;
+                    importBtn.disabled = true;
+                    importBtn.textContent = 'Importing...';
+                    fetch('/api/bookfusion/save-journal', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ abs_id: _rdAbsId })
+                    })
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                        if (data.success) {
+                            importBtn.textContent = 'Imported (' + data.saved + ')';
+                            importBtn.classList.add('done');
+                        } else {
+                            importBtn.textContent = data.error || 'Failed';
+                            importBtn.classList.add('error');
+                            importBtn.disabled = false;
+                        }
+                    })
+                    .catch(function() {
+                        importBtn.textContent = 'Error';
+                        importBtn.classList.add('error');
+                        importBtn.disabled = false;
+                    });
+                });
+            }
+        })();
 
         {% if active_tab != 'overview' %}
         switchTab({{ active_tab | tojson }});

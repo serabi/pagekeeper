@@ -575,7 +575,6 @@ class BookfusionHighlight(Base):
     fetched_at = Column(DateTime, default=datetime.utcnow)
     highlighted_at = Column(DateTime, nullable=True)
     quote_text = Column(Text, nullable=True)
-    matched_abs_id = Column(String(255), nullable=True)
     matched_book_id = Column(Integer, ForeignKey("books.id", ondelete="SET NULL"), nullable=True, index=True)
 
     matched_book = relationship("Book", foreign_keys=[matched_book_id])
@@ -589,7 +588,6 @@ class BookfusionHighlight(Base):
         chapter_heading: str = None,
         highlighted_at=None,
         quote_text: str = None,
-        matched_abs_id: str = None,
         matched_book_id: int = None,
     ):
         self.bookfusion_book_id = bookfusion_book_id
@@ -600,7 +598,6 @@ class BookfusionHighlight(Base):
         self.fetched_at = datetime.utcnow()
         self.highlighted_at = highlighted_at
         self.quote_text = quote_text
-        self.matched_abs_id = matched_abs_id
         self.matched_book_id = matched_book_id
 
     def __repr__(self):
@@ -621,7 +618,6 @@ class BookfusionBook(Base):
     tags = Column(String(500))
     series = Column(String(500))
     highlight_count = Column(Integer, default=0, nullable=False, server_default="0")
-    matched_abs_id = Column(String(255), nullable=True)
     matched_book_id = Column(Integer, ForeignKey("books.id", ondelete="SET NULL"), nullable=True, index=True)
     hidden = Column(Boolean, default=False, nullable=False, server_default="0")
     fetched_at = Column(DateTime, default=datetime.utcnow)
@@ -639,7 +635,6 @@ class BookfusionBook(Base):
         tags: str = None,
         series: str = None,
         highlight_count: int = 0,
-        matched_abs_id: str = None,
         matched_book_id: int = None,
         hidden: bool = False,
     ):
@@ -651,7 +646,6 @@ class BookfusionBook(Base):
         self.tags = tags
         self.series = series
         self.highlight_count = highlight_count
-        self.matched_abs_id = matched_abs_id
         self.matched_book_id = matched_book_id
         self.hidden = hidden
         self.fetched_at = datetime.utcnow()
