@@ -39,6 +39,7 @@ koreader/
 # Local documentation and screenshots
 docs/
 dev/
+private/
 screenshots/
 pagekeeper-wiki/
 
