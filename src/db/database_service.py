@@ -9,6 +9,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from .book_repository import BookRepository
+from .detected_repository import DetectedRepository
 from .bookfusion_repository import BookFusionRepository
 from .grimmory_repository import GrimmoryRepository
 from .hardcover_repository import HardcoverRepository
@@ -66,6 +67,7 @@ class DatabaseService:
         self._kosync = KoSyncRepository(self.db_manager)
         self._reading = ReadingRepository(self.db_manager)
         self._suggestions = SuggestionRepository(self.db_manager)
+        self._detected = DetectedRepository(self.db_manager)
         self._hardcover = HardcoverRepository(self.db_manager)
         self._storyteller = StorytellerRepository(self.db_manager)
         self._bookfusion = BookFusionRepository(self.db_manager)
@@ -290,6 +292,7 @@ class DatabaseService:
         "_kosync",
         "_reading",
         "_suggestions",
+        "_detected",
         "_hardcover",
         "_storyteller",
         "_bookfusion",

@@ -79,6 +79,52 @@ class TestDatabaseServiceIntegration(unittest.TestCase):
         self.assertEqual(saved_book.title, "Test Book Creation")
         self.assertEqual(saved_book.status, "active")
 
+    def test_save_detected_book_creates_and_updates(self):
+        """Detected books upsert by source and source_id."""
+        from src.db.models import DetectedBook
+
+        first = DetectedBook(
+            source="abs",
+            source_id="detected-1",
+            title="Detected Title",
+            author="Author One",
+            progress_percentage=0.25,
+            cover_url="/cover/1",
+        )
+        saved = self.db_service.save_detected_book(first)
+        self.assertEqual(saved.title, "Detected Title")
+        self.assertAlmostEqual(saved.progress_percentage, 0.25)
+
+        second = DetectedBook(
+            source="abs",
+            source_id="detected-1",
+            title="Detected Title Updated",
+            author="Author Two",
+            progress_percentage=0.55,
+        )
+        updated = self.db_service.save_detected_book(second)
+
+        self.assertEqual(updated.id, saved.id)
+        self.assertEqual(updated.title, "Detected Title Updated")
+        self.assertEqual(updated.author, "Author Two")
+        self.assertAlmostEqual(updated.progress_percentage, 0.55)
+
+    def test_resolve_detected_book_scoped_by_source(self):
+        """Resolving a detected book only affects the matching source row."""
+        from src.db.models import DetectedBook
+
+        abs_detected = DetectedBook(source="abs", source_id="shared-id", title="ABS", progress_percentage=0.2)
+        kosync_detected = DetectedBook(source="kosync", source_id="shared-id", title="KOSync", progress_percentage=0.3)
+        self.db_service.save_detected_book(abs_detected)
+        self.db_service.save_detected_book(kosync_detected)
+
+        self.assertTrue(self.db_service.resolve_detected_book("shared-id", source="abs"))
+
+        resolved = self.db_service.get_detected_book("shared-id", source="abs")
+        still_active = self.db_service.get_detected_book("shared-id", source="kosync")
+        self.assertEqual(resolved.status, "resolved")
+        self.assertEqual(still_active.status, "detected")
+
         # Verify book can be retrieved
         retrieved_book = self.db_service.get_book_by_abs_id(test_abs_id)
         self.assertIsNotNone(retrieved_book)

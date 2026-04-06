@@ -521,6 +521,68 @@ class PendingSuggestion(Base):
         return f"<PendingSuggestion(id={self.id}, title='{self.title}', status='{self.status}')>"
 
 
+class DetectedBook(Base):
+    """Model for external books with real progress that are not yet in PageKeeper."""
+
+    __tablename__ = "detected_books"
+    __table_args__ = (UniqueConstraint("source_id", "source", name="uq_detected_books_source_id_source"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    source = Column(String(50), default="abs", nullable=False)
+    source_id = Column(String(255), nullable=False)
+    title = Column(String(500), nullable=True)
+    author = Column(String(500), nullable=True)
+    cover_url = Column(String(500), nullable=True)
+    progress_percentage = Column(Float, default=0.0, nullable=False)
+    first_detected_at = Column(DateTime, default=utc_now)
+    last_seen_at = Column(DateTime, default=utc_now, onupdate=utc_now)
+    status = Column(String(20), default="detected")
+    matches_json = Column(Text, nullable=True)
+    device = Column(String(128), nullable=True)
+    ebook_filename = Column(String(500), nullable=True)
+
+    def __init__(
+        self,
+        source_id: str,
+        title: str,
+        progress_percentage: float,
+        author: str = None,
+        cover_url: str = None,
+        status: str = "detected",
+        source: str = "abs",
+        matches_json: str = None,
+        device: str = None,
+        ebook_filename: str = None,
+    ):
+        self.source = source
+        self.source_id = source_id
+        self.title = title
+        self.author = author
+        self.cover_url = cover_url
+        self.progress_percentage = progress_percentage
+        self.status = status
+        self.matches_json = matches_json
+        self.device = device
+        self.ebook_filename = ebook_filename
+        self.first_detected_at = utc_now()
+        self.last_seen_at = utc_now()
+
+    @property
+    def matches(self):
+        import json
+
+        try:
+            return json.loads(self.matches_json) if self.matches_json else []
+        except json.JSONDecodeError:
+            return []
+
+    def __repr__(self):
+        return (
+            f"<DetectedBook(id={self.id}, source='{self.source}', source_id='{self.source_id}', "
+            f"status='{self.status}')>"
+        )
+
+
 class Setting(Base):
     """
     Setting model storing application configuration.

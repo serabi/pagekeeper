@@ -423,6 +423,7 @@ class KosyncService:
                     )
                     self._db.save_book(book, is_new=True)
                     self._db.link_kosync_document(doc_hash, book.id, book.abs_id)
+                    self._db.resolve_detected_book(doc_hash, source="kosync")
                     self._db.resolve_suggestion(doc_hash)
                     logger.info(
                         f"Auto-created book '{match['title']}' from exact title match (abs_id={match['abs_id']})"
@@ -519,6 +520,7 @@ class KosyncService:
         )
         self._db.save_book(book, is_new=True)
         self._db.link_kosync_document(doc_hash, book.id, book.abs_id)
+        self._db.resolve_detected_book(doc_hash, source="kosync")
         self._db.resolve_suggestion(doc_hash)
         logger.info(f"Created ebook-only book: {book.id} '{title}'" + (f" -> {epub_filename}" if epub_filename else ""))
 
@@ -620,6 +622,21 @@ class KosyncService:
             kosync_doc.timestamp = now
 
         self._db.save_kosync_document(kosync_doc)
+
+        if 0.01 <= percentage <= 0.70:
+            try:
+                suggestion_svc = self._container.suggestion_service()
+                suggestion_svc.queue_kosync_suggestion(
+                    doc_hash,
+                    filename=kosync_doc.filename,
+                    device=device,
+                )
+                detected = self._db.get_detected_book(doc_hash, source="kosync")
+                if detected:
+                    detected.progress_percentage = float(percentage)
+                    self._db.save_detected_book(detected)
+            except Exception as e:
+                logger.debug(f"KOSync detected-book update failed for {doc_hash[:8]}...: {e}")
 
         # Update linked book if exists
         linked_book = None
