@@ -155,13 +155,14 @@ class SyncManager:
     def startup_checks(self):
         # Check configured sync clients
         for client_name, client in (self.sync_clients or {}).items():
+            first_err = RuntimeError("unknown startup check failure")
             try:
                 if client.check_connection():
                     logger.info(f"'{client_name}' connection verified")
                     continue
                 first_err = RuntimeError("check_connection() returned False")
-            except Exception as first_err:
-                pass
+            except Exception as e:
+                first_err = e
 
             time.sleep(2)
             try:

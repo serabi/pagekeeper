@@ -11,12 +11,9 @@ from flask import Blueprint, render_template
 from src.blueprints.helpers import (
     find_grimmory_metadata,
     get_abs_service,
-    get_book_or_404,
     get_container,
     get_database_service,
     get_enabled_grimmory_server_ids,
-    get_grimmory_client,
-    serialize_detected_book,
 )
 from src.utils.cover_resolver import resolve_book_covers
 from src.utils.service_url_helper import get_hardcover_book_url, get_service_web_url

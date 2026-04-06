@@ -5,11 +5,8 @@ Revises: 5308a8e2c930, s1t2u3v4w5x6
 Create Date: 2026-04-05
 """
 
-from typing import Sequence
-
-
 revision: str = "t9u0v1w2x3y4"
-down_revision: Sequence[str] = ("5308a8e2c930", "s1t2u3v4w5x6")
+down_revision = ("5308a8e2c930", "s1t2u3v4w5x6")
 branch_labels = None
 depends_on = None
 

@@ -15,7 +15,6 @@ from src.blueprints.helpers import (
     get_grimmory_client,
     get_kosync_id_for_ebook,
 )
-from src.db.models import Book
 
 logger = logging.getLogger(__name__)
 

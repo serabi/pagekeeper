@@ -9,15 +9,12 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from .book_repository import BookRepository
-from .detected_repository import DetectedRepository
 from .bookfusion_repository import BookFusionRepository
+from .detected_repository import DetectedRepository
 from .grimmory_repository import GrimmoryRepository
 from .hardcover_repository import HardcoverRepository
 from .kosync_repository import KoSyncRepository
-from .models import (
-    Base,
-    DatabaseManager,
-)
+from .models import Base, DatabaseManager
 from .reading_repository import VALID_JOURNAL_EVENTS, ReadingRepository
 from .settings_repository import SettingsRepository
 from .storyteller_repository import StorytellerRepository

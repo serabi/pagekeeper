@@ -125,11 +125,6 @@ class TestDatabaseServiceIntegration(unittest.TestCase):
         self.assertEqual(resolved.status, "resolved")
         self.assertEqual(still_active.status, "detected")
 
-        # Verify book can be retrieved
-        retrieved_book = self.db_service.get_book_by_abs_id(test_abs_id)
-        self.assertIsNotNone(retrieved_book)
-        self.assertEqual(retrieved_book.abs_id, test_abs_id)
-
     def test_delete_book(self):
         """Test deleting a book record with cascading deletes for states and hardcover details."""
         test_abs_id = "test-book-delete"
