@@ -226,10 +226,15 @@ def _create_book_mapping(
     # Resolve suggestions
     database_service.resolve_suggestion(abs_id)
     database_service.resolve_suggestion(kosync_doc_id)
+    # Also resolve detected entries
+    database_service.resolve_detected_book(abs_id, source="abs")
+    if kosync_doc_id:
+        database_service.resolve_detected_book(kosync_doc_id, source="kosync")
     try:
         device_doc = database_service.get_kosync_doc_by_filename(ebook_filename)
         if device_doc and device_doc.document_hash != kosync_doc_id:
             database_service.resolve_suggestion(device_doc.document_hash)
+            database_service.resolve_detected_book(device_doc.document_hash, source="kosync")
     except Exception as e:
         logger.warning(f"Failed to check/resolve device hash: {e}")
 
@@ -339,6 +344,7 @@ def match():
             abs_service.add_to_collection(abs_id, current_app.config["ABS_COLLECTION_NAME"])
             attempt_hardcover_automatch(container, book)
             database_service.resolve_suggestion(abs_id)
+            database_service.resolve_detected_book(abs_id, source="abs")
             return redirect(url_for("dashboard.index"))
 
         # --- Ebook-only import (no audiobook required) ---
@@ -382,8 +388,10 @@ def match():
             # Resolve any suggestions involving these source IDs
             if kosync_doc_id:
                 database_service.resolve_suggestion(kosync_doc_id, source="kosync")
+                database_service.resolve_detected_book(kosync_doc_id, source="kosync")
             if storyteller_uuid:
                 database_service.resolve_suggestion(storyteller_uuid, source="storyteller")
+                database_service.resolve_detected_book(storyteller_uuid, source="storyteller")
             if ebook_filename:
                 database_service.resolve_suggestion(ebook_filename, source="grimmory")
             return redirect(url_for("dashboard.index"))
@@ -415,6 +423,7 @@ def match():
                 except Exception as e:
                     logger.warning(f"Grimmory add_to_shelf failed for '{sanitize_log_data(ebook_filename)}': {e}")
             database_service.resolve_suggestion(kosync_doc_id)
+            database_service.resolve_detected_book(kosync_doc_id, source="kosync")
             return redirect(url_for("dashboard.index"))
 
         # --- Attach audiobook to ebook-only book ---
@@ -463,8 +472,10 @@ def match():
                 raise
             attempt_hardcover_automatch(container, new_book)
             database_service.resolve_suggestion(abs_id)
+            database_service.resolve_detected_book(abs_id, source="abs")
             if new_book.kosync_doc_id:
                 database_service.resolve_suggestion(new_book.kosync_doc_id)
+                database_service.resolve_detected_book(new_book.kosync_doc_id, source="kosync")
             return redirect(url_for("dashboard.index"))
 
         # --- Standard flow (requires audiobook) ---
@@ -686,6 +697,7 @@ def batch_match():
                         abs_service.add_to_collection(item["abs_id"], current_app.config["ABS_COLLECTION_NAME"])
                         attempt_hardcover_automatch(container, book)
                         database_service.resolve_suggestion(item["abs_id"])
+                        database_service.resolve_detected_book(item["abs_id"], source="abs")
                         continue
 
                     # Handle ebook-only queue items
@@ -723,6 +735,7 @@ def batch_match():
                         ensure_kosync_document(book, database_service)
                         if kosync_doc_id:
                             database_service.resolve_suggestion(kosync_doc_id)
+                            database_service.resolve_detected_book(kosync_doc_id, source="kosync")
                         continue
 
                     book, error = _create_book_mapping(

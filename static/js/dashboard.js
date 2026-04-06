@@ -853,7 +853,29 @@ document.addEventListener('keydown', function(e) {
     }
 });
 
-/* Suggestion banner dismiss */
+/* Detected card dismiss */
+function dismissDetected(sourceId, source, btn) {
+    if (btn) btn.disabled = true;
+    fetch('/api/detected/' + encodeURIComponent(sourceId) + '/dismiss?source=' + encodeURIComponent(source || 'abs'), { method: 'POST' })
+        .then(function(r) {
+            if (!r.ok) throw new Error('Failed to dismiss');
+            var card = document.querySelector('.detected-card[data-source-id="' + sourceId + '"]');
+            if (card) {
+                card.classList.add('removing');
+                setTimeout(function() {
+                    card.remove();
+                    var section = document.getElementById('detected-section');
+                    var remaining = section ? section.querySelectorAll('.detected-card') : [];
+                    if (remaining.length === 0 && section) {
+                        section.style.display = 'none';
+                    }
+                }, 200);
+            }
+        })
+        .catch(function() {
+            if (btn) btn.disabled = false;
+        });
+}
 function dismissSuggestion(sourceId, source, btn) {
     if (btn) btn.disabled = true;
     fetch('/api/suggestions/' + encodeURIComponent(sourceId) + '/hide?source=' + encodeURIComponent(source || 'abs'), { method: 'POST' })

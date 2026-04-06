@@ -25,6 +25,63 @@ api_bp = Blueprint("api", __name__)
 _VALID_SUGGESTION_SOURCES = ("abs", "kosync", "storyteller", "grimmory")
 
 
+# ---------------- Detected Books ----------------
+
+
+@api_bp.route("/api/detected", methods=["GET"])
+def get_detected_books():
+    """Return active detected books."""
+    database_service = get_database_service()
+    try:
+        detected = database_service.get_active_detected_books(limit=50)
+        results = []
+        for d in detected:
+            results.append(
+                {
+                    "id": d.id,
+                    "source": d.source,
+                    "source_id": d.source_id,
+                    "title": d.title,
+                    "author": d.author,
+                    "cover_url": d.cover_url,
+                    "progress_percentage": d.progress_percentage,
+                    "first_detected_at": d.first_detected_at.isoformat() if d.first_detected_at else None,
+                    "last_seen_at": d.last_seen_at.isoformat() if d.last_seen_at else None,
+                    "device": d.device,
+                    "ebook_filename": d.ebook_filename,
+                    "status": d.status,
+                }
+            )
+        return jsonify({"success": True, "detected": results})
+    except Exception as e:
+        logger.error(f"Failed to get detected books: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@api_bp.route("/api/detected/<source_id>/dismiss", methods=["POST"])
+def dismiss_detected_book(source_id):
+    """Dismiss a detected book."""
+    database_service = get_database_service()
+    source = request.args.get("source", "abs")
+    if source not in _VALID_SUGGESTION_SOURCES:
+        return jsonify({"success": False, "error": "Invalid source"}), 400
+    if database_service.dismiss_detected_book(source_id, source=source):
+        return jsonify({"success": True})
+    return jsonify({"success": False, "error": "Not found"}), 404
+
+
+@api_bp.route("/api/detected/<source_id>/resolve", methods=["POST"])
+def resolve_detected_book(source_id):
+    """Mark a detected book as resolved (added to library)."""
+    database_service = get_database_service()
+    source = request.args.get("source", "abs")
+    if source not in _VALID_SUGGESTION_SOURCES:
+        return jsonify({"success": False, "error": "Invalid source"}), 400
+    if database_service.resolve_detected_book(source_id, source=source):
+        return jsonify({"success": True})
+    return jsonify({"success": False, "error": "Not found"}), 404
+
+
 # ---------------- Status ----------------
 
 

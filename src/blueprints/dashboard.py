@@ -391,7 +391,31 @@ def index():
         except Exception:
             pass
 
-    # Pending suggestions — for dashboard banner
+    # Active detected books — for dashboard detected section
+    detected_books = []
+    try:
+        active_detected = database_service.get_active_detected_books(limit=10)
+        for d in active_detected:
+            detected_books.append(
+                {
+                    "id": d.id,
+                    "source": d.source,
+                    "source_id": d.source_id,
+                    "title": d.title,
+                    "author": d.author,
+                    "cover_url": d.cover_url,
+                    "progress_percentage": d.progress_percentage,
+                    "first_detected_at": d.first_detected_at.isoformat() if d.first_detected_at else None,
+                    "last_seen_at": d.last_seen_at.isoformat() if d.last_seen_at else None,
+                    "matches": d.matches,
+                    "device": d.device,
+                    "ebook_filename": d.ebook_filename,
+                }
+            )
+    except Exception:
+        pass
+
+    # Pending suggestions — for dashboard banner (legacy, will be replaced)
     top_suggestions = []
     suggestions_enabled = os.environ.get("SUGGESTIONS_ENABLED", "false").lower() in ("true", "1", "yes", "on")
     if suggestions_enabled:
@@ -416,4 +440,5 @@ def index():
         kosync_unlinked_count=kosync_unlinked_count,
         unlinked_reading=unlinked_reading,
         top_suggestions=top_suggestions,
+        detected_books=detected_books,
     )
