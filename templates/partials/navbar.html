@@ -82,9 +82,6 @@
             {% endif %}
             <a href="/" class="nav-link {% if is_active_path('/') %}active{% endif %}">Dashboard</a>
             <a href="/reading" class="nav-link {% if is_active_path('/reading') %}active{% endif %}">Reading Log</a>
-            {% if get_bool('SUGGESTIONS_ENABLED') %}
-            <a href="/suggestions" class="nav-link {% if is_active_path('/suggestions') %}active{% endif %}">Suggestions{% if suggestion_count %} <span class="nav-badge">{{ suggestion_count }}</span>{% endif %}</a>
-            {% endif %}
             <a href="/batch-match" class="nav-link {% if is_active_path('/batch-match') %}active{% endif %}">Batch</a>
             <a href="/logs" class="nav-link {% if is_active_path('/logs') %}active{% endif %}">Logs</a>
             <a href="/settings" class="nav-link {% if is_active_path('/settings') %}active{% endif %}">Settings</a>

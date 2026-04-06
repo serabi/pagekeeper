@@ -141,43 +141,6 @@
         </div>
         {% endif %}
 
-        {% if top_suggestions %}
-        <div class="book-section suggestion-banner" id="suggestion-banner">
-            <div class="section-header">
-                <h2>New Suggestions <span class="suggestion-banner-count" id="suggestion-banner-count">{{ top_suggestions|length }}</span></h2>
-                <a href="/suggestions" class="btn btn-secondary btn-sm">View All{% if suggestion_count > top_suggestions|length %} ({{ suggestion_count }}){% endif %}</a>
-            </div>
-            <p class="suggestion-banner-help">High-confidence matches found for books you're listening to.</p>
-            <div class="suggestion-banner-grid">
-                {% for sg in top_suggestions %}
-                <div class="suggestion-banner-card" id="suggestion-card-{{ sg.source_id }}" data-source-id="{{ sg.source_id }}">
-                    <img src="{{ sg.cover_url }}" class="suggestion-banner-cover" alt="" loading="lazy" onerror="this.style.display='none'">
-                    <div class="suggestion-banner-info">
-                        <div class="suggestion-banner-title">{{ sg.title }}</div>
-                        {% if sg.author %}<div class="suggestion-banner-author">{{ sg.author }}</div>{% endif %}
-                        {% if sg.top_match %}
-                        <div class="suggestion-banner-match">
-                            <span class="suggestion-banner-match-title">{{ sg.top_match.title }}</span>
-                            <span class="chip chip--confidence-{{ sg.top_match.confidence }}">{{ sg.top_match.confidence }}</span>
-                        </div>
-                        {% endif %}
-                        <div class="suggestion-banner-actions">
-                            {% if sg.source == 'abs' %}
-                            <a href="/match?abs_id={{ sg.source_id }}&search={{ sg.title|urlencode }}" class="btn btn-sm btn-primary">Map Now</a>
-                            {% elif sg.top_match and sg.top_match.abs_id %}
-                            <a href="/match?abs_id={{ sg.top_match.abs_id }}&search={{ sg.top_match.title|urlencode }}" class="btn btn-sm btn-primary">Map Now</a>
-                            {% else %}
-                            <a href="/suggestions" class="btn btn-sm btn-primary">Review</a>
-                            {% endif %}
-                            <button type="button" class="btn btn-sm btn-secondary" onclick="dismissSuggestion('{{ sg.source_id }}', '{{ sg.source }}', this)">Dismiss</button>
-                        </div>
-                    </div>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-        {% endif %}
-
         <div class="book-section">
         <div class="section-header">
             <h2>Currently Reading</h2>

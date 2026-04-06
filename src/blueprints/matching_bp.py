@@ -282,34 +282,6 @@ def _build_batch_queue_view(queue):
     }
 
 
-@matching_bp.route("/suggestions")
-def suggestions():
-    """Dedicated page for browsing and acting on pairing suggestions."""
-    container = get_container()
-    database_service = get_database_service()
-    raw_suggestions = database_service.get_all_actionable_suggestions()
-    suggestions_list = [serialize_suggestion(s) for s in raw_suggestions if s.matches]
-    visible_count = sum(1 for s in suggestions_list if not s.get("hidden"))
-    hidden_count = sum(1 for s in suggestions_list if s.get("hidden"))
-    suggestions_enabled = current_app.config.get("SUGGESTIONS_ENABLED", False)
-    bookfusion_enabled = container.bookfusion_client().is_configured()
-    bookfusion_catalog_count = len(database_service.get_bookfusion_books()) if bookfusion_enabled else 0
-    initial_search = request.args.get("search", "").strip()
-    selected_source_id = request.args.get("source_id", "").strip()
-    return render_template(
-        "suggestions.html",
-        suggestions=suggestions_list,
-        visible_count=visible_count,
-        hidden_count=hidden_count,
-        suggestions_enabled=suggestions_enabled,
-        bookfusion_enabled=bookfusion_enabled,
-        bookfusion_catalog_count=bookfusion_catalog_count,
-        suggestions_data=suggestions_list,
-        initial_search=initial_search,
-        selected_source_id=selected_source_id,
-    )
-
-
 @matching_bp.route("/match", methods=["GET", "POST"])
 def match():
     container = get_container()
