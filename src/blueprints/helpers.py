@@ -533,45 +533,6 @@ def restart_server():
     os.kill(os.getpid(), signal.SIGTERM)
 
 
-def _has_bookfusion_evidence(match_dict):
-    """Check if a match dict has BookFusion-related evidence."""
-    if match_dict.get("source_family") == "bookfusion":
-        return True
-    return any(ev.startswith("bookfusion") for ev in (match_dict.get("evidence") or []))
-
-
-def serialize_suggestion(s):
-    """Shared serializer for PendingSuggestion → JSON-ready dict."""
-    matches = []
-    for m in s.matches:
-        # Skip provenance-only entries (e.g. abs_audiobook markers from reverse suggestions)
-        if m.get("source") == "abs_audiobook" and not m.get("action_kind"):
-            continue
-        matches.append(
-            {
-                **m,
-                "evidence": m.get("evidence") or [],
-                "has_bookfusion": _has_bookfusion_evidence(m),
-            }
-        )
-
-    has_bookfusion_evidence = any(m.get("has_bookfusion") for m in matches)
-    return {
-        "id": s.id,
-        "source_id": s.source_id,
-        "source": s.source or "unknown",
-        "title": s.title,
-        "author": s.author,
-        "cover_url": s.cover_url,
-        "matches": matches,
-        "created_at": s.created_at.isoformat() if s.created_at else None,
-        "has_bookfusion_evidence": has_bookfusion_evidence,
-        "top_match": matches[0] if matches else None,
-        "status": "hidden" if s.status == "dismissed" else s.status,
-        "hidden": s.status in ("hidden", "dismissed"),
-    }
-
-
 def find_grimmory_metadata(book, grimmory_by_filename):
     """Find best Grimmory metadata entry for a book by filename."""
     for fn in (book.ebook_filename, book.original_ebook_filename):
@@ -600,3 +561,21 @@ def safe_folder_name(name: str) -> str:
     for c in invalid:
         name = name.replace(c, "_")
     return name.strip() or "Unknown"
+
+
+def serialize_detected_book(d):
+    """Serialize DetectedBook for template context."""
+    return {
+        "id": d.id,
+        "source": d.source,
+        "source_id": d.source_id,
+        "title": d.title,
+        "author": d.author,
+        "cover_url": d.cover_url,
+        "progress_percentage": d.progress_percentage,
+        "first_detected_at": d.first_detected_at.isoformat() if d.first_detected_at else None,
+        "last_seen_at": d.last_seen_at.isoformat() if d.last_seen_at else None,
+        "matches": d.matches,
+        "device": d.device,
+        "ebook_filename": d.ebook_filename,
+    }

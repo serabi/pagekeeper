@@ -101,35 +101,38 @@
         </div>
         {% endif %}
 
-        {% if top_suggestions %}
-        <div class="book-section suggestion-banner" id="suggestion-banner">
+        {% if detected_books %}
+        <div class="book-section detected-section" id="detected-section">
             <div class="section-header">
-                <h2>New Suggestions <span class="suggestion-banner-count" id="suggestion-banner-count">{{ top_suggestions|length }}</span></h2>
-                <a href="/suggestions" class="btn btn-secondary btn-sm">View All{% if suggestion_count > top_suggestions|length %} ({{ suggestion_count }}){% endif %}</a>
+                <h2>Detected</h2>
             </div>
-            <p class="suggestion-banner-help">High-confidence matches found for books you're listening to.</p>
-            <div class="suggestion-banner-grid">
-                {% for sg in top_suggestions %}
-                <div class="suggestion-banner-card" id="suggestion-card-{{ sg.source_id }}" data-source-id="{{ sg.source_id }}">
-                    <img src="{{ sg.cover_url }}" class="suggestion-banner-cover" alt="" loading="lazy" onerror="this.style.display='none'">
-                    <div class="suggestion-banner-info">
-                        <div class="suggestion-banner-title">{{ sg.title }}</div>
-                        {% if sg.author %}<div class="suggestion-banner-author">{{ sg.author }}</div>{% endif %}
-                        {% if sg.top_match %}
-                        <div class="suggestion-banner-match">
-                            <span class="suggestion-banner-match-title">{{ sg.top_match.title }}</span>
-                            <span class="chip chip--confidence-{{ sg.top_match.confidence }}">{{ sg.top_match.confidence }}</span>
-                        </div>
+            <p class="detected-help">Books PageKeeper has detected you started. Add them to your library.</p>
+            <div class="detected-grid">
+                {% for d in detected_books %}
+                <div class="detected-card" data-source="{{ d.source }}" data-source-id="{{ d.source_id }}">
+                    {% if d.cover_url %}
+                    <img src="{{ d.cover_url }}" class="detected-cover" alt="" loading="lazy" onerror="this.style.display='none'">
+                    {% endif %}
+                    <div class="detected-info">
+                        <div class="detected-title">{{ d.title }}</div>
+                        {% if d.author %}<div class="detected-author">{{ d.author }}</div>{% endif %}
+                        {% if d.progress_percentage > 0 %}
+                        <div class="detected-progress">{{ '%.0f'|format(d.progress_percentage * 100) }}%</div>
                         {% endif %}
-                        <div class="suggestion-banner-actions">
-                            {% if sg.source == 'abs' %}
-                            <a href="/match?abs_id={{ sg.source_id }}&search={{ sg.title|urlencode }}" class="btn btn-sm btn-primary">Map Now</a>
-                            {% elif sg.top_match and sg.top_match.abs_id %}
-                            <a href="/match?abs_id={{ sg.top_match.abs_id }}&search={{ sg.top_match.title|urlencode }}" class="btn btn-sm btn-primary">Map Now</a>
+                        <div class="detected-meta">
+                            <span class="chip chip--source-{{ d.source }}">{{ d.source }}</span>
+                            {% if d.device %}<span class="detected-device">{{ d.device }}</span>{% endif %}
+                        </div>
+                        <div class="detected-actions">
+                            {% if d.source == 'abs' %}
+                            <a href="/match?abs_id={{ d.source_id }}&search={{ d.title|urlencode }}" class="btn btn-sm btn-primary">Add to Library</a>
+                            {% elif d.source == 'kosync' %}
+                            <a href="/match?search={{ d.title|urlencode }}" class="btn btn-sm btn-primary">Match</a>
+                            <a href="/match?ebook_filename={{ d.ebook_filename|urlencode if d.ebook_filename }}&action=ebook_only" class="btn btn-sm btn-secondary">Add as Ebook</a>
                             {% else %}
-                            <a href="/suggestions" class="btn btn-sm btn-primary">Review</a>
+                            <a href="/match?search={{ d.title|urlencode }}" class="btn btn-sm btn-primary">Add to Library</a>
                             {% endif %}
-                            <button type="button" class="btn btn-sm btn-secondary" onclick="dismissSuggestion('{{ sg.source_id }}', '{{ sg.source }}', this)">Dismiss</button>
+                            <button type="button" class="btn btn-sm btn-ghost" onclick="dismissDetected('{{ d.source_id }}', '{{ d.source }}', this)">Dismiss</button>
                         </div>
                     </div>
                 </div>

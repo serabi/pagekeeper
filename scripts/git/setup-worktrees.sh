@@ -8,11 +8,6 @@ repo_name="$(basename "$repo_root")"
 
 cd "$repo_root"
 
-if ! git show-ref --verify --quiet refs/heads/draft && \
-   git show-ref --verify --quiet refs/remotes/private/draft; then
-    git branch --track draft private/draft >/dev/null 2>&1 || true
-fi
-
 active_branches="$(git worktree list --porcelain | awk '/^branch / {sub("^refs/heads/","",$2); print $2}')"
 
 add_worktree() {
@@ -37,5 +32,5 @@ add_worktree() {
     git worktree add "$target_dir" "$branch"
 }
 
-add_worktree draft "$parent_dir/$repo_name-draft"
+add_worktree dev "$parent_dir/$repo_name-dev"
 add_worktree main "$parent_dir/$repo_name-main"

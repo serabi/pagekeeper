@@ -155,13 +155,14 @@ class SyncManager:
     def startup_checks(self):
         # Check configured sync clients
         for client_name, client in (self.sync_clients or {}).items():
+            first_err = RuntimeError("unknown startup check failure")
             try:
                 if client.check_connection():
                     logger.info(f"'{client_name}' connection verified")
                     continue
                 first_err = RuntimeError("check_connection() returned False")
-            except Exception as first_err:
-                pass
+            except Exception as e:
+                first_err = e
 
             time.sleep(2)
             try:
@@ -238,13 +239,8 @@ class SyncManager:
                 if book.ebook_filename:
                     valid_filenames.add(book.ebook_filename)
 
-            # From Pending Suggestions (covers auto-discovery matches)
-            suggestions = self.database_service.get_all_actionable_suggestions()
-            for suggestion in suggestions:
-                # matches property automatically parses the JSON
-                for match in suggestion.matches:
-                    if match.get("filename"):
-                        valid_filenames.add(match["filename"])
+            # From Detected Books (covers auto-discovery matches)
+            valid_filenames.update(self.database_service.get_all_ebook_filenames())
 
             # 2. Iterate cache and delete orphans
             deleted_count = 0

@@ -723,49 +723,6 @@
                         <p>Optional features and maintenance utilities.</p>
                     </div>
 
-                    <!-- Suggestions -->
-                    <div class="sub-section">
-                        <div class="sub-section-header">
-                            <h3>Suggestions</h3>
-                            <div class="toggle-switch-wrapper">
-                                <span class="toggle-label">Enable</span>
-                                <label class="toggle-switch">
-                                    <input type="checkbox" id="toggle_suggestions" name="SUGGESTIONS_ENABLED" {% if
-                                        get_bool('SUGGESTIONS_ENABLED') %}checked{% endif %}>
-                                    <span class="slider"></span>
-                                </label>
-                            </div>
-                        </div>
-                        <div class="sub-section-body">
-                            <div class="full-width">
-                                <div class="help-text">
-                                    When enabled, the system will look for unmapped audiobooks with progress and suggest
-                                    matching ebooks from your library.
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Suggestion Cleanup -->
-                    <div class="sub-section">
-                        <div class="sub-section-header">
-                            <h3>Remove Stale Suggestions</h3>
-                        </div>
-                        <div class="sub-section-body">
-                            <div class="full-width">
-                                <div class="cleanup-group">
-                                    <button type="button" class="btn btn-danger" onclick="clearStaleSuggestions()">
-                                        Clear Stale Suggestions
-                                    </button>
-                                    <p class="help-text flex-1 m-0">
-                                        Deletes suggestions for Audiobookshelf audiobooks that are no longer in your library.
-                                        Useful after removing books from ABS.
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
                     <!-- Sync Reading Dates -->
                     <div class="sub-section">
                         <div class="sub-section-header">

@@ -1,4 +1,4 @@
-"""API blueprint — /api/status, /api/suggestions/*, /api/storyteller/*, /api/grimmory/*.
+"""API blueprint — /api/status, /api/detected/*, /api/storyteller/*, /api/grimmory/*.
 
 ABS-specific routes (/api/abs/*, /api/cover-proxy/*) are in abs_bp.py.
 """
@@ -14,15 +14,70 @@ from src.blueprints.helpers import (
     get_database_service,
     get_grimmory_client,
     get_kosync_id_for_ebook,
-    serialize_suggestion,
 )
-from src.db.models import Book
 
 logger = logging.getLogger(__name__)
 
 api_bp = Blueprint("api", __name__)
 
 _VALID_SUGGESTION_SOURCES = ("abs", "kosync", "storyteller", "grimmory")
+
+
+# ---------------- Detected Books ----------------
+
+
+@api_bp.route("/api/detected", methods=["GET"])
+def get_detected_books():
+    """Return active detected books."""
+    database_service = get_database_service()
+    try:
+        detected = database_service.get_active_detected_books(limit=50)
+        results = []
+        for d in detected:
+            results.append(
+                {
+                    "id": d.id,
+                    "source": d.source,
+                    "source_id": d.source_id,
+                    "title": d.title,
+                    "author": d.author,
+                    "cover_url": d.cover_url,
+                    "progress_percentage": d.progress_percentage,
+                    "first_detected_at": d.first_detected_at.isoformat() if d.first_detected_at else None,
+                    "last_seen_at": d.last_seen_at.isoformat() if d.last_seen_at else None,
+                    "device": d.device,
+                    "ebook_filename": d.ebook_filename,
+                    "status": d.status,
+                }
+            )
+        return jsonify({"success": True, "detected": results})
+    except Exception as e:
+        logger.error(f"Failed to get detected books: {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@api_bp.route("/api/detected/<source_id>/dismiss", methods=["POST"])
+def dismiss_detected_book(source_id):
+    """Dismiss a detected book."""
+    database_service = get_database_service()
+    source = request.args.get("source", "abs")
+    if source not in _VALID_SUGGESTION_SOURCES:
+        return jsonify({"success": False, "error": "Invalid source"}), 400
+    if database_service.dismiss_detected_book(source_id, source=source):
+        return jsonify({"success": True})
+    return jsonify({"success": False, "error": "Not found"}), 404
+
+
+@api_bp.route("/api/detected/<source_id>/resolve", methods=["POST"])
+def resolve_detected_book(source_id):
+    """Mark a detected book as resolved (added to library)."""
+    database_service = get_database_service()
+    source = request.args.get("source", "abs")
+    if source not in _VALID_SUGGESTION_SOURCES:
+        return jsonify({"success": False, "error": "Invalid source"}), 400
+    if database_service.resolve_detected_book(source_id, source=source):
+        return jsonify({"success": True})
+    return jsonify({"success": False, "error": "Not found"}), 404
 
 
 # ---------------- Status ----------------
@@ -111,155 +166,7 @@ def api_processing_status():
     return jsonify(result)
 
 
-# ---------------- Suggestions ----------------
-
-
-@api_bp.route("/api/suggestions", methods=["GET"])
-def get_suggestions():
-    database_service = get_database_service()
-    suggestions = database_service.get_all_actionable_suggestions()
-    return jsonify([serialize_suggestion(s) for s in suggestions if s.matches])
-
-
-@api_bp.route("/api/suggestions/rescan", methods=["POST"])
-def rescan_suggestions():
-    container = get_container()
-    data = request.get_json(silent=True) or {}
-    force = bool(data.get("force"))
-    stats = container.suggestion_service().request_rescan_library_suggestions(force=force)
-    return jsonify({"success": True, **stats})
-
-
-@api_bp.route("/api/suggestions/rescan-status", methods=["GET"])
-def rescan_suggestions_status():
-    container = get_container()
-    status = container.suggestion_service().get_rescan_status()
-    return jsonify({"success": True, **status})
-
-
-@api_bp.route("/api/suggestions/<source_id>/hide", methods=["POST"])
-def hide_suggestion(source_id):
-    database_service = get_database_service()
-    source = request.args.get("source", "abs")
-    if source not in _VALID_SUGGESTION_SOURCES:
-        return jsonify({"success": False, "error": "Invalid source"}), 400
-    if database_service.hide_suggestion(source_id, source=source):
-        return jsonify({"success": True})
-    return jsonify({"success": False, "error": "Not found"}), 404
-
-
-@api_bp.route("/api/suggestions/<source_id>/unhide", methods=["POST"])
-def unhide_suggestion(source_id):
-    database_service = get_database_service()
-    source = request.args.get("source", "abs")
-    if source not in _VALID_SUGGESTION_SOURCES:
-        return jsonify({"success": False, "error": "Invalid source"}), 400
-    if database_service.unhide_suggestion(source_id, source=source):
-        return jsonify({"success": True})
-    return jsonify({"success": False, "error": "Not found"}), 404
-
-
-@api_bp.route("/api/suggestions/<source_id>/ignore", methods=["POST"])
-def ignore_suggestion(source_id):
-    database_service = get_database_service()
-    source = request.args.get("source", "abs")
-    if source not in _VALID_SUGGESTION_SOURCES:
-        return jsonify({"success": False, "error": "Invalid source"}), 400
-    if database_service.ignore_suggestion(source_id, source=source):
-        return jsonify({"success": True})
-    return jsonify({"success": False, "error": "Not found"}), 404
-
-
-@api_bp.route("/api/suggestions/clear_stale", methods=["POST"])
-def clear_stale_suggestions():
-    database_service = get_database_service()
-    count = database_service.clear_stale_suggestions()
-    logger.info(f"Cleared {count} stale suggestions from database")
-    return jsonify({"success": True, "count": count})
-
-
-@api_bp.route("/api/suggestions/<source_id>/link-bookfusion", methods=["POST"])
-def link_suggestion_bookfusion(source_id):
-    database_service = get_database_service()
-    container = get_container()
-    data = request.get_json(silent=True) or {}
-    source = data.get("source", "abs")
-    if source not in _VALID_SUGGESTION_SOURCES:
-        return jsonify({"success": False, "error": "Invalid source"}), 400
-
-    suggestion = database_service.get_pending_suggestion(source_id, source=source)
-    if not suggestion:
-        return jsonify({"success": False, "error": "Suggestion not found"}), 404
-
-    match_index = data.get("match_index")
-    matches = suggestion.matches or []
-    if match_index is None or not isinstance(match_index, int) or match_index < 0 or match_index >= len(matches):
-        return jsonify({"success": False, "error": "Valid match_index required"}), 400
-
-    match = matches[match_index]
-    bookfusion_ids = match.get("bookfusion_ids") or []
-    if match.get("source_family") != "bookfusion" or not bookfusion_ids:
-        return jsonify({"success": False, "error": "Selected match is not a BookFusion candidate"}), 400
-
-    # Find or create the book to link BookFusion to
-    if source == "abs":
-        book = database_service.get_book_by_ref(source_id)
-        if not book:
-            abs_client = container.abs_client()
-            item = abs_client.get_item_details(source_id) if abs_client else None
-            metadata = (item or {}).get("media", {}).get("metadata", {})
-            book = Book(
-                abs_id=source_id,
-                title=metadata.get("title") or suggestion.title or source_id,
-                status="not_started",
-                duration=(item or {}).get("media", {}).get("duration"),
-                sync_mode="audiobook",
-            )
-            database_service.save_book(book)
-            abs_service = container.abs_service()
-            if abs_service and abs_service.is_available():
-                try:
-                    abs_service.add_to_collection(source_id, current_app.config["ABS_COLLECTION_NAME"])
-                except Exception as e:
-                    logger.warning(f"Failed to add '{source_id}' to ABS collection during BookFusion link: {e}")
-            book = database_service.get_book_by_ref(source_id)
-    else:
-        # Non-ABS source: look up by the field matching the source type
-        if source == "storyteller":
-            book = database_service.get_book_by_storyteller_uuid(source_id)
-        elif source == "kosync":
-            book = database_service.get_book_by_kosync_id(source_id)
-        else:
-            book = database_service.get_book_by_ebook_filename(source_id)
-        if not book:
-            book_kwargs = {
-                "abs_id": None,
-                "title": suggestion.title or source_id,
-                "status": "not_started",
-                "sync_mode": "ebook_only",
-            }
-            if source == "storyteller":
-                book_kwargs["storyteller_uuid"] = source_id
-            elif source == "grimmory":
-                book_kwargs["ebook_filename"] = source_id
-            elif source == "kosync":
-                book_kwargs["kosync_doc_id"] = source_id
-            book = Book(**book_kwargs)
-            database_service.save_book(book, is_new=True)
-            book = database_service.get_book_by_id(book.id)
-
-    if not book:
-        return jsonify({"success": False, "error": "Could not find or create book"}), 500
-
-    for bid in bookfusion_ids:
-        database_service.set_bookfusion_book_match_by_book_id(bid, book.id)
-        database_service.link_bookfusion_highlights_by_book_id(bid, book.id)
-
-    database_service.resolve_suggestion(source_id, source=source)
-    return jsonify({"success": True, "book_id": book.id})
-
-
-@api_bp.route("/api/sync-reading-dates", methods=["POST"])
+# ---------------- Storyteller ----------------
 def sync_reading_dates_api():
     """Auto-complete books at 100% progress and fill missing dates."""
     container = get_container()

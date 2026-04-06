@@ -9,7 +9,7 @@ from datetime import UTC
 from difflib import SequenceMatcher
 from pathlib import Path
 
-from src.db.models import PendingSuggestion
+from src.db.models import DetectedBook, PendingSuggestion
 from src.utils.string_utils import clean_book_title
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ _MIN_CANDIDATE_SCORE = 0.72
 
 
 class SuggestionService:
-    """Handles suggestion discovery and creation for unmapped books."""
+    """Handles detected-book discovery plus legacy suggestion workflows."""
 
     def __init__(
         self,
@@ -142,6 +142,32 @@ class SuggestionService:
         if score >= _CONFIDENCE_MEDIUM_THRESHOLD:
             return "medium"
         return "low"
+
+    def _upsert_detected_book(
+        self,
+        *,
+        source: str,
+        source_id: str,
+        title: str,
+        progress_percentage: float,
+        author: str = "",
+        cover_url: str | None = None,
+        matches: list[dict] | None = None,
+        device: str | None = None,
+        ebook_filename: str | None = None,
+    ):
+        detected = DetectedBook(
+            source=source,
+            source_id=source_id,
+            title=title or source_id,
+            author=author or "",
+            cover_url=cover_url,
+            progress_percentage=max(0.0, min(progress_percentage, 1.0)),
+            matches_json=json.dumps(matches or []),
+            device=device,
+            ebook_filename=ebook_filename,
+        )
+        return self.database_service.save_detected_book(detected)
 
     def _get_bookfusion_context(self) -> dict:
         try:
@@ -397,29 +423,21 @@ class SuggestionService:
         return ranked[:6]
 
     def queue_suggestion(self, abs_id: str) -> None:
-        """Queue suggestion discovery for an unmapped book (called from socket listener)."""
-        if os.environ.get("SUGGESTIONS_ENABLED", "true").lower() != "true":
-            return
-
+        """Queue detected-book discovery for an unmapped ABS item."""
         # Already mapped?
         all_books = self.database_service.get_all_books()
         mapped_ids = {b.abs_id for b in all_books}
         if abs_id in mapped_ids:
             return
 
-        if self._suggestion_already_recorded(abs_id):
+        if self._detected_book_is_dismissed(abs_id, source="abs"):
             return
 
-        logger.info(f"Socket.IO: Queuing suggestion discovery for '{abs_id[:12]}...'")
+        logger.info(f"Socket.IO: Queuing detected-book discovery for '{abs_id[:12]}...'")
         self._create_suggestion(abs_id, None)
 
     def queue_kosync_suggestion(self, doc_hash: str, filename: str | None = None, device: str | None = None) -> None:
-        """Create a reverse suggestion for a KoSync document (ebook -> ABS audiobook)."""
-        if os.environ.get("SUGGESTIONS_ENABLED", "true").lower() != "true":
-            return
-        if self.database_service.suggestion_exists(doc_hash, source="kosync"):
-            return
-
+        """Create or refresh a detected entry for a KoSync document."""
         title = ""
         if filename:
             title = Path(filename).stem
@@ -431,7 +449,6 @@ class SuggestionService:
             logger.debug(f"KoSync suggestion: no title derivable for {doc_hash[:8]}..., skipping")
             return
 
-        # Try ABS audiobook matching first (if ABS is configured)
         matches = []
         if self.abs_client:
             try:
@@ -461,35 +478,36 @@ class SuggestionService:
             all_ebook = ebook_candidates.get("storyteller", []) + ebook_candidates.get("grimmory", [])
             matches = self._rank_candidates_for_book(title, "", all_ebook)
 
-        if not matches:
-            logger.debug(f"KoSync suggestion: no match for '{title}' (hash {doc_hash[:8]}...)")
-            return
+        cover = None
+        author = ""
+        if matches:
+            best = matches[0]
+            author = best.get("author") or best.get("authorName") or ""
+            if best.get("abs_id"):
+                cover = f"/api/cover-proxy/{best['abs_id']}"
+            else:
+                cover = best.get("cover_url") or self._cover_url_for(
+                    best.get("source_family", ""), best.get("abs_id", ""), best
+                )
 
-        best = matches[0]
-        if best.get("abs_id"):
-            cover = f"/api/cover-proxy/{best['abs_id']}"
-        else:
-            cover = best.get("cover_url") or self._cover_url_for(
-                best.get("source_family", ""), best.get("abs_id", ""), best
-            )
-        suggestion = PendingSuggestion(
+        self._upsert_detected_book(
             source="kosync",
             source_id=doc_hash,
             title=title,
-            author=best.get("author") or best.get("authorName") or "",
+            author=author,
             cover_url=cover,
-            matches_json=json.dumps(matches),
+            progress_percentage=0.0,
+            matches=matches,
+            device=device,
+            ebook_filename=filename,
         )
-        self.database_service.save_pending_suggestion(suggestion)
-        logger.info(f"KoSync suggestion: '{title}' -> '{best.get('title')}' (hash {doc_hash[:8]}...)")
+        logger.info(
+            f"KoSync detected: '{title}' (hash {doc_hash[:8]}...)"
+            + (f" with {len(matches)} match(es)" if matches else "")
+        )
 
     def check_for_suggestions(self, abs_progress_map, active_books):
-        """Check for unmapped books with progress and create suggestions."""
-        suggestions_enabled_val = os.environ.get("SUGGESTIONS_ENABLED", "true")
-        logger.debug(f"SUGGESTIONS_ENABLED env var is: '{suggestions_enabled_val}'")
-
-        if suggestions_enabled_val.lower() != "true":
-            return
+        """Check for unmapped books with progress and create detected entries."""
 
         try:
             # optimization: get all mapped IDs to avoid suggesting existing books (even if inactive)
@@ -497,7 +515,7 @@ class SuggestionService:
             mapped_ids = {b.abs_id for b in all_books}
 
             logger.debug(
-                f"Checking for suggestions: {len(abs_progress_map)} books with progress, {len(mapped_ids)} already mapped"
+                f"Checking for detected ABS books: {len(abs_progress_map)} books with progress, {len(mapped_ids)} already mapped"
             )
 
             for abs_id, item_data in abs_progress_map.items():
@@ -511,8 +529,8 @@ class SuggestionService:
                 if duration > 0:
                     pct = current_time / duration
                     if pct > 0.01:
-                        if self._suggestion_already_recorded(abs_id):
-                            logger.debug(f"Skipping {abs_id}: suggestion already exists/hidden")
+                        if self._detected_book_is_dismissed(abs_id, source="abs"):
+                            logger.debug(f"Skipping {abs_id}: detected entry dismissed")
                             continue
 
                         # Check if book is already mostly finished (>70%)
@@ -521,14 +539,14 @@ class SuggestionService:
                             logger.debug(f"Skipping {abs_id}: progress {pct:.1%} > 70% threshold")
                             continue
 
-                        logger.debug(f"Creating suggestion for {abs_id} (progress: {pct:.1%})")
+                        logger.debug(f"Creating detected entry for {abs_id} (progress: {pct:.1%})")
                         self._create_suggestion(abs_id, item_data)
                     else:
                         logger.debug(f"Skipping {abs_id}: progress {pct:.1%} below 1% threshold")
                 else:
                     logger.debug(f"Skipping {abs_id}: no duration")
         except Exception as e:
-            logger.error(f"Error checking suggestions: {e}")
+            logger.error(f"Error checking detected ABS books: {e}")
 
         # Reverse suggestions: ebook sources → ABS audiobooks
         try:
@@ -542,9 +560,10 @@ class SuggestionService:
         except Exception as e:
             logger.warning(f"Cross-ebook suggestions check failed: {e}")
 
-    def _suggestion_already_recorded(self, abs_id: str) -> bool:
-        """Return True when a suggestion should not be recreated for this ABS item."""
-        return bool(self.database_service.suggestion_exists(abs_id))
+    def _detected_book_is_dismissed(self, source_id: str, source: str = "abs") -> bool:
+        """Return True when a dismissed detected entry should stay hidden."""
+        detected = self.database_service.get_detected_book(source_id, source=source)
+        return bool(detected and detected.status == "dismissed")
 
     def _get_storyteller_books_with_progress(self, mapped_uuids: set | None = None) -> list[dict]:
         """Fetch Storyteller books with 1-70% progress, excluding already-mapped UUIDs."""
@@ -892,7 +911,7 @@ class SuggestionService:
 
     def rescan_library_suggestions(self) -> dict:
         """Rebuild suggestions from cached library metadata without live BookFusion calls."""
-        if os.environ.get("SUGGESTIONS_ENABLED", "true").lower() != "true":
+        if os.environ.get("SUGGESTIONS_ENABLED", "false").lower() != "true":
             return {"created": 0, "updated": 0, "deleted": 0, "total": 0, "bookfusion_catalog": False}
 
         mapped_ids = {b.abs_id for b in self.database_service.get_all_books()}
@@ -1045,17 +1064,17 @@ class SuggestionService:
         return sorted(deduped.values(), key=lambda m: m.get("score", 0.0), reverse=True)[:limit]
 
     def _create_suggestion(self, abs_id, progress_data):
-        """Create a new suggestion for an unmapped book."""
+        """Create or update a detected ABS book for an unmapped item."""
         with self._suggestion_lock:
             if abs_id in self._suggestion_in_flight:
                 return
             self._suggestion_in_flight.add(abs_id)
 
         try:
-            logger.info(f"Found potential new book for suggestion: '{abs_id}'")
+            logger.info(f"Found potential new detected ABS book: '{abs_id}'")
             item = self.abs_client.get_item_details(abs_id)
             if not item:
-                logger.debug(f"Suggestion failed: Could not get details for {abs_id}")
+                logger.debug(f"Detected book lookup failed: Could not get details for {abs_id}")
                 return
 
             media = item.get("media", {})
@@ -1063,7 +1082,14 @@ class SuggestionService:
             title = metadata.get("title") or ""
             author = metadata.get("authorName") or ""
             cover = self._cover_url_for("abs", abs_id)
-            logger.debug(f"Checking suggestions for '{title}' (Author: {author})")
+            logger.debug(f"Checking detected matches for '{title}' (Author: {author})")
+
+            progress_percentage = 0.0
+            if progress_data:
+                duration = progress_data.get("duration", 0) or 0
+                current_time = progress_data.get("currentTime", 0) or 0
+                if duration > 0:
+                    progress_percentage = max(0.0, min(current_time / duration, 1.0))
 
             bookfusion_context = self._get_bookfusion_context()
             matches = self._rank_candidates_for_book(
@@ -1075,18 +1101,24 @@ class SuggestionService:
             matches.extend(self._search_live_candidates(title, author, bookfusion_context))
             matches = self._dedupe_matches(matches)
 
-            if not matches:
-                logger.debug(f"No matches found for '{title}', skipping suggestion creation")
-                return
-
-            suggestion = PendingSuggestion(
-                source_id=abs_id, title=title, author=author, cover_url=cover, matches_json=json.dumps(matches)
+            self._upsert_detected_book(
+                source="abs",
+                source_id=abs_id,
+                title=title,
+                author=author,
+                cover_url=cover,
+                progress_percentage=progress_percentage,
+                matches=matches,
             )
-            self.database_service.save_pending_suggestion(suggestion)
-            logger.info(f"Created suggestion for '{title}' with {len(matches)} matches")
+
+            logger.info(
+                f"Created detected entry for '{title}' with {len(matches)} matches"
+                if matches
+                else f"Created detected entry for '{title}' with no matches yet"
+            )
 
         except Exception as e:
-            logger.error(f"Failed to create suggestion for '{abs_id}': {e}")
+            logger.error(f"Failed to create detected entry for '{abs_id}': {e}")
             logger.debug(traceback.format_exc())
         finally:
             with self._suggestion_lock:

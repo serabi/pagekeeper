@@ -13,7 +13,7 @@ Usage:
   scripts/git/promote.sh [--push] <source-branch> <dest-branch> [commit message]
 
 Examples:
-  scripts/git/promote.sh draft dev "feat: publish draft snapshot"
+  scripts/git/promote.sh feature/my-change dev "feat: publish feature snapshot"
   scripts/git/promote.sh --push dev main "release: v0.2.0"
 EOF
 }

@@ -14,11 +14,9 @@ from src.blueprints.helpers import (
     get_container,
     get_database_service,
     get_enabled_grimmory_server_ids,
-    get_hardcover_book_url,
-    get_service_web_url,
-    serialize_suggestion,
 )
 from src.utils.cover_resolver import resolve_book_covers
+from src.utils.service_url_helper import get_hardcover_book_url, get_service_web_url
 from src.version import APP_VERSION
 
 logger = logging.getLogger(__name__)
@@ -391,20 +389,29 @@ def index():
         except Exception:
             pass
 
-    # Pending suggestions — for dashboard banner
-    top_suggestions = []
-    suggestions_enabled = os.environ.get("SUGGESTIONS_ENABLED", "false").lower() in ("true", "1", "yes", "on")
-    if suggestions_enabled:
-        try:
-            pending = database_service.get_all_pending_suggestions()
-            for s in pending[:10]:
-                serialized = serialize_suggestion(s)
-                if serialized["top_match"] and serialized["top_match"].get("confidence") == "high":
-                    top_suggestions.append(serialized)
-                    if len(top_suggestions) >= 3:
-                        break
-        except Exception:
-            pass
+    # Active detected books — for dashboard detected section
+    detected_books = []
+    try:
+        active_detected = database_service.get_active_detected_books(limit=10)
+        for d in active_detected:
+            detected_books.append(
+                {
+                    "id": d.id,
+                    "source": d.source,
+                    "source_id": d.source_id,
+                    "title": d.title,
+                    "author": d.author,
+                    "cover_url": d.cover_url,
+                    "progress_percentage": d.progress_percentage,
+                    "first_detected_at": d.first_detected_at.isoformat() if d.first_detected_at else None,
+                    "last_seen_at": d.last_seen_at.isoformat() if d.last_seen_at else None,
+                    "matches": d.matches,
+                    "device": d.device,
+                    "ebook_filename": d.ebook_filename,
+                }
+            )
+    except Exception:
+        pass
 
     return render_template(
         "index.html",
@@ -415,5 +422,5 @@ def index():
         grimmory_label=grimmory_label,
         kosync_unlinked_count=kosync_unlinked_count,
         unlinked_reading=unlinked_reading,
-        top_suggestions=top_suggestions,
+        detected_books=detected_books,
     )
