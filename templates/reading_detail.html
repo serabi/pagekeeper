@@ -42,8 +42,12 @@
             <div class="r-hero-content">
                 <div class="r-hero-cover {% if book.book_type == 'ebook-only' %}r-hero-cover--ebook{% endif %}">
                     {% if book.cover_url %}
-                    <img src="{{ book.cover_url }}" alt=""
-                        onerror="{% if book.fallback_cover_url and book.fallback_cover_url != book.cover_url %}this.onerror={% if book.kosync_doc_id %}function(){this.onerror=null; this.src='/covers/{{ book.kosync_doc_id }}.jpg';}{% else %}null{% endif %}; this.src='{{ book.fallback_cover_url|e }}';{% elif book.kosync_doc_id %}this.onerror=null; this.src='/covers/{{ book.kosync_doc_id }}.jpg';{% else %}this.style.display='none'; this.nextElementSibling.classList.remove('hidden');{% endif %}">
+                    <img
+                        id="reading-cover-image"
+                        src="{{ book.cover_url }}"
+                        alt=""
+                        {% if book.fallback_cover_url and book.fallback_cover_url != book.cover_url %}data-fallback-cover-url="{{ book.fallback_cover_url }}"{% endif %}
+                        {% if book.kosync_doc_id %}data-kosync-cover-url="/covers/{{ book.kosync_doc_id }}.jpg"{% endif %}>
                     <div class="r-cover-placeholder hidden">
                         {% if book.placeholder_logo %}<img src="{{ book.placeholder_logo }}" alt="" class="book-cover-placeholder-logo">{% endif %}
                     </div>
@@ -922,10 +926,41 @@
             }
         })();
 
+        (function() {
+            var coverImage = document.getElementById('reading-cover-image');
+            if (!coverImage) return;
+
+            function showPlaceholder() {
+                coverImage.style.display = 'none';
+                if (coverImage.nextElementSibling) {
+                    coverImage.nextElementSibling.classList.remove('hidden');
+                }
+            }
+
+            coverImage.addEventListener('error', function() {
+                var fallbackCoverUrl = coverImage.dataset.fallbackCoverUrl;
+                var kosyncCoverUrl = coverImage.dataset.kosyncCoverUrl;
+
+                if (fallbackCoverUrl && coverImage.src !== fallbackCoverUrl) {
+                    coverImage.src = fallbackCoverUrl;
+                    delete coverImage.dataset.fallbackCoverUrl;
+                    return;
+                }
+
+                if (kosyncCoverUrl && coverImage.src !== window.location.origin + kosyncCoverUrl) {
+                    coverImage.src = kosyncCoverUrl;
+                    delete coverImage.dataset.kosyncCoverUrl;
+                    return;
+                }
+
+                showPlaceholder();
+            });
+        })();
+
         // Hardcover re-link
         function openHcRelink(btn) {
             hardcoverModalState.bookId = btn.dataset.bookId;
-            hardcoverModalState.bookTitle = btn.dataset.title || '{{ book.title|e }}';
+            hardcoverModalState.bookTitle = btn.dataset.title || _rdTitle;
             hardcoverModalState.bookData = null;
             hardcoverModalState.selectedEditionId = null;
             openHardcoverModal();

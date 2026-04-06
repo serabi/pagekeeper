@@ -490,7 +490,8 @@ def update_rating(book_ref):
             hardcover_synced = bool(sync_result.get("hardcover_synced"))
             hardcover_error = sync_result.get("hardcover_error")
     except Exception as e:
-        hardcover_error = str(e)
+        logger.warning("Hardcover rating sync failed for book %s: %s", book.id, e)
+        hardcover_error = "Hardcover sync failed"
 
     return jsonify(
         {
