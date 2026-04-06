@@ -667,7 +667,7 @@ class KosyncService:
                     logger.debug(f"KOSync PUT: Progress event recorded for '{linked_book.title}'")
                     debounce_manager.record_event(linked_book.id, linked_book.title)
 
-        response_timestamp = now.isoformat() + "Z"
+        response_timestamp = now.isoformat()
         if device and device.lower() == "booknexus":
             response_timestamp = int(calendar.timegm(now.timetuple()))
 
