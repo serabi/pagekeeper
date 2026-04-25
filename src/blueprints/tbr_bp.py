@@ -5,6 +5,8 @@ import logging
 
 from flask import Blueprint, jsonify, request
 
+from src.utils.http import json_error
+
 from src.blueprints.helpers import get_container, get_database_service
 from src.services.hardcover_service import HC_IGNORED, HC_WANT_TO_READ
 
@@ -120,11 +122,11 @@ def add_tbr_from_library():
     data = request.json or {}
     book_ref = (data.get("abs_id") or data.get("book_ref") or "").strip()
     if not book_ref:
-        return jsonify({"success": False, "error": "Book reference is required"}), 400
+        return json_error("Book reference is required", 400)
 
     book = database_service.get_book_by_ref(book_ref)
     if not book:
-        return jsonify({"success": False, "error": "Book not found"}), 404
+        return json_error("Book not found", 404)
 
     # Dedup: if TBR item already linked to this book, return it
     existing = database_service.find_tbr_by_book_id(book.id)
@@ -179,7 +181,7 @@ def add_tbr_item():
 
     title = (data.get("title") or "").strip()
     if not title:
-        return jsonify({"success": False, "error": "Title is required"}), 400
+        return json_error("Title is required", 400)
 
     # Determine source from which fields are present
     source = "manual"
@@ -262,7 +264,7 @@ def delete_tbr_item(item_id):
     database_service = get_database_service()
     item = database_service.get_tbr_item(item_id)
     if not item:
-        return jsonify({"success": False, "error": "Item not found"}), 404
+        return json_error("Item not found", 404)
 
     # Optionally push "Ignored" status to Hardcover before deleting locally
     hc_removed = False
@@ -290,11 +292,11 @@ def update_tbr_item(item_id):
     database_service = get_database_service()
     item = database_service.get_tbr_item(item_id)
     if not item:
-        return jsonify({"success": False, "error": "Item not found"}), 404
+        return json_error("Item not found", 404)
 
     data = request.json or {}
     if not data:
-        return jsonify({"success": False, "error": "No fields to update"}), 400
+        return json_error("No fields to update", 400)
 
     allowed = {
         "notes",
@@ -316,18 +318,18 @@ def update_tbr_item(item_id):
             updates[key] = value
 
     if not updates:
-        return jsonify({"success": False, "error": "No valid fields to update"}), 400
+        return json_error("No valid fields to update", 400)
 
     # Dedupe check: prevent reassigning hardcover_book_id to a duplicate
     new_hc_id = updates.get("hardcover_book_id")
     if new_hc_id and str(new_hc_id) != str(item.hardcover_book_id or ""):
         existing = database_service.find_tbr_by_hardcover_id(new_hc_id)
         if existing and existing.id != item_id:
-            return jsonify({"success": False, "error": "Another TBR item already has this Hardcover ID"}), 409
+            return json_error("Another TBR item already has this Hardcover ID", 409)
 
     updated = database_service.update_tbr_item(item_id, **updates)
     if not updated:
-        return jsonify({"success": False, "error": "Update failed"}), 500
+        return json_error("Update failed", 500)
 
     return jsonify({"success": True, "item": _serialize_tbr_item(updated)})
 
@@ -338,9 +340,9 @@ def start_tbr_item(item_id):
     database_service = get_database_service()
     item = database_service.get_tbr_item(item_id)
     if not item:
-        return jsonify({"success": False, "error": "TBR item not found"}), 404
+        return json_error("TBR item not found", 404)
     if not item.book_id and not item.book_abs_id:
-        return jsonify({"success": False, "error": "Book not in library — cannot start reading"}), 400
+        return json_error("Book not in library — cannot start reading", 400)
 
     book = (
         database_service.get_book_by_id(item.book_id)
@@ -348,7 +350,7 @@ def start_tbr_item(item_id):
         else database_service.get_book_by_abs_id(item.book_abs_id)
     )
     if not book:
-        return jsonify({"success": False, "error": "Linked book not found"}), 404
+        return json_error("Linked book not found", 404)
 
     # Transition book to active
     book.status = "active"
@@ -455,9 +457,9 @@ def import_hardcover_wtr():
     try:
         hc_client = get_container().hardcover_client()
         if not hc_client.is_configured():
-            return jsonify({"success": False, "error": "Hardcover not configured"}), 400
+            return json_error("Hardcover not configured", 400)
     except Exception:
-        return jsonify({"success": False, "error": "Hardcover not available"}), 400
+        return json_error("Hardcover not available", 400)
 
     database_service = get_database_service()
     wtr_books = hc_client.get_want_to_read_books()
@@ -541,24 +543,24 @@ def import_hardcover_list():
     data = request.json or {}
     list_id = data.get("list_id")
     if not list_id:
-        return jsonify({"success": False, "error": "list_id is required"}), 400
+        return json_error("list_id is required", 400)
 
     try:
         list_id = int(list_id)
     except (TypeError, ValueError):
-        return jsonify({"success": False, "error": "Invalid list_id"}), 400
+        return json_error("Invalid list_id", 400)
 
     try:
         hc_client = get_container().hardcover_client()
         if not hc_client.is_configured():
-            return jsonify({"success": False, "error": "Hardcover not configured"}), 400
+            return json_error("Hardcover not configured", 400)
     except Exception:
-        return jsonify({"success": False, "error": "Hardcover not available"}), 400
+        return json_error("Hardcover not available", 400)
 
     database_service = get_database_service()
     list_data = hc_client.get_list_books(list_id)
     if not list_data:
-        return jsonify({"success": False, "error": "List not found"}), 404
+        return json_error("List not found", 404)
 
     list_name = list_data.get("name", "")
 
@@ -651,15 +653,15 @@ def link_tbr_to_library(item_id):
     data = request.json or {}
     book_ref = (data.get("abs_id") or data.get("book_ref") or "").strip()
     if not book_ref:
-        return jsonify({"success": False, "error": "Book reference is required"}), 400
+        return json_error("Book reference is required", 400)
 
     book = database_service.get_book_by_ref(book_ref)
     if not book:
-        return jsonify({"success": False, "error": "Book not found in library"}), 404
+        return json_error("Book not found in library", 404)
 
     updated = database_service.link_tbr_to_book(item_id, book.id)
     if not updated:
-        return jsonify({"success": False, "error": "TBR item not found"}), 404
+        return json_error("TBR item not found", 404)
 
     return jsonify({"success": True})
 
@@ -670,6 +672,6 @@ def unlink_tbr_from_library(item_id):
     database_service = get_database_service()
     updated = database_service.link_tbr_to_book(item_id, None)
     if not updated:
-        return jsonify({"success": False, "error": "TBR item not found"}), 404
+        return json_error("TBR item not found", 404)
 
     return jsonify({"success": True})

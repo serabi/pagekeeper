@@ -1,30 +1,25 @@
+# pyright: reportMissingImports=false
 # Hardcover Routes - Flask Blueprint for Hardcover API endpoints
 import ipaddress
 import logging
 import socket
+from typing import Any, cast
 from urllib.parse import urlparse
 
-from flask import Blueprint, flash, jsonify, redirect, request, url_for
+from flask import Blueprint, current_app, flash, jsonify, redirect, request, url_for
+
+from src.utils.http import json_error
 
 logger = logging.getLogger(__name__)
 
 # Create Blueprint for Hardcover endpoints
 hardcover_bp = Blueprint("hardcover", __name__)
 
-# Module-level references - set via init_hardcover_routes()
-_database_service = None
-_container = None
-
-
-def init_hardcover_routes(database_service, container):
-    """Initialize Hardcover routes with required dependencies."""
-    global _database_service, _container
-    _database_service = database_service
-    _container = container
-
 
 def _get_dependencies():
-    if _database_service is None or _container is None:
+    database_service = current_app.config.get("database_service")
+    container = current_app.config.get("container")
+    if database_service is None or container is None:
         logger.error("Hardcover routes not initialized")
         return (
             None,
@@ -34,7 +29,7 @@ def _get_dependencies():
                 500,
             ),
         )
-    return _database_service, _container, None
+    return cast(Any, database_service), cast(Any, container), None
 
 
 def _validate_custom_cover_url(raw_url):
@@ -85,16 +80,18 @@ def api_hardcover_resolve():
     database_service, container, error_response = _get_dependencies()
     if error_response:
         return error_response
+    database_service = cast(Any, database_service)
+    container = cast(Any, container)
 
     abs_id = request.args.get("abs_id", "").strip()
     manual_input = request.args.get("input", "").strip()
 
     if not abs_id:
-        return jsonify({"found": False, "message": "Missing abs_id parameter"}), 400
+        return json_error("Missing abs_id parameter", 400, found=False, user_message="Missing abs_id parameter")
 
     hardcover_client = container.hardcover_client()
     if not hardcover_client.is_configured():
-        return jsonify({"found": False, "message": "Hardcover not configured"}), 400
+        return json_error("Hardcover not configured", 400, found=False, user_message="Hardcover not configured")
 
     book_data = None
     author = None
@@ -113,7 +110,7 @@ def api_hardcover_resolve():
         if not book_data:
             # No existing link (or fetch failed) - fall back to auto-match from ABS metadata
             if not book:
-                return jsonify({"found": False, "message": "Book not found"}), 404
+                return json_error("Book not found", 404, found=False, user_message="Book not found")
 
             # Get metadata from ABS (if available)
             item = container.abs_client().get_item_details(abs_id)
@@ -188,6 +185,8 @@ def link_hardcover(abs_id):
     database_service, container, error_response = _get_dependencies()
     if error_response:
         return error_response
+    database_service = cast(Any, database_service)
+    container = cast(Any, container)
 
     # Check if JSON request (new flow) or form data (legacy flow)
     if request.is_json:
@@ -210,18 +209,20 @@ def link_hardcover(abs_id):
             # Determine cover URL: use provided cached_image, or preserve existing
             cover_url = cached_image
             book = database_service.get_book_by_ref(abs_id)
+            if not book:
+                return jsonify({"error": "Book not found"}), 404
             if not cover_url and book:
                 existing = database_service.get_hardcover_details(book.id)
                 if existing and existing.hardcover_cover_url:
                     cover_url = existing.hardcover_cover_url
             hardcover_details = HardcoverDetails(
                 abs_id=abs_id,
-                book_id=book.id if book else None,
+                book_id=book.id,
                 hardcover_book_id=str(book_id),
-                hardcover_slug=slug,
-                hardcover_edition_id=str(edition_id) if edition_id else None,
-                hardcover_pages=hardcover_pages,
-                hardcover_audio_seconds=audio_seconds if audio_seconds else None,
+                hardcover_slug=slug or "",
+                hardcover_edition_id=str(edition_id) if edition_id else "",
+                hardcover_pages=int(hardcover_pages) if hardcover_pages is not None else 0,
+                hardcover_audio_seconds=int(audio_seconds) if audio_seconds is not None else 0,
                 hardcover_cover_url=cover_url,
                 matched_by="manual",
             )
@@ -261,13 +262,16 @@ def link_hardcover(abs_id):
 
     try:
         book = database_service.get_book_by_ref(abs_id)
+        if not book:
+            flash("Book not found", "error")
+            return redirect(url_for("dashboard.index"))
         hardcover_details = HardcoverDetails(
             abs_id=abs_id,
-            book_id=book.id if book else None,
-            hardcover_book_id=book_data["book_id"],
-            hardcover_slug=book_data.get("slug"),
-            hardcover_edition_id=book_data.get("edition_id"),
-            hardcover_pages=book_data.get("pages"),
+            book_id=book.id,
+            hardcover_book_id=str(book_data["book_id"]),
+            hardcover_slug=book_data.get("slug") or "",
+            hardcover_edition_id=str(book_data.get("edition_id") or ""),
+            hardcover_pages=int(book_data.get("pages") or 0),
             matched_by="manual",
         )
 
@@ -303,6 +307,7 @@ def api_cover_search():
     database_service, container, error_response = _get_dependencies()
     if error_response:
         return error_response
+    container = cast(Any, container)
 
     query = request.args.get("query", "").strip()
     if not query:
@@ -324,6 +329,7 @@ def set_book_cover(abs_id):
     database_service, container, error_response = _get_dependencies()
     if error_response:
         return error_response
+    database_service = cast(Any, database_service)
 
     data = request.get_json()
     if not data:
@@ -359,8 +365,8 @@ def set_book_cover(abs_id):
             details = HardcoverDetails(
                 abs_id=abs_id,
                 book_id=book.id,
-                hardcover_book_id=str(book_id) if book_id else None,
-                hardcover_slug=slug,
+                hardcover_book_id=str(book_id) if book_id else "",
+                hardcover_slug=slug or "",
                 hardcover_cover_url=cover_url,
                 matched_by="cover_picker",
             )
@@ -399,6 +405,7 @@ def delete_book_cover(abs_id):
     database_service, container, error_response = _get_dependencies()
     if error_response:
         return error_response
+    database_service = cast(Any, database_service)
 
     book = database_service.get_book_by_ref(abs_id)
     if not book:
