@@ -6,16 +6,16 @@ import traceback
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-import schedule
-
 from src.api.storyteller_api import StorytellerAPIClient
 from src.db.models import State
 from src.services.alignment_service import AlignmentService, normalize_for_cross_format_comparison
 from src.services.background_job_service import BackgroundJobService
+from src.services.cache_cleanup_service import CacheCleanupService
 from src.services.library_service import LibraryService
 from src.services.migration_service import MigrationService
 from src.services.progress_reset_service import ProgressResetService
 from src.services.suggestion_service import SuggestionService
+from src.services.sync_manager_startup import SyncManagerStartup
 from src.sync_clients.sync_client_interface import (
     LocatorResult,
     SyncClient,
@@ -127,7 +127,7 @@ class SyncManager:
         self._pending_clears_lock = threading.Lock()
         self._last_library_sync = 0
 
-        self._setup_sync_clients(sync_clients)
+        self._setup_sync_clients(sync_clients or {})
 
         # ProgressResetService created internally (shares lock references with sync cycle)
         self.progress_reset_service = ProgressResetService(
@@ -138,6 +138,14 @@ class SyncManager:
             pending_clears=self._pending_clears,
             pending_clears_lock=self._pending_clears_lock,
         )
+
+        self._startup = SyncManagerStartup(
+            sync_clients=self.sync_clients,
+            library_service=self.library_service,
+            abs_client=self.abs_client,
+            migration_service=self.migration_service,
+        )
+        self._cache_cleanup = CacheCleanupService(self.database_service, self.epub_cache_dir)
 
         self.startup_checks()
         self.background_job_service.cleanup_stale_jobs()
@@ -153,69 +161,7 @@ class SyncManager:
                 logger.debug(f"Sync client disabled/unconfigured: '{name}'")
 
     def startup_checks(self):
-        # Check configured sync clients
-        for client_name, client in (self.sync_clients or {}).items():
-            first_err = RuntimeError("check_connection() returned False")
-            try:
-                if client.check_connection():
-                    logger.info(f"'{client_name}' connection verified")
-                    continue
-            except Exception as err:
-                first_err = err
-
-            time.sleep(2)
-            try:
-                if client.check_connection():
-                    logger.info(f"'{client_name}' connection verified (retry)")
-                else:
-                    raise RuntimeError("check_connection() returned False")
-            except Exception as e:
-                logger.warning(
-                    f"'{client_name}' connection failed after retry: {sanitize_exception(e)} (first attempt: {sanitize_exception(first_err)})"
-                )
-
-        # Check CWA Integration Status
-        if self.library_service and self.library_service.cwa_client:
-            cwa = self.library_service.cwa_client
-            if cwa.is_configured():
-                # check_connection() logs its own Success/Fail messages and verifies Authentication
-                if cwa.check_connection():
-                    # If connected, ensure search template is cached
-                    template = cwa._get_search_template()
-                    if template:
-                        logger.info(f"   CWA search template: {template}")
-            else:
-                logger.debug("CWA not configured (disabled or missing server URL)")
-        else:
-            logger.debug("CWA not available (library_service or cwa_client missing)")
-
-        # Check ABS ebook search capability
-        if self.abs_client and self.abs_client.is_configured():
-            try:
-                # Just verify methods exist (don't actually search during startup)
-                if hasattr(self.abs_client, "get_ebook_files") and hasattr(self.abs_client, "search_ebooks"):
-                    logger.info("ABS ebook methods available (get_ebook_files, search_ebooks)")
-                else:
-                    logger.warning("ABS ebook methods missing - ebook search may not work")
-            except Exception as e:
-                logger.warning(f"ABS ebook check failed: {sanitize_exception(e)}")
-
-        # Run one-time migration
-        if self.migration_service:
-            logger.info("Checking for legacy data to migrate...")
-            self.migration_service.migrate_legacy_data()
-
-        # Backfill Hardcover state records for linked books missing them
-        hc_client = self.sync_clients.get("Hardcover")
-        if hc_client and getattr(hc_client, "hardcover_service", None):
-            try:
-                hc_client.hardcover_service.backfill_hardcover_states()
-            except Exception as e:
-                logger.warning(f"Hardcover state backfill failed (non-fatal): {sanitize_exception(e)}")
-
-        # Cleanup orphaned cache files
-        # DISABLED: Current logic is too aggressive (deletes original_ebook_filename for linked books).
-        # We rely on delete_mapping in web_server.py to handle explicit deletions.
+        self._startup.run()
 
     def cleanup_stale_jobs(self):
         """Delegate to BackgroundJobService."""
@@ -223,53 +169,7 @@ class SyncManager:
 
     def cleanup_cache(self):
         """Delete files from ebook cache that are not referenced in the DB."""
-        if not self.epub_cache_dir.exists():
-            return
-
-        logger.info("Starting ebook cache cleanup...")
-
-        try:
-            # 1. Collect all valid filenames from DB
-            valid_filenames = set()
-
-            # From Active Books
-            books = self.database_service.get_all_books()
-            for book in books:
-                if book.ebook_filename:
-                    valid_filenames.add(book.ebook_filename)
-
-            # From Pending Suggestions (covers auto-discovery matches)
-            suggestions = self.database_service.get_all_actionable_suggestions()
-            for suggestion in suggestions:
-                # matches property automatically parses the JSON
-                for match in suggestion.matches:
-                    if match.get("filename"):
-                        valid_filenames.add(match["filename"])
-
-            # 2. Iterate cache and delete orphans
-            deleted_count = 0
-            reclaimed_bytes = 0
-
-            for file_path in self.epub_cache_dir.iterdir():
-                # Only check files, and ensure we don't delete if it's in our valid list
-                if file_path.is_file() and file_path.name not in valid_filenames:
-                    try:
-                        size = file_path.stat().st_size
-                        file_path.unlink()
-                        deleted_count += 1
-                        reclaimed_bytes += size
-                        logger.debug(f"   Deleted orphaned cache file: {file_path.name}")
-                    except Exception as e:
-                        logger.warning(f"   Failed to delete {file_path.name}: {e}")
-
-            if deleted_count > 0:
-                mb = reclaimed_bytes / (1024 * 1024)
-                logger.info(f"Cache cleanup complete: Removed {deleted_count} files ({mb:.2f} MB)")
-            else:
-                logger.info("Cache is clean (no orphaned files found)")
-
-        except Exception as e:
-            logger.error(f"Error during cache cleanup: {e}")
+        self._cache_cleanup.cleanup()
 
     def get_audiobook_title(self, ab):
         media = ab.get("media", {})
@@ -860,27 +760,3 @@ class SyncManager:
         """Clear progress data for a specific book and reset all sync clients to 0%."""
         return self.progress_reset_service.clear_progress(abs_id)
 
-    def run_daemon(self):
-        """Legacy method - daemon is now run from web_server.py"""
-        logger.warning("run_daemon() called — daemon should be started from web_server.py instead")
-        schedule.every(int(os.getenv("SYNC_PERIOD_MINS", 5))).minutes.do(self.sync_cycle)
-        schedule.every(1).minutes.do(self.check_pending_jobs)
-        logger.info("Daemon started")
-        self.sync_cycle()
-        while True:
-            schedule.run_pending()
-            time.sleep(30)
-
-
-if __name__ == "__main__":
-    # This is only used for standalone testing - production uses web_server.py
-    logger.info("Running sync manager in standalone mode (for testing)")
-
-    from src.utils.di_container import create_container
-
-    di_container = create_container()
-    # Try to use dependency injection, fall back to legacy if there are issues
-    sync_manager = di_container.sync_manager()
-    logger.info("Using dependency injection")
-
-    sync_manager.run_daemon()
