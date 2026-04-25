@@ -5,7 +5,7 @@ import shutil
 import sys
 import tempfile
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -15,6 +15,9 @@ import pytest
 for _mod_name in ("epubcfi",):
     if _mod_name not in sys.modules:
         sys.modules[_mod_name] = ModuleType(_mod_name)
+
+sys.modules.setdefault("nh3", SimpleNamespace(clean=lambda value, tags=None, attributes=None: value))
+sys.modules.setdefault("mistune", SimpleNamespace(html=lambda value: f"<p>{value}</p>" if value else ""))
 
 
 # ── MockABSService ─────────────────────────────────────────────────
@@ -103,6 +106,7 @@ class MockContainer:
 
         # ── Paths (temp) ──
         self._tmp = Path(tempfile.gettempdir())
+        self.config = {}
 
     # ── Accessors (match Container's callable interface) ──
 

@@ -591,7 +591,7 @@
                 <div class="tab-panel" id="panel-bookfusion" role="tabpanel" aria-labelledby="tab-bookfusion" aria-hidden="true" hidden>
                     <div class="panel-header">
                         <h2>BookFusion</h2>
-                        <p>Push books from Grimmory to BookFusion and sync highlights back.</p>
+                        <p>Upload books from your library and sync highlights back to your reading journal.</p>
                     </div>
 
                     {% set bookfusion_configured = get_val('BOOKFUSION_API_KEY') != '' %}
@@ -626,10 +626,11 @@
                                 </div>
                                 <div class="help-text">BookFusion &rarr; Settings &rarr; <strong>Calibre</strong> section. Used for book uploads.</div>
                             </div>
-                            <div class="help-text settings-callout-note">
-                                When linking BookFusion books, PageKeeper sets reading dates automatically
-                                (from Hardcover if configured, otherwise from highlight timestamps)
-                                and fetches cover images from Hardcover.
+                            <div class="section-divider"></div>
+                            <div class="form-group full-width">
+                                <label>Maintenance</label>
+                                <p class="help-text full-width settings-help-block settings-help-block-topless">Re-sync all BookFusion highlights from the server. This refreshes cached highlight data and does not re-import journal entries.</p>
+                                <button type="button" class="btn btn-secondary" id="bf-resync-all-btn">Re-sync All Highlights</button>
                             </div>
                         </div>
                     </div>

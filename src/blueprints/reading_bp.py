@@ -8,6 +8,8 @@ from pathlib import Path
 
 from flask import Blueprint, abort, jsonify, render_template, request
 
+from src.utils.http import json_error
+
 from src.blueprints.helpers import (
     find_grimmory_metadata,
     get_abs_service,
@@ -21,6 +23,7 @@ from src.services.book_metadata_service import build_book_metadata, build_servic
 from src.services.reading_service import ReadingService
 from src.services.reading_stats_service import ReadingStatsService
 from src.utils.cover_resolver import resolve_book_covers
+from src.utils.markdown import render_markdown_html
 
 logger = logging.getLogger(__name__)
 
@@ -344,6 +347,9 @@ def reading_detail(book_ref):
         or database_service.is_bookfusion_linked_by_book_id(book.id)
     )
 
+    # Check if book is eligible for BookFusion upload (has ebook file)
+    bookfusion_upload_eligible = bool(book.ebook_filename or book.original_ebook_filename)
+
     container = get_container()
     metadata = build_book_metadata(book, container, database_service, abs_service)
     hardcover = metadata.get("_hardcover")
@@ -401,6 +407,7 @@ def reading_detail(book_ref):
         journals=journals,
         bf_highlights=bf_highlights,
         has_bookfusion_link=has_bookfusion_link,
+        bookfusion_upload_eligible=bookfusion_upload_eligible,
         has_linked_tbr=has_linked_tbr,
         metadata=metadata,
         services_enabled=services_enabled,
@@ -465,15 +472,15 @@ def update_rating(book_ref):
         try:
             rating = float(rating)
         except (TypeError, ValueError):
-            return jsonify({"success": False, "error": "Invalid rating value"}), 400
+            return json_error("Invalid rating value", 400)
         if not math.isfinite(rating) or rating < 0 or rating > 5:
-            return jsonify({"success": False, "error": "Rating must be between 0 and 5"}), 400
+            return json_error("Rating must be between 0 and 5", 400)
         if abs((rating * 2) - round(rating * 2)) > 1e-9:
-            return jsonify({"success": False, "error": "Rating must be in 0.5 increments"}), 400
+            return json_error("Rating must be in 0.5 increments", 400)
 
     book = database_service.update_book_reading_fields(book.id, rating=rating)
     if not book:
-        return jsonify({"success": False, "error": "Book not found"}), 404
+        return json_error("Book not found", 404)
 
     hardcover_synced = False
     hardcover_error = None
@@ -485,7 +492,8 @@ def update_rating(book_ref):
             hardcover_synced = bool(sync_result.get("hardcover_synced"))
             hardcover_error = sync_result.get("hardcover_error")
     except Exception as e:
-        hardcover_error = str(e)
+        logger.warning("Hardcover rating sync failed for book %s: %s", book.id, e)
+        hardcover_error = "Hardcover sync failed"
 
     return jsonify(
         {
@@ -505,15 +513,15 @@ def update_progress(book_ref):
     percentage = data.get("percentage")
 
     if percentage is None:
-        return jsonify({"success": False, "error": "percentage is required"}), 400
+        return json_error("percentage is required", 400)
 
     try:
         percentage = float(percentage)
     except (TypeError, ValueError):
-        return jsonify({"success": False, "error": "Invalid percentage value"}), 400
+        return json_error("Invalid percentage value", 400)
 
     if not math.isfinite(percentage) or percentage < 0 or percentage > 1:
-        return jsonify({"success": False, "error": "percentage must be between 0 and 1"}), 400
+        return json_error("percentage must be between 0 and 1", 400)
 
     container = get_container()
     result = _get_reading_service().set_progress(book.id, percentage, container)
@@ -538,20 +546,20 @@ def update_dates(book_ref):
                 try:
                     datetime.strptime(val, "%Y-%m-%d")
                 except ValueError:
-                    return jsonify({"success": False, "error": f"Invalid date format for {field}"}), 400
+                    return json_error(f"Invalid date format for {field}", 400)
             updates[field] = val or None
 
     if not updates:
-        return jsonify({"success": False, "error": "No date fields provided"}), 400
+        return json_error("No date fields provided", 400)
 
     effective_started = updates.get("started_at") or (book.started_at if "started_at" not in updates else None)
     effective_finished = updates.get("finished_at") or (book.finished_at if "finished_at" not in updates else None)
     if effective_started and effective_finished and effective_started > effective_finished:
-        return jsonify({"success": False, "error": "started_at cannot be after finished_at"}), 400
+        return json_error("started_at cannot be after finished_at", 400)
 
     book = database_service.update_book_reading_fields(book.id, **updates)
     if not book:
-        return jsonify({"success": False, "error": "Book not found"}), 404
+        return json_error("Book not found", 404)
 
     # Sync corresponding journal entry timestamps to match the edited dates
     event_map = {"started_at": "started", "finished_at": "finished"}
@@ -581,7 +589,7 @@ def sync_dates_to_hardcover(book_ref):
     synced, message = container.reading_date_service().push_dates_to_hardcover(book.id, force=True)
     if synced:
         return jsonify({"success": True, "message": message})
-    return jsonify({"success": False, "error": message}), 400
+    return json_error(message, 400)
 
 
 @reading_bp.route("/api/reading/book/<book_ref>/dates/pull-hardcover", methods=["POST"])
@@ -592,7 +600,7 @@ def pull_dates_from_hardcover(book_ref):
     success, message, dates = container.reading_date_service().pull_dates_from_hardcover(book.id)
     if success:
         return jsonify({"success": True, "message": message, "dates": dates})
-    return jsonify({"success": False, "error": message}), 400
+    return json_error(message, 400)
 
 
 @reading_bp.route("/api/reading/book/<book_ref>/journal", methods=["POST"])
@@ -604,7 +612,7 @@ def add_journal(book_ref):
     entry = (data.get("entry") or "").strip()
 
     if not entry:
-        return jsonify({"success": False, "error": "Entry text is required"}), 400
+        return json_error("Entry text is required", 400)
 
     # Get current progress for the journal entry
     book_states = database_service.get_states_for_book(book.id)
@@ -625,6 +633,7 @@ def add_journal(book_ref):
                 "id": journal.id,
                 "event": journal.event,
                 "entry": journal.entry,
+                "entry_html": render_markdown_html(journal.entry),
                 "percentage": journal.percentage,
                 "created_at": journal.created_at.isoformat() if journal.created_at else None,
             },
@@ -640,14 +649,14 @@ def delete_journal(journal_id):
     # Look up the journal before deleting so we can cascade for started/finished
     journal = database_service.get_reading_journal(journal_id)
     if not journal:
-        return jsonify({"success": False, "error": "Journal entry not found"}), 404
+        return json_error("Journal entry not found", 404)
 
     book_id = journal.book_id
     event = journal.event
 
     deleted = database_service.delete_reading_journal(journal_id)
     if not deleted:
-        return jsonify({"success": False, "error": "Journal entry not found"}), 404
+        return json_error("Journal entry not found", 404)
 
     # If this was the last started/finished journal, clear the corresponding book field
     cleared_field = None
@@ -669,13 +678,13 @@ def update_journal(journal_id):
 
     existing = database_service.get_reading_journal(journal_id)
     if not existing:
-        return jsonify({"success": False, "error": "Journal entry not found"}), 404
+        return json_error("Journal entry not found", 404)
 
     # Started/finished entries: only allow editing the date (created_at), not text
     if existing.event in ("started", "finished"):
         date_str = (data.get("created_at") or "").strip()
         if not date_str:
-            return jsonify({"success": False, "error": "created_at date is required for started/finished entries"}), 400
+            return json_error("created_at date is required for started/finished entries", 400)
         try:
             new_dt = datetime.strptime(date_str, "%Y-%m-%d")
         except ValueError:
@@ -691,6 +700,7 @@ def update_journal(journal_id):
                     "id": journal.id,
                     "event": journal.event,
                     "entry": journal.entry,
+                    "entry_html": render_markdown_html(journal.entry),
                     "percentage": journal.percentage,
                     "created_at": journal.created_at.isoformat() if journal.created_at else None,
                 },
@@ -698,9 +708,9 @@ def update_journal(journal_id):
         )
 
     if existing.event != "note":
-        return jsonify({"success": False, "error": "Only notes can be edited"}), 400
+        return json_error("Only notes can be edited", 400)
     if not entry:
-        return jsonify({"success": False, "error": "entry is required"}), 400
+        return json_error("entry is required", 400)
     journal = database_service.update_reading_journal(journal_id, entry=entry)
 
     return jsonify(
@@ -710,6 +720,7 @@ def update_journal(journal_id):
                 "id": journal.id,
                 "event": journal.event,
                 "entry": journal.entry,
+                "entry_html": render_markdown_html(journal.entry),
                 "percentage": journal.percentage,
                 "created_at": journal.created_at.isoformat() if journal.created_at else None,
             },
@@ -741,15 +752,15 @@ def set_goal(year):
     target = data.get("target_books")
 
     if target is None:
-        return jsonify({"success": False, "error": "target_books is required"}), 400
+        return json_error("target_books is required", 400)
 
     try:
         target = int(target)
     except (TypeError, ValueError):
-        return jsonify({"success": False, "error": "target_books must be an integer"}), 400
+        return json_error("target_books must be an integer", 400)
 
     if target < 1:
-        return jsonify({"success": False, "error": "target_books must be at least 1"}), 400
+        return json_error("target_books must be at least 1", 400)
 
     goal = database_service.save_reading_goal(year, target)
     return jsonify({"success": True, "year": goal.year, "target_books": goal.target_books})

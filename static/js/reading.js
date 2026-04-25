@@ -726,7 +726,7 @@ function initReadingDetail() {
             if (editJournalId) {
               const item = timeline.querySelector(`.r-tl-item[data-journal-id="${editJournalId}"]`);
               const text = item?.querySelector('.r-tl-text');
-              if (text) text.textContent = data.journal.entry;
+              if (text) renderJournalEntry(text, data.journal);
               if (item) item.dataset.entry = data.journal.entry;
             } else {
               const empty = timeline.querySelector('.r-journal-empty');
@@ -786,7 +786,7 @@ function initReadingDetail() {
           return;
         }
         if (eventType !== 'note') return;
-        const text = item?.querySelector('.r-tl-text')?.textContent || '';
+        const text = item?.dataset.entry || '';
         form.dataset.editJournalId = journalId;
         textarea.value = text;
         if (submitBtn) submitBtn.textContent = 'Save Note';
@@ -819,6 +819,16 @@ function initReadingDetail() {
     });
   }
 
+}
+
+
+function renderJournalEntry(container, journal) {
+  if (!container) return;
+  if (journal.entry_html) {
+    container.innerHTML = journal.entry_html;
+    return;
+  }
+  container.textContent = journal.entry || '';
 }
 
 
@@ -868,9 +878,9 @@ function buildJournalNode(j) {
   body.appendChild(head);
 
   if (j.entry) {
-    const text = document.createElement('p');
+    const text = document.createElement('div');
     text.className = 'r-tl-text';
-    text.textContent = j.entry;
+    renderJournalEntry(text, j);
     body.appendChild(text);
   }
 

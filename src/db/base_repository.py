@@ -1,3 +1,5 @@
+# pyright: reportMissingImports=false
+
 """Base repository with shared query helpers to reduce boilerplate."""
 
 import logging
@@ -30,13 +32,32 @@ class BaseRepository:
         finally:
             session.close()
 
-    def _get_one(self, model, *filters):
-        """Query a single row, expunge and return it (or None)."""
-        with self.get_session() as session:
-            obj = session.query(model).filter(*filters).first()
+    def _expunge_items(self, session, items):
+        for item in items:
+            session.expunge(item)
+        return items
+
+    def _query_and_expunge(self, session, query, first=False):
+        if first:
+            obj = query.first()
             if obj:
                 session.expunge(obj)
             return obj
+        items = query.all()
+        return self._expunge_items(session, items)
+
+    def _paginate(self, query, page=1, per_page=50):
+        safe_page = max(1, int(page))
+        safe_per_page = max(1, int(per_page))
+        total = query.count()
+        items = query.offset((safe_page - 1) * safe_per_page).limit(safe_per_page).all()
+        return items, total
+
+    def _get_one(self, model, *filters):
+        """Query a single row, expunge and return it (or None)."""
+        with self.get_session() as session:
+            query = session.query(model).filter(*filters)
+            return self._query_and_expunge(session, query, first=True)
 
     def _get_all(self, model, *filters, order_by=None):
         """Query multiple rows, expunge and return them."""
@@ -46,10 +67,7 @@ class BaseRepository:
                 query = query.filter(*filters)
             if order_by is not None:
                 query = query.order_by(order_by)
-            items = query.all()
-            for item in items:
-                session.expunge(item)
-            return items
+            return self._query_and_expunge(session, query)
 
     def _delete_one(self, model, *filters):
         """Find and delete a single row. Returns True if deleted."""

@@ -2037,6 +2037,14 @@ a.r-service-row-name:hover { text-decoration: underline; }
   white-space: pre-wrap;
 }
 
+.r-tl-text > :first-child {
+  margin-top: 0;
+}
+
+.r-tl-text > :last-child {
+  margin-bottom: 0;
+}
+
 .r-tl-menu {
   position: absolute;
   top: 12px;

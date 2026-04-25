@@ -97,9 +97,14 @@ class BookFusionRepository(BaseRepository):
 
     def link_bookfusion_highlights_by_book_id(self, bookfusion_book_id, book_id):
         """Link all highlights for a BookFusion book to a library book by book_id."""
+        normalized_id = bookfusion_book_id
+        if normalized_id.startswith("book-"):
+            normalized_id = normalized_id[5:]
         with self.get_session() as session:
             session.query(BookfusionHighlight).filter(
-                BookfusionHighlight.bookfusion_book_id == bookfusion_book_id
+                (BookfusionHighlight.bookfusion_book_id == bookfusion_book_id)
+                | (BookfusionHighlight.bookfusion_book_id == normalized_id)
+                | (BookfusionHighlight.bookfusion_book_id == f"book-{normalized_id}")
             ).update({BookfusionHighlight.matched_book_id: book_id}, synchronize_session=False)
 
     def get_bookfusion_highlights_for_book_by_book_id(self, book_id):
@@ -180,10 +185,22 @@ class BookFusionRepository(BaseRepository):
     def get_bookfusion_book_by_book_id(self, book_id):
         return self._get_one(BookfusionBook, BookfusionBook.matched_book_id == book_id)
 
+    def get_bookfusion_books_by_book_id(self, book_id):
+        """Get all BookFusion catalog entries linked to a specific PageKeeper book."""
+        with self.get_session() as session:
+            books = session.query(BookfusionBook).filter(BookfusionBook.matched_book_id == book_id).all()
+            for b in books:
+                session.expunge(b)
+            return books
+
+    def save_bookfusion_book(self, bookfusion_book):
+        """Save a single BookFusion catalog entry."""
+        return self._save_new(bookfusion_book)
+
     def unlink_bookfusion_by_book_id(self, book_id):
         with self.get_session() as session:
             session.query(BookfusionBook).filter(BookfusionBook.matched_book_id == book_id).update(
-                {BookfusionBook.matched_book_id: None, BookfusionBook.matched_abs_id: None}, synchronize_session=False
+                {BookfusionBook.matched_book_id: None}, synchronize_session=False
             )
             session.query(BookfusionHighlight).filter(BookfusionHighlight.matched_book_id == book_id).update(
                 {BookfusionHighlight.matched_book_id: None}, synchronize_session=False

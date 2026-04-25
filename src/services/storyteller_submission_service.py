@@ -179,8 +179,10 @@ class StorytellerSubmissionService:
         # Timeout: if submission has been non-terminal for too long, mark failed
         max_wait = int(os.environ.get("STORYTELLER_MAX_WAIT_HOURS", "12"))
         if submission.submitted_at:
-            # submitted_at is naive UTC (from datetime.utcnow() in the model)
-            elapsed = (datetime.utcnow() - submission.submitted_at).total_seconds() / 3600
+            submitted_at = submission.submitted_at
+            if submitted_at.tzinfo is None:
+                submitted_at = submitted_at.replace(tzinfo=UTC)
+            elapsed = (datetime.now(UTC) - submitted_at).total_seconds() / 3600
             if elapsed > max_wait:
                 logger.warning(
                     f"Storyteller submission timed out after {elapsed:.1f}h for abs_id={abs_id} "

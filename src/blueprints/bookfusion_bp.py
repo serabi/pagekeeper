@@ -1,76 +1,55 @@
 """BookFusion blueprint — upload books and sync highlights."""
 
-import difflib
 import logging
-from collections import defaultdict
+import re
 from datetime import datetime
 
-from flask import Blueprint, current_app, jsonify, render_template, request
+from flask import Blueprint, jsonify, request
 
-from src.blueprints.helpers import get_container, get_database_service, get_grimmory_client
-from src.db.models import Book, HardcoverDetails
-from src.utils.title_utils import clean_book_title, normalize_title
+from src.blueprints.helpers import get_container, get_database_service
+from src.db.models import BookfusionBook
 
 logger = logging.getLogger(__name__)
 
 bookfusion_bp = Blueprint("bookfusion", __name__)
-
-SUPPORTED_FORMATS = {".epub", ".mobi", ".azw3", ".pdf", ".azw", ".fb2", ".cbz", ".cbr"}
-
-
-def _is_supported(filename: str) -> bool:
-    return any(filename.lower().endswith(ext) for ext in SUPPORTED_FORMATS)
+BOOKFUSION_ENTRY_SPLIT = "\n— "
 
 
-@bookfusion_bp.route("/bookfusion")
-def bookfusion_page():
-    return render_template("bookfusion.html")
+def _normalize_bookfusion_chapter(chapter):
+    chapter = re.sub(r"^#{1,6}\s*", "", (chapter or "").strip())
+    return re.sub(r"^[*_]+|[*_]+$", "", chapter).strip()
 
 
-@bookfusion_bp.route("/api/bookfusion/grimmory-books")
-def grimmory_books():
-    """List Grimmory books for upload selection, filtered by supported formats."""
-    q = request.args.get("q", "").strip()
-    results = []
+def _bookfusion_entry_key(entry):
+    if not entry:
+        return ("", "")
 
-    client = get_grimmory_client()
-    if client.is_configured():
-        try:
-            label = current_app.config.get("GRIMMORY_LABEL", "Grimmory")
-            books = client.search_books(q) if q else client.get_all_books()
-            for b in books or []:
-                fname = b.get("fileName", "")
-                if not _is_supported(fname):
-                    continue
-                results.append(
-                    {
-                        "id": b.get("id"),
-                        "title": b.get("title", ""),
-                        "authors": b.get("authors", ""),
-                        "fileName": fname,
-                        "source": label,
-                    }
-                )
-        except Exception as e:
-            logger.warning(f"Grimmory search failed: {e}")
+    text = entry.strip()
+    if text.startswith("\U0001f4d6"):
+        text = text[1:].lstrip()
+    if text.startswith("\U0001f4d6"):
+        text = text[1:].lstrip()
 
-    return jsonify(results)
+    quote, chapter = text, ""
+    if BOOKFUSION_ENTRY_SPLIT in text:
+        quote, chapter = text.split(BOOKFUSION_ENTRY_SPLIT, 1)
+    return (quote.strip(), _normalize_bookfusion_chapter(chapter))
+
+
+def _bookfusion_highlight_key(quote, chapter):
+    return ((quote or "").strip(), _normalize_bookfusion_chapter(chapter))
 
 
 @bookfusion_bp.route("/api/bookfusion/upload", methods=["POST"])
 def upload_book():
-    """Upload a book from Grimmory to BookFusion."""
+    """Upload a book from PageKeeper to BookFusion."""
     data = request.get_json()
     if not data:
         return jsonify({"error": "No data provided"}), 400
 
-    book_id = data.get("book_id")
-    title = data.get("title") or ""
-    authors = data.get("authors") or ""
-    filename = data.get("fileName", "")
-
-    if not book_id:
-        return jsonify({"error": "book_id required"}), 400
+    abs_id = data.get("abs_id")
+    if not abs_id:
+        return jsonify({"error": "abs_id required"}), 400
 
     container = get_container()
     bf_client = container.bookfusion_client()
@@ -78,26 +57,71 @@ def upload_book():
     if not bf_client.upload_api_key:
         return jsonify({"error": "BookFusion upload API key not configured"}), 400
 
-    bl_client = get_grimmory_client()
-    if not bl_client.is_configured():
-        return jsonify({"error": "Grimmory not configured"}), 400
+    db_service = get_database_service()
+    book = db_service.get_book_by_ref(abs_id)
+    if not book:
+        return jsonify({"error": "Book not found"}), 404
 
-    # Download from Grimmory
-    file_bytes = bl_client.download_book(book_id)
-    if not file_bytes:
-        return jsonify({"error": "Failed to download book from Grimmory"}), 500
+    if not book.ebook_filename and not book.original_ebook_filename:
+        return jsonify({"error": "No ebook file associated with this book"}), 400
 
-    # Upload to BookFusion
-    logger.info(f"BookFusion upload request: title='{title}', authors='{authors}', filename='{filename}'")
-    result = bf_client.upload_book(filename, file_bytes, title, authors)
-    if result:
-        return jsonify({"success": True, "result": result})
-    return jsonify({"error": "Upload to BookFusion failed"}), 500
+    ebook_filename = book.original_ebook_filename or book.ebook_filename
+
+    from src.utils.epub_resolver import get_local_epub
+
+    books_dir = container.config.get("BOOKS_DIR") or "/books"
+    epub_cache_dir = container.config.get("EPUB_CACHE_DIR") or "/tmp/epub_cache"
+    grimmory_client = container.grimmory_client() if hasattr(container, "grimmory_client") else None
+
+    file_path = get_local_epub(ebook_filename, books_dir, epub_cache_dir, grimmory_client)
+    if not file_path:
+        return jsonify({"error": "Could not locate ebook file"}), 500
+
+    try:
+        with open(file_path, "rb") as f:
+            file_bytes = f.read()
+    except Exception as e:
+        logger.error("Failed to read ebook file: %s", e)
+        return jsonify({"error": "Failed to read ebook file"}), 500
+
+    title = book.title or ""
+    authors = book.author or ""
+
+    logger.info(
+        "BookFusion upload request: title='%s', authors='%s', filename='%s'",
+        title,
+        authors,
+        ebook_filename,
+    )
+    result = bf_client.upload_book(ebook_filename, file_bytes, title, authors)
+    if not result:
+        return jsonify({"error": "Upload to BookFusion failed"}), 500
+
+    bf_book_id = result.get("id")
+    already_linked = False
+    if bf_book_id:
+        existing = db_service.get_bookfusion_book_by_book_id(book.id)
+        if existing:
+            already_linked = True
+            logger.info(f"BookFusion book already linked: bf_id={bf_book_id}, book_id={book.id}")
+        else:
+            db_service.save_bookfusion_book(
+                BookfusionBook(
+                    bookfusion_id=bf_book_id,
+                    title=title,
+                    authors=authors,
+                    filename=ebook_filename,
+                    matched_book_id=book.id,
+                )
+            )
+            logger.info(f"BookFusion book linked: bf_id={bf_book_id}, book_id={book.id}")
+
+    return jsonify({"success": True, "already_linked": already_linked, "result": result})
 
 
 @bookfusion_bp.route("/api/bookfusion/sync-highlights", methods=["POST"])
 def sync_highlights():
-    """Trigger highlight sync from BookFusion."""
+    """Trigger highlight sync from BookFusion for a specific book or all books."""
     container = get_container()
     bf_client = container.bookfusion_client()
     db_service = get_database_service()
@@ -106,18 +130,17 @@ def sync_highlights():
         return jsonify({"error": "BookFusion highlights API key not configured"}), 400
 
     data = request.get_json(silent=True) or {}
+
     if data.get("full_resync"):
         db_service.set_bookfusion_sync_cursor(None)
 
     try:
         result = bf_client.sync_all_highlights(db_service)
-        matched = _auto_match_highlights(db_service)
         return jsonify(
             {
                 "success": True,
                 "new_highlights": result["new_highlights"],
                 "books_saved": result["books_saved"],
-                "auto_matched": matched,
                 "new_ids": result.get("new_ids", []),
             }
         )
@@ -126,231 +149,53 @@ def sync_highlights():
         return jsonify({"error": "BookFusion highlight sync failed"}), 500
 
 
-def _auto_match_highlights(db_service) -> int:
-    """Auto-match unlinked BookFusion highlights to PageKeeper books by title similarity."""
-    unmatched = db_service.get_unmatched_bookfusion_highlights()
-    if not unmatched:
-        return 0
-
-    books = db_service.get_all_books()
-    if not books:
-        return 0
-
-    # Build normalized title → book_id list map (detect ambiguous duplicates)
-    book_map: dict[str, list[int]] = defaultdict(list)
-    for b in books:
-        if b.title:
-            norm = normalize_title(b.title)
-            book_map[norm].append(b.id)
-
-    # Group unmatched by book_title
-    title_groups: dict[str, list] = {}
-    for hl in unmatched:
-        title = clean_book_title(hl.book_title or "")
-        title_groups.setdefault(title, []).append(hl)
-
-    matched_count = 0
-    norm_keys = list(book_map.keys())
-
-    for bf_title, highlights in title_groups.items():
-        norm_bf = normalize_title(bf_title)
-        matched_book_id = None
-
-        # Exact match (only if unambiguous)
-        if norm_bf in book_map and len(book_map[norm_bf]) == 1:
-            matched_book_id = book_map[norm_bf][0]
-        else:
-            # Fuzzy match (only if unambiguous)
-            candidates = []
-            for norm_pk in norm_keys:
-                if len(book_map[norm_pk]) != 1:
-                    continue
-                ratio = difflib.SequenceMatcher(None, norm_bf, norm_pk).ratio()
-                if ratio > 0.85:
-                    candidates.append((ratio, book_map[norm_pk][0]))
-            if candidates:
-                candidates.sort(key=lambda c: c[0], reverse=True)
-                if len(candidates) == 1 or (candidates[0][0] - candidates[1][0]) >= 0.05:
-                    matched_book_id = candidates[0][1]
-
-        if matched_book_id:
-            bf_ids = {hl.bookfusion_book_id for hl in highlights if hl.bookfusion_book_id}
-            for bf_id in bf_ids:
-                db_service.link_bookfusion_highlights_by_book_id(bf_id, matched_book_id)
-            matched_count += len(highlights)
-
-    return matched_count
-
-
-def _estimate_reading_dates(db_service, abs_id: str, bookfusion_ids: list[str], title: str) -> dict:
-    """Attempt to set reading dates on a newly-linked book. Returns date info for the response."""
-    book = db_service.get_book_by_ref(abs_id)
-    if not book or book.started_at or book.finished_at:
-        return {}
-
-    container = get_container()
-    started_at = None
-    finished_at = None
-    source = None
-    estimated = False
-
-    # Priority 1: Hardcover (actual dates)
-    try:
-        hc_client = container.hardcover_client()
-        if hc_client.is_configured():
-            hc_details = db_service.get_hardcover_details(book.id)
-            user_book = None
-            if hc_details and hc_details.hardcover_book_id:
-                try:
-                    user_book = hc_client.find_user_book(int(hc_details.hardcover_book_id))
-                except (ValueError, TypeError):
-                    logger.debug("Invalid hardcover_book_id: %s", hc_details.hardcover_book_id)
-                    user_book = None
-            elif title:
-                search_result = hc_client.search_by_title_author(title)
-                if search_result:
-                    # Persist HardcoverDetails so the cover URL and link survive
-                    if not hc_details:
-                        new_details = HardcoverDetails(
-                            abs_id=abs_id,
-                            book_id=book.id,
-                            hardcover_book_id=str(search_result["book_id"]),
-                            hardcover_slug=search_result.get("slug"),
-                            hardcover_cover_url=search_result.get("cached_image"),
-                            matched_by="title",
-                        )
-                        db_service.save_hardcover_details(new_details)
-                    user_book = hc_client.find_user_book(search_result["book_id"])
-            if user_book:
-                reads = user_book.get("user_book_reads", [])
-                if reads:
-                    read = reads[0]
-                    if read.get("started_at"):
-                        started_at = read["started_at"]
-                    if read.get("finished_at"):
-                        finished_at = read["finished_at"]
-                    if started_at or finished_at:
-                        source = "hardcover"
-    except Exception as e:
-        logger.debug(f"Hardcover date lookup failed for '{abs_id}': {e}")
-
-    # Priority 2: Highlight date range (estimated)
-    if not source and bookfusion_ids:
-        date_range = db_service.get_bookfusion_highlight_date_range(bookfusion_ids)
-        if date_range:
-            earliest, latest, count = date_range
-            started_at = earliest.strftime("%Y-%m-%d") if earliest else None
-            if count > 1 and latest:
-                finished_at = latest.strftime("%Y-%m-%d")
-            source = "highlights"
-            estimated = True
-
-    if not source:
-        return {}
-
-    # Apply dates and status
-    updates = {}
-    if started_at:
-        updates["started_at"] = started_at
-    if finished_at:
-        updates["finished_at"] = finished_at
-    if updates:
-        updated_book = db_service.update_book_reading_fields(book.id, **updates)
-        if updated_book:
-            book = updated_book
-
-    # Update status via ReadingService for proper journal entries + HC sync
-    if finished_at or started_at:
-        from src.services.reading_service import ReadingService
-
-        reading_svc = ReadingService(db_service)
-        target_status = "completed" if finished_at else "active"
-        if book.status != target_status:
-            reading_svc.update_status(abs_id, target_status, container)
-
-    return {
-        "dates_set": True,
-        "dates_source": source,
-        "dates_estimated": estimated,
-        "started_at": started_at,
-        "finished_at": finished_at,
-    }
-
-
-@bookfusion_bp.route("/api/bookfusion/highlights")
-def get_highlights():
-    """Return cached highlights from DB, grouped by book."""
-    db_service = get_database_service()
-    highlights = db_service.get_bookfusion_highlights()
-
-    grouped = {}
-    for hl in highlights:
-        key = (hl.bookfusion_book_id, hl.matched_abs_id, clean_book_title(hl.book_title or "Unknown Book"))
-        if key not in grouped:
-            grouped[key] = {
-                "highlights": [],
-                "matched_abs_id": hl.matched_abs_id,
-                "bookfusion_book_id": hl.bookfusion_book_id,
-                "display_title": clean_book_title(hl.book_title or "Unknown Book"),
-            }
-        date_str = hl.highlighted_at.strftime("%Y-%m-%d %H:%M:%S") if hl.highlighted_at else None
-        grouped[key]["highlights"].append(
-            {
-                "id": hl.id,
-                "highlight_id": hl.highlight_id,
-                "quote": hl.quote_text or hl.content,
-                "date": date_str,
-                "chapter_heading": hl.chapter_heading,
-                "matched_abs_id": hl.matched_abs_id,
-            }
-        )
-
-    # Sort highlights within each book by date
-    for key in grouped:
-        grouped[key]["highlights"].sort(key=lambda h: h["date"] or "", reverse=True)
-
-    # Re-key by display title for the frontend (API contract uses title as key)
-    display = {}
-    for _key, group in grouped.items():
-        title = group.pop("display_title")
-        # Disambiguate if two different books share the same cleaned title
-        display_key = title
-        if display_key in display:
-            display_key = f"{title} ({group['bookfusion_book_id']})"
-        display[display_key] = group
-
-    cursor = db_service.get_bookfusion_sync_cursor()
-
-    # Include list of PageKeeper books for journal matching
-    books = db_service.get_all_books()
-    book_list = [{"abs_id": b.abs_id, "title": b.title} for b in books if b.title]
-
-    return jsonify({"highlights": display, "has_synced": cursor is not None, "books": book_list})
-
-
-@bookfusion_bp.route("/api/bookfusion/link-highlight", methods=["POST"])
-def link_highlight():
-    """Manually link or unlink a BookFusion book's highlights to a PageKeeper book."""
+@bookfusion_bp.route("/api/bookfusion/sync-book", methods=["POST"])
+def sync_book_highlights():
+    """Sync highlights for a specific book from BookFusion."""
     data = request.get_json()
     if not data:
         return jsonify({"error": "No data provided"}), 400
 
-    bookfusion_book_id = data.get("bookfusion_book_id")
-    abs_id = data.get("abs_id")  # None or empty to unlink
-
-    if not bookfusion_book_id:
-        return jsonify({"error": "bookfusion_book_id required"}), 400
+    abs_id = data.get("abs_id")
+    if not abs_id:
+        return jsonify({"error": "abs_id required"}), 400
 
     db_service = get_database_service()
-    if abs_id:
-        book = db_service.get_book_by_ref(abs_id)
-        if not book:
-            return jsonify({"error": "Book not found"}), 404
-        book_id = book.id
-    else:
-        book_id = None
-    db_service.link_bookfusion_highlights_by_book_id(bookfusion_book_id, book_id)
-    return jsonify({"success": True})
+    book = db_service.get_book_by_ref(abs_id)
+    if not book:
+        return jsonify({"error": "Book not found"}), 404
+
+    container = get_container()
+    bf_client = container.bookfusion_client()
+
+    if not bf_client.highlights_api_key:
+        return jsonify({"error": "BookFusion highlights API key not configured"}), 400
+
+    bf_books = db_service.get_bookfusion_books_by_book_id(book.id)
+    if not bf_books:
+        return jsonify({"error": "BookFusion link not found for this book"}), 404
+
+    bf_book_ids = [b.bookfusion_id for b in bf_books]
+
+    try:
+        result = bf_client.sync_all_highlights(db_service)
+
+        linked_count = 0
+        for bf_id in bf_book_ids:
+            db_service.link_bookfusion_highlights_by_book_id(bf_id, book.id)
+            linked_count += 1
+
+        return jsonify(
+            {
+                "success": True,
+                "new_highlights": result["new_highlights"],
+                "books_saved": result["books_saved"],
+                "linked_books": linked_count,
+            }
+        )
+    except Exception:
+        logger.exception("BookFusion highlight sync failed for book")
+        return jsonify({"error": "BookFusion highlight sync failed"}), 500
 
 
 @bookfusion_bp.route("/api/bookfusion/save-journal", methods=["POST"])
@@ -366,11 +211,13 @@ def save_highlight_to_journal():
     if not abs_id:
         return jsonify({"error": "abs_id required"}), 400
 
-    # When no highlights provided in the request, fetch them server-side
+    db_service = get_database_service()
+    book = db_service.get_book_by_ref(abs_id)
+    if not book:
+        return jsonify({"error": "Book not found"}), 404
+
     if not highlights:
-        db_service = get_database_service()
-        book = db_service.get_book_by_ref(abs_id)
-        bf_highlights = db_service.get_bookfusion_highlights_for_book_by_book_id(book.id) if book else []
+        bf_highlights = db_service.get_bookfusion_highlights_for_book_by_book_id(book.id)
         if not bf_highlights:
             return jsonify({"error": "No highlights found for this book"}), 400
         highlights = []
@@ -383,22 +230,33 @@ def save_highlight_to_journal():
                 }
             )
 
-    db_service = get_database_service()
-    book = db_service.get_book_by_ref(abs_id)
-    if not book:
-        return jsonify({"error": "Book not found"}), 404
-
-    cleanup_stats = db_service.cleanup_bookfusion_import_notes(abs_id)
+    db_service.cleanup_bookfusion_import_notes(book.id)
+    existing_entries = db_service.get_reading_journal_entries_for_book(book.id, "highlight")
+    existing_keys = set()
+    for entry in existing_entries:
+        if entry.entry:
+            existing_keys.add(_bookfusion_entry_key(entry.entry))
     saved = 0
+    skipped = 0
+
     for hl in highlights:
         quote = hl.get("quote", "").strip()
-        chapter = hl.get("chapter", "")
+        chapter = hl.get("chapter", "").strip()
         highlighted_at_raw = (hl.get("highlighted_at") or "").strip()
+
         if not quote:
             continue
-        entry = quote
+
+        highlight_key = _bookfusion_highlight_key(quote, chapter)
+        if highlight_key in existing_keys:
+            skipped += 1
+            continue
+
+        entry_text = quote
         if chapter:
-            entry += f"\n— {chapter}"
+            chapter_clean = chapter.lstrip("#").strip()
+            entry_text += f"\n— *{chapter_clean}*"
+
         created_at = None
         if highlighted_at_raw:
             for fmt in ("%Y-%m-%d %H:%M:%S", "%b %d, %Y"):
@@ -409,221 +267,14 @@ def save_highlight_to_journal():
                     continue
             if not created_at:
                 logger.debug("Could not parse BookFusion highlight timestamp '%s'", highlighted_at_raw)
+
         try:
-            db_service.add_reading_journal(book.id, "highlight", entry=entry, created_at=created_at, abs_id=book.abs_id)
+            db_service.add_reading_journal(
+                book.id, "highlight", entry=entry_text, created_at=created_at, abs_id=book.abs_id
+            )
+            existing_keys.add(highlight_key)
             saved += 1
         except Exception as e:
             logger.warning(f"Failed to save journal entry: {e}")
 
-    return jsonify({"success": True, "saved": saved, "cleanup": cleanup_stats})
-
-
-@bookfusion_bp.route("/api/bookfusion/library")
-def get_library():
-    """Return BookFusion library catalog for the Library tab, merging duplicate titles."""
-    db_service = get_database_service()
-    bf_books = db_service.get_bookfusion_books()
-
-    # Check which books are already on the dashboard (by bf- prefix or highlight match)
-    all_books = db_service.get_all_books()
-    dashboard_ids = {b.abs_id for b in all_books}
-    book_list = [{"abs_id": b.abs_id, "title": b.title} for b in all_books if b.title]
-
-    # Group by normalized title to merge format duplicates
-    groups = defaultdict(list)
-    for b in bf_books:
-        norm = normalize_title(b.title or b.filename or "")
-        groups[norm].append(b)
-
-    result = []
-    for _norm_title, group in groups.items():
-        # Pick the entry with the most highlights as the "primary" for metadata
-        group.sort(key=lambda b: b.highlight_count or 0, reverse=True)
-        primary = group[0]
-
-        title = clean_book_title(primary.title or primary.filename or "")
-        authors = ""
-        series = ""
-        tags = ""
-        for b in group:
-            if not authors and b.authors:
-                authors = b.authors
-            if not series and b.series:
-                series = b.series
-            if not tags and b.tags:
-                tags = b.tags
-
-        filenames = list(dict.fromkeys(b.filename for b in group if b.filename))
-        bookfusion_ids = [b.bookfusion_id for b in group]
-        highlight_count = sum(b.highlight_count or 0 for b in group)
-
-        # Check dashboard match across all entries in the group
-        matched_abs_id = None
-        for b in group:
-            bf_abs_id = f"bf-{b.bookfusion_id}"
-            if b.matched_abs_id and b.matched_abs_id in dashboard_ids:
-                matched_abs_id = b.matched_abs_id
-                break
-            elif bf_abs_id in dashboard_ids:
-                matched_abs_id = bf_abs_id
-                break
-
-        # A group is hidden if any entry in the group is hidden
-        is_hidden = any(b.hidden for b in group)
-
-        result.append(
-            {
-                "bookfusion_id": bookfusion_ids[0],
-                "bookfusion_ids": bookfusion_ids,
-                "title": title,
-                "authors": authors,
-                "filenames": filenames,
-                "filename": primary.filename or "",
-                "series": series,
-                "tags": tags,
-                "highlight_count": highlight_count,
-                "on_dashboard": matched_abs_id is not None,
-                "abs_id": matched_abs_id,
-                "hidden": is_hidden,
-            }
-        )
-
-    return jsonify({"books": result, "dashboard_books": book_list})
-
-
-@bookfusion_bp.route("/api/bookfusion/add-to-dashboard", methods=["POST"])
-def add_to_dashboard():
-    """Add a BookFusion book to the reading dashboard."""
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "No data provided"}), 400
-
-    bookfusion_ids = data.get("bookfusion_ids") or []
-    if not bookfusion_ids:
-        single = data.get("bookfusion_id")
-        if single:
-            bookfusion_ids = [single]
-    if not bookfusion_ids:
-        return jsonify({"error": "bookfusion_id required"}), 400
-
-    primary_id = bookfusion_ids[0]
-    db_service = get_database_service()
-    bf_book = db_service.get_bookfusion_book(primary_id)
-    if not bf_book:
-        return jsonify({"error": "BookFusion book not found in catalog"}), 404
-
-    abs_id = f"bf-{primary_id}"
-
-    # Check if already on dashboard
-    existing = db_service.get_book_by_ref(abs_id)
-    if existing:
-        return jsonify({"success": True, "abs_id": abs_id, "already_existed": True})
-
-    # Create dashboard book entry
-    title = clean_book_title(bf_book.title or bf_book.filename or "Unknown")
-    initial_status = data.get("status", "not_started")
-    if initial_status not in ("not_started", "active"):
-        initial_status = "not_started"
-    book = Book(
-        abs_id=abs_id,
-        title=title,
-        status=initial_status,
-        sync_mode="ebook_only",
-    )
-    db_service.save_book(book, is_new=True)
-
-    # Re-fetch book to get the auto-assigned ID
-    saved_book = db_service.get_book_by_ref(abs_id)
-    saved_book_id = saved_book.id if saved_book else None
-
-    # Auto-link ALL catalog books + highlights in the group
-    for bid in bookfusion_ids:
-        db_service.set_bookfusion_book_match_by_book_id(bid, saved_book_id)
-        db_service.link_bookfusion_highlights_by_book_id(bid, saved_book_id)
-
-    # Auto-populate reading dates
-    date_info = _estimate_reading_dates(db_service, abs_id, bookfusion_ids, title)
-
-    resp = {"success": True, "abs_id": abs_id}
-    resp.update(date_info)
-    return jsonify(resp)
-
-
-@bookfusion_bp.route("/api/bookfusion/match-to-book", methods=["POST"])
-def match_to_book():
-    """Match a BookFusion catalog book to an existing dashboard book (link highlights)."""
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "No data provided"}), 400
-
-    bookfusion_ids = data.get("bookfusion_ids") or []
-    if not bookfusion_ids:
-        single = data.get("bookfusion_id")
-        if single:
-            bookfusion_ids = [single]
-    abs_id = data.get("abs_id")  # None/empty to unlink
-
-    if not bookfusion_ids:
-        return jsonify({"error": "bookfusion_id required"}), 400
-
-    db_service = get_database_service()
-
-    book = db_service.get_book_by_ref(abs_id) if abs_id else None
-    if abs_id and not book:
-        return jsonify({"error": "Book not found"}), 404
-
-    book_id = book.id if book else None
-
-    # Link ALL catalog books + highlights in the group
-    for bid in bookfusion_ids:
-        db_service.set_bookfusion_book_match_by_book_id(bid, book_id)
-        db_service.link_bookfusion_highlights_by_book_id(bid, book_id)
-
-    resp = {"success": True, "abs_id": abs_id}
-
-    # Auto-populate reading dates if linking (not unlinking)
-    if abs_id:
-        title = book.title if book else ""
-        date_info = _estimate_reading_dates(db_service, abs_id, bookfusion_ids, title)
-        resp.update(date_info)
-
-    return jsonify(resp)
-
-
-@bookfusion_bp.route("/api/bookfusion/hide", methods=["POST"])
-def hide_book():
-    """Hide or unhide a BookFusion library book."""
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "No data provided"}), 400
-
-    bookfusion_ids = data.get("bookfusion_ids") or []
-    if not bookfusion_ids:
-        single = data.get("bookfusion_id")
-        if single:
-            bookfusion_ids = [single]
-    if not bookfusion_ids:
-        return jsonify({"error": "bookfusion_id required"}), 400
-
-    hidden = data.get("hidden", True)
-    db_service = get_database_service()
-    db_service.set_bookfusion_books_hidden(bookfusion_ids, hidden)
-    return jsonify({"success": True})
-
-
-@bookfusion_bp.route("/api/bookfusion/unlink", methods=["POST"])
-def unlink_book():
-    """Unlink a BookFusion book from a dashboard book."""
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "No data provided"}), 400
-
-    abs_id = data.get("abs_id")
-    if not abs_id:
-        return jsonify({"error": "abs_id required"}), 400
-
-    db_service = get_database_service()
-    book = db_service.get_book_by_ref(abs_id)
-    if book:
-        db_service.unlink_bookfusion_by_book_id(book.id)
-    return jsonify({"success": True})
+    return jsonify({"success": True, "saved": saved, "skipped": skipped})

@@ -42,8 +42,12 @@
             <div class="r-hero-content">
                 <div class="r-hero-cover {% if book.book_type == 'ebook-only' %}r-hero-cover--ebook{% endif %}">
                     {% if book.cover_url %}
-                    <img src="{{ book.cover_url }}" alt=""
-                        onerror="{% if book.fallback_cover_url and book.fallback_cover_url != book.cover_url %}this.onerror={% if book.kosync_doc_id %}function(){this.onerror=null; this.src='/covers/{{ book.kosync_doc_id }}.jpg';}{% else %}null{% endif %}; this.src='{{ book.fallback_cover_url|e }}';{% elif book.kosync_doc_id %}this.onerror=null; this.src='/covers/{{ book.kosync_doc_id }}.jpg';{% else %}this.style.display='none'; this.nextElementSibling.classList.remove('hidden');{% endif %}">
+                    <img
+                        id="reading-cover-image"
+                        src="{{ book.cover_url }}"
+                        alt=""
+                        {% if book.fallback_cover_url and book.fallback_cover_url != book.cover_url %}data-fallback-cover-url="{{ book.fallback_cover_url }}"{% endif %}
+                        {% if book.kosync_doc_id %}data-kosync-cover-url="/covers/{{ book.kosync_doc_id }}.jpg"{% endif %}>
                     <div class="r-cover-placeholder hidden">
                         {% if book.placeholder_logo %}<img src="{{ book.placeholder_logo }}" alt="" class="book-cover-placeholder-logo">{% endif %}
                     </div>
@@ -286,15 +290,18 @@
                     {% if integrations.bookfusion %}
                     <div class="r-service-row">
                         <img src="/static/bookfusion-logo.svg" alt="BF" class="r-service-row-icon">
-                        <a href="/bookfusion" class="r-service-row-name">BookFusion</a>
+                        <span class="r-service-row-name">BookFusion</span>
                         <span class="r-service-row-value">Linked</span>
+                        <button type="button" class="r-service-row-action" id="bf-refresh-btn"
+                                data-abs-id="{{ book.abs_id }}">Refresh</button>
                     </div>
-                    {% else %}
-                    <a href="/bookfusion?tab=library&q={{ book.title|urlencode }}" class="r-service-row r-service-row--unlinked">
+                    {% elif bookfusion_upload_eligible %}
+                    <div class="r-service-row r-service-row--unlinked">
                         <img src="/static/bookfusion-logo.svg" alt="BF" class="r-service-row-icon">
                         <span class="r-service-row-name">BookFusion</span>
-                        <span class="r-service-row-link-action">Link</span>
-                    </a>
+                        <button type="button" class="r-service-row-link-action" id="bf-upload-btn"
+                                data-abs-id="{{ book.abs_id }}">Upload</button>
+                    </div>
                     {% endif %}
                     {% endif %}
                 </div>
@@ -501,7 +508,7 @@
                                     {% endif %}
                                 </div>
                                 {% if journal.entry %}
-                                <p class="r-tl-text">{{ journal.entry }}</p>
+                                <div class="r-tl-text">{{ journal.entry|markdown }}</div>
                                 {% endif %}
                                 {% if journal.event in ['note', 'highlight', 'progress', 'resumed', 'paused', 'dnf'] or (journal.event in ['started', 'finished'] and journal.id) %}
                                 <div class="r-tl-menu" data-journal-id="{{ journal.id }}" data-journal-event="{{ journal.event }}">
@@ -536,8 +543,12 @@
                     <h3 class="r-section-title">BookFusion Highlights</h3>
                     <p class="r-section-description">{{ bf_highlights|length }} highlight{{ 's' if bf_highlights|length != 1 }}</p>
                 </div>
-                <button class="btn btn-primary btn-sm" id="bulk-import-highlights" type="button"
-                        data-book-id="{{ book.id }}">Import All to Journal</button>
+                <div class="r-highlights-actions">
+                    <button class="btn btn-secondary btn-sm" id="bf-refresh-highlights-btn" type="button"
+                            data-abs-id="{{ book.abs_id }}">Refresh</button>
+                    <button class="btn btn-primary btn-sm" id="bulk-import-highlights" type="button"
+                            data-book-id="{{ book.id }}">Import to Journal</button>
+                </div>
             </div>
             <div class="r-highlights-body">
                 {% set current_chapter = namespace(value='') %}
@@ -798,6 +809,110 @@
         var _rdTitle = {{ book.title | tojson }};
         var _rdPendingJournalId = null;
 
+        // BookFusion upload button handler
+        (function() {
+            var uploadBtn = document.getElementById('bf-upload-btn');
+            if (uploadBtn) {
+                uploadBtn.addEventListener('click', function() {
+                    var absId = this.dataset.absId;
+                    uploadBtn.disabled = true;
+                    uploadBtn.textContent = 'Uploading...';
+                    fetch('/api/bookfusion/upload', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ abs_id: absId })
+                    })
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                        if (data.success) {
+                            if (data.already_linked) {
+                                uploadBtn.textContent = 'Already linked';
+                            } else {
+                                uploadBtn.textContent = 'Uploaded';
+                            }
+                            uploadBtn.classList.add('done');
+                            setTimeout(function() { window.location.reload(); }, 1500);
+                        } else {
+                            uploadBtn.textContent = data.error || 'Failed';
+                            uploadBtn.classList.add('error');
+                            uploadBtn.disabled = false;
+                        }
+                    })
+                    .catch(function() {
+                        uploadBtn.textContent = 'Error';
+                        uploadBtn.classList.add('error');
+                        uploadBtn.disabled = false;
+                    });
+                });
+            }
+        })();
+
+        // BookFusion refresh button handler (service row)
+        (function() {
+            var refreshBtn = document.getElementById('bf-refresh-btn');
+            if (refreshBtn) {
+                refreshBtn.addEventListener('click', function() {
+                    var absId = this.dataset.absId;
+                    refreshBtn.disabled = true;
+                    refreshBtn.textContent = 'Syncing...';
+                    fetch('/api/bookfusion/sync-book', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ abs_id: absId })
+                    })
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                        if (data.success) {
+                            refreshBtn.textContent = 'Synced';
+                            setTimeout(function() { window.location.reload(); }, 1000);
+                        } else {
+                            refreshBtn.textContent = data.error || 'Failed';
+                            refreshBtn.classList.add('error');
+                            refreshBtn.disabled = false;
+                        }
+                    })
+                    .catch(function() {
+                        refreshBtn.textContent = 'Error';
+                        refreshBtn.classList.add('error');
+                        refreshBtn.disabled = false;
+                    });
+                });
+            }
+        })();
+
+        // BookFusion refresh highlights button handler (highlights tab)
+        (function() {
+            var refreshHighlightsBtn = document.getElementById('bf-refresh-highlights-btn');
+            if (refreshHighlightsBtn) {
+                refreshHighlightsBtn.addEventListener('click', function() {
+                    var absId = this.dataset.absId;
+                    refreshHighlightsBtn.disabled = true;
+                    refreshHighlightsBtn.textContent = 'Syncing...';
+                    fetch('/api/bookfusion/sync-book', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ abs_id: absId })
+                    })
+                    .then(function(r) { return r.json(); })
+                    .then(function(data) {
+                        if (data.success) {
+                            refreshHighlightsBtn.textContent = 'Synced';
+                            setTimeout(function() { window.location.reload(); }, 1000);
+                        } else {
+                            refreshHighlightsBtn.textContent = data.error || 'Failed';
+                            refreshHighlightsBtn.classList.add('error');
+                            refreshHighlightsBtn.disabled = false;
+                        }
+                    })
+                    .catch(function() {
+                        refreshHighlightsBtn.textContent = 'Error';
+                        refreshHighlightsBtn.classList.add('error');
+                        refreshHighlightsBtn.disabled = false;
+                    });
+                });
+            }
+        })();
+
         {% if active_tab != 'overview' %}
         switchTab({{ active_tab | tojson }});
         {% endif %}
@@ -811,10 +926,41 @@
             }
         })();
 
+        (function() {
+            var coverImage = document.getElementById('reading-cover-image');
+            if (!coverImage) return;
+
+            function showPlaceholder() {
+                coverImage.style.display = 'none';
+                if (coverImage.nextElementSibling) {
+                    coverImage.nextElementSibling.classList.remove('hidden');
+                }
+            }
+
+            coverImage.addEventListener('error', function() {
+                var fallbackCoverUrl = coverImage.dataset.fallbackCoverUrl;
+                var kosyncCoverUrl = coverImage.dataset.kosyncCoverUrl;
+
+                if (fallbackCoverUrl && coverImage.src !== fallbackCoverUrl) {
+                    coverImage.src = fallbackCoverUrl;
+                    delete coverImage.dataset.fallbackCoverUrl;
+                    return;
+                }
+
+                if (kosyncCoverUrl && coverImage.src !== window.location.origin + kosyncCoverUrl) {
+                    coverImage.src = kosyncCoverUrl;
+                    delete coverImage.dataset.kosyncCoverUrl;
+                    return;
+                }
+
+                showPlaceholder();
+            });
+        })();
+
         // Hardcover re-link
         function openHcRelink(btn) {
             hardcoverModalState.bookId = btn.dataset.bookId;
-            hardcoverModalState.bookTitle = btn.dataset.title || '{{ book.title|e }}';
+            hardcoverModalState.bookTitle = btn.dataset.title || _rdTitle;
             hardcoverModalState.bookData = null;
             hardcoverModalState.selectedEditionId = null;
             openHardcoverModal();
@@ -1077,26 +1223,32 @@
             var importBtn = document.getElementById('bulk-import-highlights');
             if (!importBtn) return;
             importBtn.addEventListener('click', function() {
-                var bookId = importBtn.dataset.bookId;
+                importBtn.classList.remove('error', 'done');
                 importBtn.disabled = true;
                 importBtn.textContent = 'Importing...';
 
                 fetch('/api/bookfusion/save-journal', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ abs_id: bookId }),
+                    body: JSON.stringify({ abs_id: _rdAbsId }),
                 })
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
                     if (data.success) {
+                        importBtn.classList.remove('error');
+                        importBtn.classList.add('done');
                         importBtn.textContent = 'Imported ' + data.saved + ' highlights';
                     } else {
+                        importBtn.classList.remove('done');
+                        importBtn.classList.add('error');
                         importBtn.textContent = data.error || 'Import failed';
                         importBtn.disabled = false;
                     }
                 })
                 .catch(function() {
-                    importBtn.textContent = 'Import All to Journal';
+                    importBtn.classList.remove('done');
+                    importBtn.classList.add('error');
+                    importBtn.textContent = 'Error';
                     importBtn.disabled = false;
                 });
             });
