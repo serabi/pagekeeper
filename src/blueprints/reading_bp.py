@@ -8,8 +8,6 @@ from pathlib import Path
 
 from flask import Blueprint, abort, jsonify, render_template, request
 
-from src.utils.http import json_error
-
 from src.blueprints.helpers import (
     find_grimmory_metadata,
     get_abs_service,
@@ -23,6 +21,7 @@ from src.services.book_metadata_service import build_book_metadata, build_servic
 from src.services.reading_service import ReadingService
 from src.services.reading_stats_service import ReadingStatsService
 from src.utils.cover_resolver import resolve_book_covers
+from src.utils.http import json_error
 from src.utils.markdown import render_markdown_html
 
 logger = logging.getLogger(__name__)

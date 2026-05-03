@@ -5,10 +5,9 @@ import logging
 
 from flask import Blueprint, jsonify, request
 
-from src.utils.http import json_error
-
 from src.blueprints.helpers import get_container, get_database_service
 from src.services.hardcover_service import HC_IGNORED, HC_WANT_TO_READ
+from src.utils.http import json_error
 
 logger = logging.getLogger(__name__)
 

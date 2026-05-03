@@ -17,8 +17,6 @@ import threading
 import time
 from datetime import date
 
-import requests
-
 from src.api.http_client_base import JsonHttpClientBase
 from src.utils.string_utils import calculate_similarity, clean_book_title
 

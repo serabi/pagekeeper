@@ -85,9 +85,9 @@ class DatabaseService:
     def _run_alembic_migrations(self):
         """Run Alembic migrations to bring the database schema up to date."""
         try:
+            import alembic.command as alembic_command
             from alembic.config import Config
             from alembic.runtime.migration import MigrationContext
-            import alembic.command as alembic_command
 
             alembic_dir = Path(__file__).parent.parent.parent / "alembic"
             alembic_ini = alembic_dir.parent / "alembic.ini"
