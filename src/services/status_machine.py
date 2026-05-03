@@ -59,7 +59,10 @@ class StatusMachine:
         Args:
             book: Book model instance (will be mutated).
             new_status: Target status string.
-            source: 'local' or 'auto_complete'.
+            source: Transition source. Valid values are 'local' for full local
+                status changes, 'auto_complete' for automatic completion without
+                Grimmory push, 'completion_sync' for completion sync without
+                Hardcover push, and 'manual_progress' for date fill only.
             container: DI container (needed for HC push, Grimmory push, date pull).
             dates: Optional dict with 'started_at'/'finished_at' to use instead of pulling.
             allowed_from: If set, only allow transition from these statuses.
