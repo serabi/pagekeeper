@@ -87,11 +87,23 @@ def api_hardcover_resolve():
     manual_input = request.args.get("input", "").strip()
 
     if not abs_id:
-        return json_error("Missing abs_id parameter", 400, found=False, user_message="Missing abs_id parameter")
+        return json_error(
+            "Missing abs_id parameter",
+            400,
+            found=False,
+            message="Missing abs_id parameter",
+            user_message="Missing abs_id parameter",
+        )
 
     hardcover_client = container.hardcover_client()
     if not hardcover_client.is_configured():
-        return json_error("Hardcover not configured", 400, found=False, user_message="Hardcover not configured")
+        return json_error(
+            "Hardcover not configured",
+            400,
+            found=False,
+            message="Hardcover not configured",
+            user_message="Hardcover not configured",
+        )
 
     book_data = None
     author = None
