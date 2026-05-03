@@ -5,6 +5,7 @@ consistent side effects (journal entries, date filling, HC push, etc.).
 """
 
 import logging
+from dataclasses import dataclass
 from datetime import date
 
 from src.utils.logging_utils import sanitize_log_data
@@ -22,12 +23,31 @@ EVENT_MAP = {
 }
 
 
+@dataclass(frozen=True)
+class TransitionSideEffects:
+    journal: bool = True
+    fill_dates: bool = True
+    push_hardcover: bool = True
+    cleanup_tbr: bool = True
+    push_grimmory: bool = True
+
+
+SOURCE_EFFECTS = {
+    "local": TransitionSideEffects(),
+    "auto_complete": TransitionSideEffects(push_grimmory=False),
+    "completion_sync": TransitionSideEffects(push_hardcover=False),
+    "manual_progress": TransitionSideEffects(journal=False, push_hardcover=False, cleanup_tbr=False, push_grimmory=False),
+}
+
+
 class StatusMachine:
     """Single entry point for all book status transitions.
 
     The `source` parameter controls which side effects fire:
     - 'local': journal + HC push + Grimmory push + TBR cleanup + date fill
     - 'auto_complete': journal + date fill + HC push + TBR cleanup
+    - 'completion_sync': journal + Grimmory push + TBR cleanup + date fill
+    - 'manual_progress': date fill only
     """
 
     def __init__(self, database_service):
@@ -47,6 +67,10 @@ class StatusMachine:
         Returns:
             dict with 'success', 'status', 'previous_status', and optionally 'error'.
         """
+        effects = SOURCE_EFFECTS.get(source)
+        if effects is None:
+            return {"success": False, "error": f"Invalid transition source: {source}"}
+
         if new_status not in VALID_STATUSES:
             return {"success": False, "error": f"Invalid status. Must be one of: {', '.join(sorted(VALID_STATUSES))}"}
 
@@ -56,6 +80,8 @@ class StatusMachine:
             return {"success": False, "error": f"Cannot change to '{new_status}' from status '{old_status}'"}
 
         if old_status == new_status:
+            if source == "completion_sync" and effects.push_grimmory and book.ebook_filename and container:
+                self._push_to_grimmory(book, new_status, old_status, container)
             return {"success": True, "status": new_status, "previous_status": old_status}
 
         # Apply status change
@@ -64,25 +90,23 @@ class StatusMachine:
             book.activity_flag = False
         self.database_service.save_book(book)
 
-        # Journal entry
-        self._record_journal(book, new_status, old_status, source, container)
+        if effects.journal:
+            self._record_journal(book, new_status, old_status, source, container)
 
-        # Date filling
-        self._fill_dates(book, new_status, old_status, source, container, dates)
+        if effects.fill_dates:
+            self._fill_dates(book, new_status, old_status, source, container, dates)
 
         if new_status in ("active", "paused", "dnf", "completed"):
             logger.info(f"Book status changed to '{new_status}': '{sanitize_log_data(book.title or book.abs_id)}'")
 
         # HC push
-        if source in ("local", "auto_complete") and container:
+        if effects.push_hardcover and container:
             self._push_to_hardcover(book, new_status, container)
 
-        # TBR cleanup — remove from Want to Read when book becomes active/finished
-        if new_status in ("active", "completed", "paused", "dnf") and source in ("local", "auto_complete"):
+        if effects.cleanup_tbr and new_status in ("active", "completed", "paused", "dnf"):
             self._cleanup_tbr(book)
 
-        # Grimmory push (local only)
-        if source == "local" and book.ebook_filename and container:
+        if effects.push_grimmory and book.ebook_filename and container:
             self._push_to_grimmory(book, new_status, old_status, container)
 
         return {"success": True, "status": new_status, "previous_status": old_status}
