@@ -7,14 +7,14 @@ import signal
 from flask import Flask
 
 from src.app_runtime import (
-    apply_settings,
     get_or_create_secret_key,
     handle_exit_signal,
-    reconfigure_logging,
     reconcile_socket_listener,
+    reconfigure_logging,
     start_runtime_services,
 )
-from src.app_setup import get_runtime_state, setup_dependencies as _setup_dependencies
+from src.app_setup import get_runtime_state
+from src.app_setup import setup_dependencies as _setup_dependencies
 from src.app_template_context import inject_global_vars
 from src.blueprints import register_blueprints
 from src.blueprints.helpers import safe_folder_name

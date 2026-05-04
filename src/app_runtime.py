@@ -1,7 +1,6 @@
 # pyright: reportMissingImports=false, reportMissingModuleSource=false
 
 import logging
-import os
 import secrets
 import sys
 import threading

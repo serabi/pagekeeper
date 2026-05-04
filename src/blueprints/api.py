@@ -7,8 +7,6 @@ import logging
 
 from flask import Blueprint, current_app, jsonify, request
 
-from src.utils.http import json_detail_error, json_error
-
 from src.blueprints.helpers import (
     find_in_grimmory,
     get_book_or_404,
@@ -19,6 +17,7 @@ from src.blueprints.helpers import (
     serialize_suggestion,
 )
 from src.db.models import Book
+from src.utils.http import json_error
 
 logger = logging.getLogger(__name__)
 
