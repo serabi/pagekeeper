@@ -7,6 +7,7 @@ import signal
 from flask import Flask
 
 from src.app_runtime import (
+    apply_settings,
     get_or_create_secret_key,
     handle_exit_signal,
     reconcile_socket_listener,
@@ -26,6 +27,16 @@ container = None
 manager = None
 database_service = None
 SYNC_PERIOD_MINS = 5.0
+
+__all__ = [
+    "SYNC_PERIOD_MINS",
+    "apply_settings",
+    "container",
+    "create_app",
+    "database_service",
+    "manager",
+    "setup_dependencies",
+]
 
 
 # Backward-compatible exports for tests and existing callers
