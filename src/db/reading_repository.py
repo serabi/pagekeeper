@@ -40,6 +40,17 @@ class ReadingRepository(BaseRepository):
             order_by=ReadingJournal.created_at.desc(),
         )
 
+    def get_reading_journal_entries_for_book(self, book_id, event=None):
+        """Get all journal entries for a book, optionally filtered by event type."""
+        with self.get_session() as session:
+            query = session.query(ReadingJournal).filter(ReadingJournal.book_id == book_id)
+            if event:
+                query = query.filter(ReadingJournal.event == event)
+            journals = query.order_by(ReadingJournal.created_at.desc()).all()
+            for j in journals:
+                session.expunge(j)
+            return journals
+
     def get_reading_journal(self, journal_id):
         return self._get_one(ReadingJournal, ReadingJournal.id == journal_id)
 

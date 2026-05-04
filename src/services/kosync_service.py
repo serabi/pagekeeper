@@ -4,18 +4,14 @@ Handles EPUB discovery, hash-to-book linking, auto-discovery, and
 document management. Route handlers in kosync_server.py delegate here.
 """
 
-import calendar
 import json
 import logging
-import os
 import re
 import threading
-import time
-from datetime import datetime
 from pathlib import Path
 
 from src.db.models import Book, KosyncDocument
-from src.utils.constants import INTERNAL_DEVICE_NAMES
+from src.services.kosync_progress_service import KosyncProgressService
 from src.utils.logging_utils import sanitize_log_data
 from src.utils.path_utils import is_safe_path_within
 
@@ -73,6 +69,7 @@ class KosyncService:
         self._ebook_dir = ebook_dir
         self._active_scans = set()
         self._active_scans_lock = threading.Lock()
+        self._progress = KosyncProgressService(self)
 
     # ------------------------------------------------------------------ #
     #  Progress serialization (was duplicated 3x in kosync_server.py)
@@ -543,220 +540,14 @@ class KosyncService:
         return book
 
     # ------------------------------------------------------------------ #
-    #  HTTP handler logic (moved from kosync_server.py route handlers)
+    #  HTTP handler logic (delegated to extracted progress service)
     # ------------------------------------------------------------------ #
 
     def handle_put_progress(self, data, remote_addr, debounce_manager=None):
-        """Process a KoSync PUT progress request. Returns (response_dict, status_code)."""
-
-        if not data:
-            logger.warning(f"KOSync: PUT progress with no JSON data from {remote_addr}")
-            return {"error": "No data"}, 400
-
-        doc_hash = data.get("document")
-        if not doc_hash or not isinstance(doc_hash, str):
-            logger.warning(f"KOSync: PUT progress with no document ID from {remote_addr}")
-            return {"error": "Missing document ID"}, 400
-        if len(doc_hash) > 64:
-            return {"error": "Document hash too long"}, 400
-
-        percentage = data.get("percentage", 0)
-        try:
-            percentage = float(percentage)
-        except (TypeError, ValueError):
-            return {"error": "Invalid percentage value"}, 400
-        if percentage < 0.0 or percentage > 1.0:
-            return {"error": "Percentage must be between 0.0 and 1.0"}, 400
-
-        logger.info(
-            f"KOSync: PUT progress request for doc {doc_hash[:8]}... from {remote_addr} (device: {data.get('device', 'unknown')})"
-        )
-
-        progress = str(data.get("progress", ""))[:512]
-        device = str(data.get("device", ""))[:128]
-        device_id = str(data.get("device_id", ""))[:64]
-
-        now = datetime.utcnow()
-
-        kosync_doc = self._db.get_kosync_document(doc_hash)
-
-        # Optional "furthest wins" protection
-        furthest_wins = os.environ.get("KOSYNC_FURTHEST_WINS", "true").lower() == "true"
-        force_update = data.get("force", False)
-        same_device = kosync_doc and kosync_doc.device_id == device_id
-
-        if furthest_wins and kosync_doc and kosync_doc.percentage and not force_update and not same_device:
-            existing_pct = float(kosync_doc.percentage)
-            new_pct = float(percentage)
-            if new_pct < existing_pct - 0.0001:
-                logger.info(
-                    f"KOSync: Ignored progress from '{device}' for doc {doc_hash[:8]}... (server has higher: {existing_pct:.2f}% vs new {new_pct:.2f}%)"
-                )
-                return {
-                    "document": doc_hash,
-                    "timestamp": int(kosync_doc.timestamp.timestamp())
-                    if kosync_doc.timestamp
-                    else int(now.timestamp()),
-                }, 200
-
-        if kosync_doc is None:
-            kosync_doc = KosyncDocument(
-                document_hash=doc_hash,
-                progress=progress,
-                percentage=percentage,
-                device=device,
-                device_id=device_id,
-                timestamp=now,
-            )
-            logger.info(f"KOSync: New document tracked: {doc_hash[:8]}... from device '{device}'")
-        else:
-            logger.info(
-                f"KOSync: Received progress from '{device}' for doc {doc_hash[:8]}... -> {float(percentage):.2f}% (Updated from {float(kosync_doc.percentage) if kosync_doc.percentage else 0:.2f}%)"
-            )
-            kosync_doc.progress = progress
-            kosync_doc.percentage = percentage
-            kosync_doc.device = device
-            kosync_doc.device_id = device_id
-            kosync_doc.timestamp = now
-
-        self._db.save_kosync_document(kosync_doc)
-
-        # Update linked book if exists
-        linked_book = None
-        if kosync_doc.linked_book_id:
-            linked_book = self._db.get_book_by_id(kosync_doc.linked_book_id)
-        elif kosync_doc.linked_abs_id:
-            linked_book = self._db.get_book_by_abs_id(kosync_doc.linked_abs_id)
-        else:
-            linked_book = self._db.get_book_by_kosync_id(doc_hash)
-            if linked_book:
-                self._db.link_kosync_document(doc_hash, linked_book.id, linked_book.abs_id)
-
-        # AUTO-DISCOVERY + SUGGESTION
-        if not linked_book:
-            auto_create = os.environ.get("AUTO_CREATE_EBOOK_MAPPING", "true").lower() == "true"
-            discovery_started = auto_create and self.start_discovery_if_available(doc_hash)
-            if discovery_started:
-                threading.Thread(target=self.run_put_auto_discovery, args=(doc_hash,), daemon=True).start()
-            else:
-                # Auto-discovery disabled or slots full — try suggestion via title matching
-                try:
-                    suggestion_svc = self._container.suggestion_service()
-                    suggestion_svc.queue_kosync_suggestion(
-                        doc_hash,
-                        filename=kosync_doc.filename,
-                        device=device,
-                    )
-                except Exception as e:
-                    logger.debug(f"KoSync suggestion attempt failed for {doc_hash[:8]}...: {e}")
-
-        if linked_book:
-            # Flag activity on paused/DNF books
-            if linked_book.status in ("paused", "dnf", "not_started") and not linked_book.activity_flag:
-                linked_book.activity_flag = True
-                self._db.save_book(linked_book)
-                logger.info(f"KOSync PUT: Activity detected on {linked_book.status} book '{linked_book.title}'")
-
-            logger.debug(f"KOSync: Updated linked book '{linked_book.title}' to {percentage:.2%}")
-
-            # Debounce sync trigger
-            is_internal = device and device.lower() in INTERNAL_DEVICE_NAMES
-            instant_sync_enabled = os.environ.get("INSTANT_SYNC_ENABLED", "true").lower() != "false"
-            if linked_book.status == "active" and self._manager and not is_internal and instant_sync_enabled:
-                if debounce_manager:
-                    logger.debug(f"KOSync PUT: Progress event recorded for '{linked_book.title}'")
-                    debounce_manager.record_event(linked_book.id, linked_book.title)
-
-        response_timestamp = now.isoformat() + "Z"
-        if device and device.lower() == "booknexus":
-            response_timestamp = int(calendar.timegm(now.timetuple()))
-
-        return {"document": doc_hash, "timestamp": response_timestamp}, 200
+        return self._progress.handle_put_progress(data, remote_addr, debounce_manager)
 
     def handle_get_progress(self, doc_id, remote_addr):
-        """Process a KoSync GET progress request. Returns (response_dict, status_code)."""
-
-        if len(doc_id) > 64:
-            return {"error": "Document ID too long"}, 400
-
-        logger.info(f"KOSync: GET progress for doc {doc_id[:8]}... from {remote_addr}")
-
-        # Step 1: Direct hash lookup
-        kosync_doc = self._db.get_kosync_document(doc_id)
-        if kosync_doc:
-            if kosync_doc.linked_book_id:
-                book = self._db.get_book_by_id(kosync_doc.linked_book_id)
-                if book:
-                    return self.resolve_best_progress(doc_id, book)
-            elif kosync_doc.linked_abs_id:
-                book = self._db.get_book_by_abs_id(kosync_doc.linked_abs_id)
-                if book:
-                    return self.resolve_best_progress(doc_id, book)
-
-            has_progress = kosync_doc.percentage and float(kosync_doc.percentage) > 0
-            if has_progress:
-                return self.serialize_progress(kosync_doc, device_default=""), 200
-
-        # Step 2: Book lookup by kosync_doc_id
-        book = self._db.get_book_by_kosync_id(doc_id)
-        if book:
-            return self.resolve_best_progress(doc_id, book)
-
-        # Step 3: Sibling hash resolution
-        resolved_book = self.resolve_book_by_sibling_hash(doc_id, existing_doc=kosync_doc)
-        if resolved_book:
-            self.register_hash_for_book(doc_id, resolved_book)
-            return self.resolve_best_progress(doc_id, resolved_book)
-
-        # Step 4: Unknown hash — register stub and start background discovery
-        auto_create = os.environ.get("AUTO_CREATE_EBOOK_MAPPING", "true").lower() == "true"
-        if auto_create and self.start_discovery_if_available(doc_id):
-            stub = KosyncDocument(document_hash=doc_id)
-            self._db.save_kosync_document(stub)
-            logger.info(f"KOSync: Created stub for unknown hash {doc_id[:8]}..., starting background discovery")
-            threading.Thread(target=self.run_get_auto_discovery, args=(doc_id,), daemon=True).start()
-
-        logger.warning(f"KOSync: Document not found: {doc_id[:8]}... (GET from {remote_addr})")
-        return {"message": "Document not found on server"}, 502
+        return self._progress.handle_get_progress(doc_id, remote_addr)
 
     def resolve_best_progress(self, doc_id, book):
-        """Find the best progress data for a book across sibling docs and states.
-
-        Returns (response_dict, status_code).
-        """
-
-        states = self._db.get_states_for_book(book.id)
-
-        sibling_docs = self._db.get_kosync_documents_for_book_by_book_id(book.id)
-        now_ts = time.time()
-        docs_with_progress = [
-            d
-            for d in sibling_docs
-            if d.percentage
-            and float(d.percentage) > 0
-            and d.timestamp
-            and (now_ts - d.timestamp.timestamp()) < 30 * 86400
-        ]
-        if not docs_with_progress:
-            docs_with_progress = [d for d in sibling_docs if d.percentage and float(d.percentage) > 0 and d.timestamp]
-        if docs_with_progress:
-            best_doc = max(docs_with_progress, key=lambda d: float(d.percentage))
-            logger.info(
-                f"KOSync: Resolved {doc_id[:8]}... to '{book.title}' via sibling hash {best_doc.document_hash[:8]}... ({float(best_doc.percentage):.2%})"
-            )
-            return self.serialize_progress(best_doc, doc_id), 200
-
-        if not states:
-            return {"message": "Document not found on server"}, 502
-
-        kosync_state = next((s for s in states if s.client_name.lower() == "kosync"), None)
-        latest_state = kosync_state or max(states, key=lambda s: s.last_updated or datetime.min)
-
-        return {
-            "device": "pagekeeper",
-            "device_id": "pagekeeper",
-            "document": doc_id,
-            "percentage": float(latest_state.percentage) if latest_state.percentage else 0,
-            "progress": (latest_state.xpath or latest_state.cfi) if hasattr(latest_state, "xpath") else "",
-            "timestamp": int(latest_state.last_updated) if latest_state.last_updated else 0,
-        }, 200
+        return self._progress.resolve_best_progress(doc_id, book)

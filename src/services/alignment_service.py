@@ -7,7 +7,7 @@ cross-format position normalization, and storing results in the database.
 import json
 import logging
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 
 from src.db.models import Book, BookAlignment, Job
 from src.utils.logging_utils import sanitize_exception, time_execution
@@ -634,7 +634,7 @@ class AlignmentService:
             existing = session.query(BookAlignment).filter_by(book_id=book_id).first()
             if existing:
                 existing.alignment_map_json = json_blob
-                existing.last_updated = datetime.utcnow()
+                existing.last_updated = datetime.now(UTC)
                 if source:
                     existing.source = source
             else:

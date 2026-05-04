@@ -82,9 +82,6 @@
             {% endif %}
             <a href="/" class="nav-link {% if is_active_path('/') %}active{% endif %}">Dashboard</a>
             <a href="/reading" class="nav-link {% if is_active_path('/reading') %}active{% endif %}">Reading Log</a>
-            {% if show_bookfusion_page %}
-            <a href="/bookfusion" class="nav-link {% if is_active_path('/bookfusion') %}active{% endif %}">BookFusion Books</a>
-            {% endif %}
             {% if get_bool('SUGGESTIONS_ENABLED') %}
             <a href="/suggestions" class="nav-link {% if is_active_path('/suggestions') %}active{% endif %}">Suggestions{% if suggestion_count %} <span class="nav-badge">{{ suggestion_count }}</span>{% endif %}</a>
             {% endif %}

@@ -17,14 +17,13 @@ import threading
 import time
 from datetime import date
 
-import requests
-
+from src.api.http_client_base import JsonHttpClientBase
 from src.utils.string_utils import calculate_similarity, clean_book_title
 
 logger = logging.getLogger(__name__)
 
 
-class HardcoverClient:
+class HardcoverClient(JsonHttpClientBase):
     def __init__(self):
         self.api_url = "https://api.hardcover.app/v1/graphql"
         self.user_id = None
@@ -88,33 +87,26 @@ class HardcoverClient:
         self._rate_limit()
 
         try:
-            r = requests.post(
-                self.api_url,
-                json={"query": query, "variables": variables or {}},
-                headers=self.headers,
-                timeout=20,
-            )
+            payload = {"query": query, "variables": variables or {}}
 
-            # Handle rate limiting (429) with exponential backoff
-            max_retries = 3
-            backoff = 5
-            attempt = 0
-            while r.status_code == 429 and attempt < max_retries:
-                attempt += 1
-                logger.warning(f"Hardcover rate limit hit (429), retry {attempt}/{max_retries} after {backoff}s")
-                time.sleep(backoff)
+            def _mark_retry(_attempt, _response):
                 with self._rate_lock:
                     self._last_request_time = time.monotonic()
-                r = requests.post(
-                    self.api_url,
-                    json={"query": query, "variables": variables or {}},
-                    headers=self.headers,
-                    timeout=20,
-                )
-                backoff *= 2
+
+            r = self.post_json_with_retries(
+                self.api_url,
+                json_body=payload,
+                headers=self.headers,
+                timeout=20,
+                max_retries=3,
+                retry_statuses={429},
+                backoff_seconds=5,
+                retry_label="Hardcover request",
+                on_retry=_mark_retry,
+            )
 
             if r.status_code == 429:
-                logger.error(f"Hardcover rate limit persisted after {max_retries} retries, giving up")
+                logger.error("Hardcover rate limit persisted after 3 retries, giving up")
                 return None
 
             if r.status_code == 200:

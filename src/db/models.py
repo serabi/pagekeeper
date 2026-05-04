@@ -2,7 +2,7 @@
 SQLAlchemy ORM models for PageKeeper database.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 import sqlalchemy as sa
 from sqlalchemy import (
@@ -18,10 +18,13 @@ from sqlalchemy import (
     UniqueConstraint,
     create_engine,
 )
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import relationship, sessionmaker
+from sqlalchemy.orm import declarative_base, relationship, sessionmaker
 
 Base = declarative_base()
+
+
+def utc_now():
+    return datetime.now(UTC)
 
 
 class KosyncDocument(Base):
@@ -42,8 +45,8 @@ class KosyncDocument(Base):
     # Bridge specific fields — linked_book_id is the canonical FK
     linked_abs_id = Column(String(255), nullable=True, index=True)
     linked_book_id = Column(Integer, ForeignKey("books.id"), nullable=True, index=True)
-    first_seen = Column(DateTime, default=datetime.utcnow)
-    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    first_seen = Column(DateTime, default=utc_now)
+    last_updated = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     # Hash cache replacement fields
     filename = Column(String(500), nullable=True)
@@ -81,8 +84,8 @@ class KosyncDocument(Base):
         self.source = source
         self.grimmory_id = grimmory_id
         self.mtime = mtime
-        self.first_seen = datetime.utcnow()
-        self.last_updated = datetime.utcnow()
+        self.first_seen = utc_now()
+        self.last_updated = utc_now()
 
     def __repr__(self):
         return f"<KosyncDocument(hash='{self.document_hash}', pct={self.percentage})>"
@@ -112,6 +115,8 @@ class Book(Base):
     custom_cover_url = Column(String(500), nullable=True)
     author = Column(String(500), nullable=True)
     subtitle = Column(String(500), nullable=True)
+    title_override = Column(String(500), nullable=True)
+    author_override = Column(String(500), nullable=True)
 
     # Reading tracker fields
     started_at = Column(String(10), nullable=True)  # YYYY-MM-DD
@@ -157,6 +162,8 @@ class Book(Base):
         custom_cover_url: str = None,
         author: str = None,
         subtitle: str = None,
+        title_override: str = None,
+        author_override: str = None,
         started_at: str = None,
         finished_at: str = None,
         rating: float = None,
@@ -177,10 +184,22 @@ class Book(Base):
         self.custom_cover_url = custom_cover_url
         self.author = author
         self.subtitle = subtitle
+        self.title_override = title_override
+        self.author_override = author_override
         self.started_at = started_at
         self.finished_at = finished_at
         self.rating = rating
         self.read_count = read_count
+
+    @property
+    def display_title(self):
+        """Stored title plus override only (no Grimmory/ABS enrichment). Prefer reading APIs for UI strings."""
+        return self.title_override or self.title or ""
+
+    @property
+    def display_author(self):
+        """Stored author plus override only. Prefer reading APIs for detail hero author."""
+        return self.author_override or self.author or ""
 
     def __repr__(self):
         return f"<Book(id={self.id}, abs_id='{self.abs_id}', title='{self.title}')>"
@@ -197,7 +216,7 @@ class ReadingJournal(Base):
     event = Column(String(20), nullable=False)  # started|progress|finished|note|paused|resumed|dnf
     entry = Column(Text, nullable=True)  # freeform text note
     percentage = Column(Float, nullable=True)  # progress at time of entry
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     book = relationship("Book", back_populates="reading_journals", foreign_keys=[book_id])
 
@@ -215,7 +234,7 @@ class ReadingJournal(Base):
         self.event = event
         self.entry = entry
         self.percentage = percentage
-        self.created_at = created_at or datetime.utcnow()
+        self.created_at = created_at or utc_now()
 
     def __repr__(self):
         return f"<ReadingJournal(id={self.id}, book_id={self.book_id}, event='{self.event}')>"
@@ -319,7 +338,7 @@ class HardcoverSyncLog(Base):
     detail = Column(Text, nullable=True)  # JSON blob
     success = Column(Boolean, default=True)
     error_message = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    created_at = Column(DateTime, default=utc_now, index=True)
 
     book = relationship("Book", backref="hardcover_sync_logs", foreign_keys=[book_id])
 
@@ -343,7 +362,7 @@ class HardcoverSyncLog(Base):
         self.detail = detail
         self.success = success
         self.error_message = error_message
-        self.created_at = created_at or datetime.utcnow()
+        self.created_at = created_at or utc_now()
 
     def __repr__(self):
         return f"<HardcoverSyncLog(id={self.id}, action='{self.action}', direction='{self.direction}')>"
@@ -361,7 +380,7 @@ class StorytellerSubmission(Base):
     submission_dir = Column(String(500), nullable=True)
     storyteller_uuid = Column(String(36), nullable=True)
     error = Column(Text, nullable=True)
-    submitted_at = Column(DateTime, default=datetime.utcnow)
+    submitted_at = Column(DateTime, default=utc_now)
     last_checked_at = Column(DateTime, nullable=True)
 
     book = relationship("Book", backref="storyteller_submissions", foreign_keys=[book_id])
@@ -381,7 +400,7 @@ class StorytellerSubmission(Base):
         self.submission_dir = submission_dir
         self.storyteller_uuid = storyteller_uuid
         self.error = error
-        self.submitted_at = datetime.utcnow()
+        self.submitted_at = utc_now()
 
     def __repr__(self):
         return f"<StorytellerSubmission(id={self.id}, book_id={self.book_id}, status='{self.status}')>"
@@ -484,7 +503,7 @@ class PendingSuggestion(Base):
     cover_url = Column(String(500))
     matches_json = Column(Text)
     status = Column(String(20), default="pending")
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utc_now)
 
     def __init__(
         self,
@@ -503,7 +522,7 @@ class PendingSuggestion(Base):
         self.cover_url = cover_url
         self.matches_json = matches_json
         self.status = status
-        self.created_at = datetime.utcnow()
+        self.created_at = utc_now()
 
     @property
     def matches(self):
@@ -549,7 +568,7 @@ class BookAlignment(Base):
     abs_id = Column(String(255), nullable=True)
     alignment_map_json = Column(Text, nullable=False)  # JSON-encoded list of dicts or optimized structure
     source = Column(String(20), nullable=True)  # storyteller, smil, whisper
-    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_updated = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     # Relationship
     book = relationship("Book", back_populates="alignment", foreign_keys=[book_id])
@@ -572,10 +591,9 @@ class BookfusionHighlight(Base):
     book_title = Column(String(500))
     content = Column(Text, nullable=False)
     chapter_heading = Column(String(500))
-    fetched_at = Column(DateTime, default=datetime.utcnow)
+    fetched_at = Column(DateTime, default=utc_now)
     highlighted_at = Column(DateTime, nullable=True)
     quote_text = Column(Text, nullable=True)
-    matched_abs_id = Column(String(255), nullable=True)
     matched_book_id = Column(Integer, ForeignKey("books.id", ondelete="SET NULL"), nullable=True, index=True)
 
     matched_book = relationship("Book", foreign_keys=[matched_book_id])
@@ -589,7 +607,6 @@ class BookfusionHighlight(Base):
         chapter_heading: str = None,
         highlighted_at=None,
         quote_text: str = None,
-        matched_abs_id: str = None,
         matched_book_id: int = None,
     ):
         self.bookfusion_book_id = bookfusion_book_id
@@ -597,10 +614,9 @@ class BookfusionHighlight(Base):
         self.content = content
         self.book_title = book_title
         self.chapter_heading = chapter_heading
-        self.fetched_at = datetime.utcnow()
+        self.fetched_at = utc_now()
         self.highlighted_at = highlighted_at
         self.quote_text = quote_text
-        self.matched_abs_id = matched_abs_id
         self.matched_book_id = matched_book_id
 
     def __repr__(self):
@@ -621,11 +637,10 @@ class BookfusionBook(Base):
     tags = Column(String(500))
     series = Column(String(500))
     highlight_count = Column(Integer, default=0, nullable=False, server_default="0")
-    matched_abs_id = Column(String(255), nullable=True)
     matched_book_id = Column(Integer, ForeignKey("books.id", ondelete="SET NULL"), nullable=True, index=True)
     hidden = Column(Boolean, default=False, nullable=False, server_default="0")
-    fetched_at = Column(DateTime, default=datetime.utcnow)
-    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    fetched_at = Column(DateTime, default=utc_now)
+    last_updated = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     matched_book = relationship("Book", foreign_keys=[matched_book_id])
 
@@ -639,7 +654,6 @@ class BookfusionBook(Base):
         tags: str = None,
         series: str = None,
         highlight_count: int = 0,
-        matched_abs_id: str = None,
         matched_book_id: int = None,
         hidden: bool = False,
     ):
@@ -651,11 +665,10 @@ class BookfusionBook(Base):
         self.tags = tags
         self.series = series
         self.highlight_count = highlight_count
-        self.matched_abs_id = matched_abs_id
         self.matched_book_id = matched_book_id
         self.hidden = hidden
-        self.fetched_at = datetime.utcnow()
-        self.last_updated = datetime.utcnow()
+        self.fetched_at = utc_now()
+        self.last_updated = utc_now()
 
     def __repr__(self):
         return f"<BookfusionBook(id={self.id}, title='{self.title}')>"
@@ -673,7 +686,7 @@ class TbrItem(Base):
     cover_url = Column(String(500), nullable=True)
     notes = Column(Text, nullable=True)
     priority = Column(Integer, default=0)
-    added_at = Column(DateTime, default=datetime.utcnow)
+    added_at = Column(DateTime, default=utc_now)
 
     # Hardcover link (if sourced from or synced to HC)
     hardcover_book_id = Column(Integer, nullable=True, index=True)
@@ -749,7 +762,7 @@ class TbrItem(Base):
         self.release_year = release_year
         self.genres = genres
         self.subtitle = subtitle
-        self.added_at = datetime.utcnow()
+        self.added_at = utc_now()
 
     def __repr__(self):
         return f"<TbrItem(id={self.id}, title='{self.title}')>"
@@ -768,7 +781,7 @@ class GrimmoryBook(Base):
     title = Column(String(500))
     authors = Column(String(500))
     raw_metadata = Column(Text)
-    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_updated = Column(DateTime, default=utc_now, onupdate=utc_now)
 
     __table_args__ = (UniqueConstraint("server_id", "filename", name="uq_grimmory_server_filename"),)
 

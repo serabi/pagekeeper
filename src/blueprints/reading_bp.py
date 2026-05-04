@@ -21,6 +21,8 @@ from src.services.book_metadata_service import build_book_metadata, build_servic
 from src.services.reading_service import ReadingService
 from src.services.reading_stats_service import ReadingStatsService
 from src.utils.cover_resolver import resolve_book_covers
+from src.utils.http import json_error
+from src.utils.markdown import render_markdown_html
 
 logger = logging.getLogger(__name__)
 
@@ -50,16 +52,22 @@ def _synthetic_journal(abs_id, event, date_str, percentage=None):
     return _SyntheticJournal()
 
 
-def _build_book_reading_data(
-    book,
-    database_service,
-    abs_service,
-    states_by_book,
-    grimmory_by_filename=None,
-    abs_metadata_by_id=None,
-    hardcover_details=None,
-):
-    """Build a reading-focused data dict for a single book."""
+def _metadata_override_value(book, field):
+    value = getattr(book, field, None)
+    return value if isinstance(value, str) and value else None
+
+
+def _compute_reading_display_names(book, *, grimmory_by_filename=None, abs_metadata_by_id=None):
+    """Resolve enriched title/author the same way as reading cards and detail `book` dict.
+
+    Used by `_build_book_reading_data` and the metadata-overrides API so clients see
+    the same strings as the web UI (Grimmory stem replacement, optional ABS bulk author,
+    then PageKeeper overrides).
+
+    Returns a dict with display_title, display_author (reading card byline and detail hero),
+    source_*
+    fields, override flags, bl_meta for cover resolution, and book_type.
+    """
     sync_mode = book.sync_mode
     if sync_mode == "ebook_only":
         book_type = "ebook-only"
@@ -68,11 +76,6 @@ def _build_book_reading_data(
     else:
         book_type = "linked"
 
-    # Get unified progress from states
-    states = states_by_book.get(book.id, [])
-    max_progress = ReadingService.max_progress(states, as_percent=True)
-
-    # Enrich title/author from Grimmory or ABS metadata when available
     display_title = book.title or ""
     display_author = ""
     bl_meta = find_grimmory_metadata(book, grimmory_by_filename) if grimmory_by_filename else None
@@ -87,8 +90,8 @@ def _build_book_reading_data(
     if bl_meta and bl_meta.authors:
         display_author = bl_meta.authors
 
-    if not display_author and book_type != "ebook-only":
-        abs_meta = (abs_metadata_by_id or {}).get(book.abs_id, {})
+    if not display_author and book_type != "ebook-only" and book.abs_id:
+        abs_meta = (abs_metadata_by_id or {}).get(str(book.abs_id), {})
         display_author = abs_meta.get("author") or ""
 
     if not display_author and book.author:
@@ -96,6 +99,70 @@ def _build_book_reading_data(
 
     if not display_author:
         display_author = book.ebook_filename or ""
+
+    source_title = display_title
+    source_author = display_author
+    title_override = _metadata_override_value(book, "title_override")
+    author_override = _metadata_override_value(book, "author_override")
+    display_title = title_override or display_title
+    display_author = author_override or display_author
+
+    return {
+        "display_title": display_title,
+        "display_author": display_author,
+        "source_title": source_title,
+        "source_author": source_author,
+        "title_override": title_override,
+        "author_override": author_override,
+        "has_metadata_override": bool(title_override or author_override),
+        "bl_meta": bl_meta,
+        "book_type": book_type,
+    }
+
+
+def _load_abs_reading_metadata_by_id(abs_service):
+    """Bulk ABS author map keyed by library item id (same source as the reading log)."""
+    abs_metadata_by_id: dict[str, dict[str, str]] = {}
+    try:
+        all_abs_books = abs_service.get_audiobooks()
+        for ab in all_abs_books:
+            ab_id = ab.get("id")
+            if not ab_id:
+                continue
+            metadata = ab.get("media", {}).get("metadata", {})
+            abs_metadata_by_id[str(ab_id)] = {
+                "author": metadata.get("authorName") or "",
+            }
+    except Exception as e:
+        logger.warning("Could not fetch ABS metadata for reading enrichment: %s", e)
+    return abs_metadata_by_id
+
+
+def _build_book_reading_data(
+    book,
+    database_service,
+    abs_service,
+    states_by_book,
+    grimmory_by_filename=None,
+    abs_metadata_by_id=None,
+    hardcover_details=None,
+):
+    """Build a reading-focused data dict for a single book."""
+    names = _compute_reading_display_names(
+        book, grimmory_by_filename=grimmory_by_filename, abs_metadata_by_id=abs_metadata_by_id
+    )
+    display_title = names["display_title"]
+    display_author = names["display_author"]
+    source_title = names["source_title"]
+    source_author = names["source_author"]
+    title_override = names["title_override"]
+    author_override = names["author_override"]
+    bl_meta = names["bl_meta"]
+    book_type = names["book_type"]
+
+    # Get unified progress from states
+    states = states_by_book.get(book.id, [])
+    max_progress = ReadingService.max_progress(states, as_percent=True)
 
     covers = resolve_book_covers(
         book, abs_service, database_service, book_type, grimmory_meta=bl_meta, hardcover_details=hardcover_details
@@ -106,6 +173,11 @@ def _build_book_reading_data(
         "abs_id": book.abs_id,
         "title": display_title,
         "abs_author": display_author,
+        "source_title": source_title,
+        "source_author": source_author,
+        "title_override": title_override,
+        "author_override": author_override,
+        "has_metadata_override": names["has_metadata_override"],
         "ebook_filename": book.ebook_filename,
         "kosync_doc_id": book.kosync_doc_id,
         "status": book.status,
@@ -151,19 +223,7 @@ def reading_index():
     reading_statuses = {"active", "completed", "paused", "dnf", "not_started"}
     books = [b for b in books if b.status in reading_statuses]
 
-    abs_metadata_by_id = {}
-    try:
-        all_abs_books = abs_service.get_audiobooks()
-        for ab in all_abs_books:
-            ab_id = ab.get("id")
-            if not ab_id:
-                continue
-            metadata = ab.get("media", {}).get("metadata", {})
-            abs_metadata_by_id[ab_id] = {
-                "author": metadata.get("authorName") or "",
-            }
-    except Exception as e:
-        logger.warning(f"Could not fetch ABS metadata for reading log enrichment: {e}")
+    abs_metadata_by_id = _load_abs_reading_metadata_by_id(abs_service)
 
     # Fetch all states at once to avoid N+1
     states_by_book = database_service.get_states_by_book()
@@ -314,13 +374,20 @@ def reading_detail(book_ref):
 
     states_by_book = database_service.get_states_by_book()
 
-    # Grimmory enrichment
+    # Grimmory + ABS bulk enrichment (same inputs as the reading log for list/detail parity)
     enabled_bl_ids = get_enabled_grimmory_server_ids()
     grimmory_by_filename = database_service.get_grimmory_by_filename(enabled_server_ids=enabled_bl_ids)
+    abs_metadata_by_id = _load_abs_reading_metadata_by_id(abs_service)
 
     hc_details = database_service.get_hardcover_details(book.id)
     book_data = _build_book_reading_data(
-        book, database_service, abs_service, states_by_book, grimmory_by_filename, hardcover_details=hc_details
+        book,
+        database_service,
+        abs_service,
+        states_by_book,
+        grimmory_by_filename,
+        abs_metadata_by_id=abs_metadata_by_id,
+        hardcover_details=hc_details,
     )
     journals = database_service.get_reading_journals(book.id)
 
@@ -344,8 +411,14 @@ def reading_detail(book_ref):
         or database_service.is_bookfusion_linked_by_book_id(book.id)
     )
 
+    # Check if book is eligible for BookFusion upload (has ebook file)
+    bookfusion_upload_eligible = bool(book.ebook_filename or book.original_ebook_filename)
+
     container = get_container()
     metadata = build_book_metadata(book, container, database_service, abs_service)
+    author_override = _metadata_override_value(book, "author_override")
+    if author_override:
+        metadata["author"] = author_override
     hardcover = metadata.get("_hardcover")
 
     service_states, integrations, services_enabled = build_service_info(
@@ -401,6 +474,7 @@ def reading_detail(book_ref):
         journals=journals,
         bf_highlights=bf_highlights,
         has_bookfusion_link=has_bookfusion_link,
+        bookfusion_upload_eligible=bookfusion_upload_eligible,
         has_linked_tbr=has_linked_tbr,
         metadata=metadata,
         services_enabled=services_enabled,
@@ -465,15 +539,15 @@ def update_rating(book_ref):
         try:
             rating = float(rating)
         except (TypeError, ValueError):
-            return jsonify({"success": False, "error": "Invalid rating value"}), 400
+            return json_error("Invalid rating value", 400)
         if not math.isfinite(rating) or rating < 0 or rating > 5:
-            return jsonify({"success": False, "error": "Rating must be between 0 and 5"}), 400
+            return json_error("Rating must be between 0 and 5", 400)
         if abs((rating * 2) - round(rating * 2)) > 1e-9:
-            return jsonify({"success": False, "error": "Rating must be in 0.5 increments"}), 400
+            return json_error("Rating must be in 0.5 increments", 400)
 
     book = database_service.update_book_reading_fields(book.id, rating=rating)
     if not book:
-        return jsonify({"success": False, "error": "Book not found"}), 404
+        return json_error("Book not found", 404)
 
     hardcover_synced = False
     hardcover_error = None
@@ -485,6 +559,7 @@ def update_rating(book_ref):
             hardcover_synced = bool(sync_result.get("hardcover_synced"))
             hardcover_error = sync_result.get("hardcover_error")
     except Exception as e:
+        logger.warning("Hardcover rating sync failed for book %s: %s", book.id, e)
         hardcover_error = str(e)
 
     return jsonify(
@@ -505,15 +580,15 @@ def update_progress(book_ref):
     percentage = data.get("percentage")
 
     if percentage is None:
-        return jsonify({"success": False, "error": "percentage is required"}), 400
+        return json_error("percentage is required", 400)
 
     try:
         percentage = float(percentage)
     except (TypeError, ValueError):
-        return jsonify({"success": False, "error": "Invalid percentage value"}), 400
+        return json_error("Invalid percentage value", 400)
 
     if not math.isfinite(percentage) or percentage < 0 or percentage > 1:
-        return jsonify({"success": False, "error": "percentage must be between 0 and 1"}), 400
+        return json_error("percentage must be between 0 and 1", 400)
 
     container = get_container()
     result = _get_reading_service().set_progress(book.id, percentage, container)
@@ -538,20 +613,20 @@ def update_dates(book_ref):
                 try:
                     datetime.strptime(val, "%Y-%m-%d")
                 except ValueError:
-                    return jsonify({"success": False, "error": f"Invalid date format for {field}"}), 400
+                    return json_error(f"Invalid date format for {field}", 400)
             updates[field] = val or None
 
     if not updates:
-        return jsonify({"success": False, "error": "No date fields provided"}), 400
+        return json_error("No date fields provided", 400)
 
     effective_started = updates.get("started_at") or (book.started_at if "started_at" not in updates else None)
     effective_finished = updates.get("finished_at") or (book.finished_at if "finished_at" not in updates else None)
     if effective_started and effective_finished and effective_started > effective_finished:
-        return jsonify({"success": False, "error": "started_at cannot be after finished_at"}), 400
+        return json_error("started_at cannot be after finished_at", 400)
 
     book = database_service.update_book_reading_fields(book.id, **updates)
     if not book:
-        return jsonify({"success": False, "error": "Book not found"}), 404
+        return json_error("Book not found", 404)
 
     # Sync corresponding journal entry timestamps to match the edited dates
     event_map = {"started_at": "started", "finished_at": "finished"}
@@ -573,6 +648,67 @@ def update_dates(book_ref):
     )
 
 
+@reading_bp.route("/api/reading/book/<book_ref>/metadata-overrides", methods=["POST"])
+def update_metadata_overrides(book_ref):
+    """Update PageKeeper-local title/author display overrides.
+
+    Response title and author match the reading log and detail page after reload: same
+    Grimmory title enrichment, ABS bulk author map, and overrides as the reading card dict.
+    Native apps can treat these as canonical display strings without re-implementing enrichment.
+    """
+    database_service = get_database_service()
+    book = get_book_or_404(book_ref)
+    data = request.get_json(silent=True) or {}
+    allowed_fields = {"title_override", "author_override"}
+    present_fields = allowed_fields.intersection(data)
+
+    if not present_fields:
+        return json_error("No metadata override fields provided", 400)
+
+    updates = {}
+    for field in ("title_override", "author_override"):
+        if field not in data:
+            continue
+        value = data.get(field)
+        if value is None:
+            updates[field] = None
+            continue
+        value = str(value).strip()
+        if len(value) > 500:
+            label = "Title" if field == "title_override" else "Author"
+            return json_error(f"{label} override must be 500 characters or fewer", 400)
+        updates[field] = value or None
+
+    clears_all = updates.get("title_override") is None and updates.get("author_override") is None
+    has_existing_override = bool(book.title_override or book.author_override)
+    if set(updates) == allowed_fields and clears_all and not has_existing_override:
+        return json_error("Enter a title or author override before saving", 400)
+
+    updated = database_service.update_book_metadata_overrides(book.id, **updates)
+    if not updated:
+        return json_error("Book not found", 404)
+
+    abs_service = get_abs_service()
+    enabled_bl_ids = get_enabled_grimmory_server_ids()
+    grimmory_by_filename = database_service.get_grimmory_by_filename(enabled_server_ids=enabled_bl_ids)
+    abs_metadata_by_id = _load_abs_reading_metadata_by_id(abs_service)
+    names = _compute_reading_display_names(
+        updated,
+        grimmory_by_filename=grimmory_by_filename,
+        abs_metadata_by_id=abs_metadata_by_id,
+    )
+
+    return jsonify(
+        {
+            "success": True,
+            "title": names["display_title"],
+            "author": names["display_author"],
+            "title_override": updated.title_override,
+            "author_override": updated.author_override,
+        }
+    )
+
+
 @reading_bp.route("/api/reading/book/<book_ref>/dates/sync-hardcover", methods=["POST"])
 def sync_dates_to_hardcover(book_ref):
     """Push local started_at/finished_at to Hardcover, overwriting HC dates."""
@@ -581,7 +717,7 @@ def sync_dates_to_hardcover(book_ref):
     synced, message = container.reading_date_service().push_dates_to_hardcover(book.id, force=True)
     if synced:
         return jsonify({"success": True, "message": message})
-    return jsonify({"success": False, "error": message}), 400
+    return json_error(message, 400)
 
 
 @reading_bp.route("/api/reading/book/<book_ref>/dates/pull-hardcover", methods=["POST"])
@@ -592,7 +728,7 @@ def pull_dates_from_hardcover(book_ref):
     success, message, dates = container.reading_date_service().pull_dates_from_hardcover(book.id)
     if success:
         return jsonify({"success": True, "message": message, "dates": dates})
-    return jsonify({"success": False, "error": message}), 400
+    return json_error(message, 400)
 
 
 @reading_bp.route("/api/reading/book/<book_ref>/journal", methods=["POST"])
@@ -604,7 +740,7 @@ def add_journal(book_ref):
     entry = (data.get("entry") or "").strip()
 
     if not entry:
-        return jsonify({"success": False, "error": "Entry text is required"}), 400
+        return json_error("Entry text is required", 400)
 
     # Get current progress for the journal entry
     book_states = database_service.get_states_for_book(book.id)
@@ -625,6 +761,7 @@ def add_journal(book_ref):
                 "id": journal.id,
                 "event": journal.event,
                 "entry": journal.entry,
+                "entry_html": render_markdown_html(journal.entry),
                 "percentage": journal.percentage,
                 "created_at": journal.created_at.isoformat() if journal.created_at else None,
             },
@@ -640,14 +777,14 @@ def delete_journal(journal_id):
     # Look up the journal before deleting so we can cascade for started/finished
     journal = database_service.get_reading_journal(journal_id)
     if not journal:
-        return jsonify({"success": False, "error": "Journal entry not found"}), 404
+        return json_error("Journal entry not found", 404)
 
     book_id = journal.book_id
     event = journal.event
 
     deleted = database_service.delete_reading_journal(journal_id)
     if not deleted:
-        return jsonify({"success": False, "error": "Journal entry not found"}), 404
+        return json_error("Journal entry not found", 404)
 
     # If this was the last started/finished journal, clear the corresponding book field
     cleared_field = None
@@ -669,13 +806,13 @@ def update_journal(journal_id):
 
     existing = database_service.get_reading_journal(journal_id)
     if not existing:
-        return jsonify({"success": False, "error": "Journal entry not found"}), 404
+        return json_error("Journal entry not found", 404)
 
     # Started/finished entries: only allow editing the date (created_at), not text
     if existing.event in ("started", "finished"):
         date_str = (data.get("created_at") or "").strip()
         if not date_str:
-            return jsonify({"success": False, "error": "created_at date is required for started/finished entries"}), 400
+            return json_error("created_at date is required for started/finished entries", 400)
         try:
             new_dt = datetime.strptime(date_str, "%Y-%m-%d")
         except ValueError:
@@ -691,6 +828,7 @@ def update_journal(journal_id):
                     "id": journal.id,
                     "event": journal.event,
                     "entry": journal.entry,
+                    "entry_html": render_markdown_html(journal.entry),
                     "percentage": journal.percentage,
                     "created_at": journal.created_at.isoformat() if journal.created_at else None,
                 },
@@ -698,9 +836,9 @@ def update_journal(journal_id):
         )
 
     if existing.event != "note":
-        return jsonify({"success": False, "error": "Only notes can be edited"}), 400
+        return json_error("Only notes can be edited", 400)
     if not entry:
-        return jsonify({"success": False, "error": "entry is required"}), 400
+        return json_error("entry is required", 400)
     journal = database_service.update_reading_journal(journal_id, entry=entry)
 
     return jsonify(
@@ -710,6 +848,7 @@ def update_journal(journal_id):
                 "id": journal.id,
                 "event": journal.event,
                 "entry": journal.entry,
+                "entry_html": render_markdown_html(journal.entry),
                 "percentage": journal.percentage,
                 "created_at": journal.created_at.isoformat() if journal.created_at else None,
             },
@@ -741,15 +880,15 @@ def set_goal(year):
     target = data.get("target_books")
 
     if target is None:
-        return jsonify({"success": False, "error": "target_books is required"}), 400
+        return json_error("target_books is required", 400)
 
     try:
         target = int(target)
     except (TypeError, ValueError):
-        return jsonify({"success": False, "error": "target_books must be an integer"}), 400
+        return json_error("target_books must be an integer", 400)
 
     if target < 1:
-        return jsonify({"success": False, "error": "target_books must be at least 1"}), 400
+        return json_error("target_books must be at least 1", 400)
 
     goal = database_service.save_reading_goal(year, target)
     return jsonify({"success": True, "year": goal.year, "target_books": goal.target_books})

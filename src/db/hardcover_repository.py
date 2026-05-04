@@ -51,8 +51,6 @@ class HardcoverRepository(BaseRepository):
         return self._save_new(entry)
 
     def get_hardcover_sync_logs(self, page=1, per_page=50, direction=None, action=None, search=None):
-        safe_page = max(1, int(page))
-        safe_per_page = max(1, int(per_page))
         with self.get_session() as session:
             query = session.query(HardcoverSyncLog)
             if direction:
@@ -66,16 +64,8 @@ class HardcoverRepository(BaseRepository):
                     | (HardcoverSyncLog.detail.ilike(like))
                     | (HardcoverSyncLog.error_message.ilike(like))
                 )
-            total = query.count()
-            items = (
-                query.order_by(HardcoverSyncLog.created_at.desc())
-                .offset((safe_page - 1) * safe_per_page)
-                .limit(safe_per_page)
-                .all()
-            )
-            for item in items:
-                session.expunge(item)
-            return items, total
+            items, total = self._paginate(query.order_by(HardcoverSyncLog.created_at.desc()), page=page, per_page=per_page)
+            return self._expunge_items(session, items), total
 
     def prune_hardcover_sync_logs(self, before_date):
         with self.get_session() as session:

@@ -7,6 +7,7 @@ flow with repo-owned tooling.
 
 - `dev`: public development branch on `origin`
 - `main`: public release branch on `origin`
+- review and feature branches: public-safe PR branches on `origin`
 - `draft`: private unpublished branch on `private`
 - `private/dev` and `private/main`: mirrors of the public branches
 
@@ -52,5 +53,6 @@ scripts/git/sync-private-mirrors.sh main
 ## Safety Checks
 
 - `config/private-paths.txt` defines what must never land on public branches
-- `.githooks/pre-push` blocks non-public branches from pushing to `origin`
+- `.githooks/pre-push` verifies pushes to `origin` do not include private-only paths
+- `.githooks/pre-push` blocks public branch deletion and mismatched local/remote ref pushes
 - `scripts/git/verify-public-tree.sh` validates public branch content

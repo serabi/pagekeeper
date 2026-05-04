@@ -193,6 +193,25 @@ class TestReadingServiceSetProgress:
         assert result["success"] is True
         assert result["percentage"] == 0.5
 
+    def test_set_progress_starts_book_through_status_machine(self):
+        book = _make_mock_book(id=1, status="not_started")
+        book.abs_id = "abs-1"
+        db = Mock()
+        db.get_book_by_id.return_value = book
+
+        container = Mock()
+        container.sync_clients.return_value = {}
+
+        svc = ReadingService(db)
+        svc.status_machine = Mock()
+        svc.status_machine.transition.return_value = {"success": True, "status": "active", "previous_status": "not_started"}
+
+        result = svc.set_progress(1, 0.5, container)
+
+        assert result["success"] is True
+        svc.status_machine.transition.assert_called_once_with(book, "active", "manual_progress", container=container)
+        db.save_book.assert_not_called()
+
 
 class TestReadingServiceUpdateStatus:
     @patch("src.services.reading_service.StatusMachine")
@@ -205,3 +224,56 @@ class TestReadingServiceUpdateStatus:
 
         assert result["success"] is False
         assert "not found" in result["error"].lower()
+
+
+class TestReadingServiceMarkComplete:
+    def test_mark_complete_records_transition_through_status_machine(self):
+        book = _make_mock_book(id=1, status="active")
+        book.abs_id = "abs-1"
+        book.ebook_filename = None
+        db = Mock()
+        db.get_book_by_ref.return_value = book
+
+        container = Mock()
+        container.sync_clients.return_value = {}
+
+        svc = ReadingService(db)
+        svc.status_machine = Mock()
+        svc.status_machine.transition.return_value = {
+            "success": True,
+            "status": "completed",
+            "previous_status": "active",
+        }
+
+        result = svc.mark_complete_with_sync(1, container)
+
+        assert result["success"] is True
+        svc.status_machine.transition.assert_called_once_with(book, "completed", "completion_sync", container=container)
+        db.add_reading_journal.assert_not_called()
+        db.update_book_reading_fields.assert_not_called()
+
+    def test_mark_complete_keeps_external_state_sync(self):
+        book = _make_mock_book(id=1, status="active")
+        book.abs_id = "abs-1"
+        book.ebook_filename = None
+        db = Mock()
+        db.get_book_by_ref.return_value = book
+
+        client = Mock()
+        client.is_configured.return_value = True
+        container = Mock()
+        container.sync_clients.return_value = {"Storyteller": client}
+
+        svc = ReadingService(db)
+        svc.status_machine = Mock()
+        svc.status_machine.transition.return_value = {
+            "success": True,
+            "status": "completed",
+            "previous_status": "active",
+        }
+
+        result = svc.mark_complete_with_sync(1, container)
+
+        assert result["success"] is True
+        client.update_progress.assert_called_once()
+        db.save_state.assert_called_once()
