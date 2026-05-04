@@ -242,6 +242,123 @@ class TestReadingRoutes(unittest.TestCase):
         self.db.get_book_by_ref.assert_called_with("42")
         self.db.update_book_reading_fields.assert_called_with(42, rating=5.0)
 
+    def test_metadata_overrides_endpoint_saves_trimmed_values(self):
+        book = Book(abs_id="book-1", title="Source Title", author="Source Author", status="active")
+        book.id = 101
+        updated = Book(
+            abs_id="book-1",
+            title="Source Title",
+            author="Source Author",
+            status="active",
+            title_override="Clean Title",
+            author_override="Clean Author",
+        )
+        updated.id = 101
+        self.db.get_book_by_ref.return_value = book
+        self.db.update_book_metadata_overrides.return_value = updated
+
+        resp = self.client.post(
+            "/api/reading/book/101/metadata-overrides",
+            json={"title_override": "  Clean Title  ", "author_override": "  Clean Author  "},
+        )
+        data = resp.get_json()
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["title"], "Clean Title")
+        self.assertEqual(data["author"], "Clean Author")
+        self.db.update_book_metadata_overrides.assert_called_once_with(
+            101,
+            title_override="Clean Title",
+            author_override="Clean Author",
+        )
+
+    def test_metadata_overrides_endpoint_clears_blank_values(self):
+        book = Book(
+            abs_id="book-1",
+            title="Source Title",
+            author="Source Author",
+            status="active",
+            title_override="Old Title",
+            author_override="Old Author",
+        )
+        book.id = 101
+        updated = Book(abs_id="book-1", title="Source Title", author="Source Author", status="active")
+        updated.id = 101
+        self.db.get_book_by_ref.return_value = book
+        self.db.update_book_metadata_overrides.return_value = updated
+
+        resp = self.client.post(
+            "/api/reading/book/101/metadata-overrides",
+            json={"title_override": "", "author_override": "   "},
+        )
+        data = resp.get_json()
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["title"], "Source Title")
+        self.assertEqual(data["author"], "Source Author")
+        self.db.update_book_metadata_overrides.assert_called_once_with(
+            101,
+            title_override=None,
+            author_override=None,
+        )
+
+    def test_metadata_overrides_endpoint_rejects_no_allowed_fields(self):
+        book = Book(abs_id="book-1", title="Source Title", status="active")
+        book.id = 101
+        self.db.get_book_by_ref.return_value = book
+
+        resp = self.client.post("/api/reading/book/101/metadata-overrides", json={"title": "Nope"})
+
+        self.assertEqual(resp.status_code, 400)
+
+    def test_metadata_overrides_endpoint_rejects_empty_save_without_existing_override(self):
+        book = Book(abs_id="book-1", title="Source Title", status="active")
+        book.id = 101
+        self.db.get_book_by_ref.return_value = book
+
+        resp = self.client.post(
+            "/api/reading/book/101/metadata-overrides",
+            json={"title_override": "", "author_override": ""},
+        )
+
+        self.assertEqual(resp.status_code, 400)
+
+    def test_metadata_overrides_endpoint_rejects_long_title(self):
+        book = Book(abs_id="book-1", title="Source Title", status="active")
+        book.id = 101
+        self.db.get_book_by_ref.return_value = book
+
+        resp = self.client.post(
+            "/api/reading/book/101/metadata-overrides",
+            json={"title_override": "x" * 501},
+        )
+
+        self.assertEqual(resp.status_code, 400)
+
+    def test_metadata_overrides_endpoint_rejects_long_author(self):
+        book = Book(abs_id="book-1", title="Source Title", status="active")
+        book.id = 101
+        self.db.get_book_by_ref.return_value = book
+
+        resp = self.client.post(
+            "/api/reading/book/101/metadata-overrides",
+            json={"author_override": "x" * 501},
+        )
+
+        self.assertEqual(resp.status_code, 400)
+
+    def test_metadata_overrides_endpoint_missing_book_returns_404(self):
+        self.db.get_book_by_ref.return_value = None
+
+        resp = self.client.post(
+            "/api/reading/book/missing/metadata-overrides",
+            json={"title_override": "Clean Title"},
+        )
+
+        self.assertEqual(resp.status_code, 404)
+
     def test_reading_page_renders_log_and_stats_tabs(self):
         book = Book(abs_id="book-1", title="Test Book", status="active")
         state = State(abs_id="book-1", client_name="manual", percentage=0.5)
@@ -259,3 +376,60 @@ class TestReadingRoutes(unittest.TestCase):
         self.assertIn(b">Log<", resp.data)
         self.assertIn(b">Stats<", resp.data)
         self.assertIn(b"Monthly Completions", resp.data)
+
+    def test_reading_page_uses_metadata_overrides_for_cards(self):
+        book = Book(
+            abs_id="book-1",
+            title="Source Title",
+            author="Source Author",
+            status="active",
+            title_override="Override Title",
+            author_override="Override Author",
+        )
+        book.id = 1
+        state = State(abs_id="book-1", book_id=1, client_name="manual", percentage=0.5)
+        self.db.get_all_books.return_value = [book]
+        self.db.get_all_states.return_value = [state]
+        self.db.get_states_by_book.return_value = {1: [state]}
+        self.db.get_grimmory_by_filename.return_value = {}
+        self.db.get_all_grimmory_books.return_value = []
+        self.db.get_all_hardcover_details.return_value = []
+        self.db.get_reading_goal.return_value = None
+        self.db.get_tbr_items.return_value = []
+        self.db.get_tbr_count.return_value = 0
+
+        resp = self.client.get("/reading")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"Override Title", resp.data)
+        self.assertIn(b"Override Author", resp.data)
+        self.assertIn(b'data-title="Override Title"', resp.data)
+        self.assertIn(b'data-author="Override Author"', resp.data)
+
+    def test_reading_detail_uses_metadata_overrides_for_hero(self):
+        book = Book(
+            abs_id="book-1",
+            title="Source Title",
+            author="Source Author",
+            status="active",
+            title_override="Override Title",
+            author_override="Override Author",
+        )
+        book.id = 1
+        self.db.get_book_by_ref.return_value = book
+        self.db.get_states_by_book.return_value = {}
+        self.db.get_grimmory_by_filename.return_value = {}
+        self.db.get_hardcover_details.return_value = None
+        self.db.get_reading_journals.return_value = []
+        self.db.get_bookfusion_highlights_for_book_by_book_id.return_value = []
+        self.db.is_bookfusion_linked_by_book_id.return_value = False
+        self.db.find_tbr_by_book_id.return_value = None
+        self.db.get_bookfusion_book_by_book_id.return_value = None
+
+        resp = self.client.get("/reading/book/1")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b"Override Title", resp.data)
+        self.assertIn(b"Override Author", resp.data)
+        self.assertIn(b"PageKeeper override", resp.data)
+        self.assertIn(b"Edit PageKeeper Metadata", resp.data)

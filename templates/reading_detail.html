@@ -62,10 +62,22 @@
                     </button>
                 </div>
                 <div class="r-hero-info">
-                    <h1 class="r-detail-title">{{ book.title }}{% if metadata.subtitle %}: {{ metadata.subtitle }}{% endif %}</h1>
-                    {% if metadata.author %}
-                    <div class="r-detail-author">{{ metadata.author }}</div>
-                    {% endif %}
+                    <div class="r-detail-title-row">
+                        <div class="r-detail-title-copy">
+                            <h1 class="r-detail-title">{{ book.title }}{% if metadata.subtitle %}: {{ metadata.subtitle }}{% endif %}</h1>
+                            {% if metadata.author %}
+                            <div class="r-detail-author">{{ metadata.author }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="r-metadata-actions">
+                            {% if book.has_metadata_override %}
+                            <span class="r-metadata-override-badge">PageKeeper override</span>
+                            {% endif %}
+                            <button type="button" class="r-metadata-edit-btn" onclick="openMetadataOverrideModal()">
+                                Edit PageKeeper Metadata
+                            </button>
+                        </div>
+                    </div>
 
                     <div class="r-detail-badges">
                         <span class="status-badge status-{{ book.status }}">{{ book.status|replace('_', ' ')|title }}</span>
@@ -657,6 +669,52 @@
             </div>
         </div>
         {% endif %}
+    </div>
+
+    {# ── Metadata Override Modal ── #}
+    <div id="metadata-override-modal"
+         class="modal-backdrop"
+         style="display:none;"
+         data-book-id="{{ book.id }}"
+         data-has-override="{{ 'true' if book.has_metadata_override else 'false' }}"
+         onclick="if(event.target===this)closeMetadataOverrideModal()">
+        <div class="modal-content metadata-override-modal-content">
+            <div class="modal-header">
+                <h3>Edit PageKeeper Metadata</h3>
+                <button class="modal-close" onclick="closeMetadataOverrideModal()">&times;</button>
+            </div>
+            <div class="modal-body metadata-override-modal-body">
+                <p class="metadata-override-help">
+                    These values change how PageKeeper displays this book. They do not update source services.
+                </p>
+                <label class="metadata-override-field" for="metadata-title-override">
+                    <span>Title override</span>
+                    <input type="text"
+                           id="metadata-title-override"
+                           class="input-inline"
+                           maxlength="500"
+                           value="{{ book.title_override or '' }}"
+                           placeholder="{{ book.source_title or 'Source title' }}">
+                </label>
+                <label class="metadata-override-field" for="metadata-author-override">
+                    <span>Author override</span>
+                    <input type="text"
+                           id="metadata-author-override"
+                           class="input-inline"
+                           maxlength="500"
+                           value="{{ book.author_override or '' }}"
+                           placeholder="{{ book.source_author or 'Source author' }}">
+                </label>
+                <div id="metadata-override-status" class="metadata-override-status" hidden></div>
+            </div>
+            <div class="modal-footer metadata-override-footer">
+                {% if book.has_metadata_override %}
+                <button type="button" class="btn btn-sm btn-danger-subtle" id="metadata-clear-btn" onclick="saveMetadataOverrides(true)">Clear Overrides</button>
+                {% endif %}
+                <button type="button" class="btn btn-secondary btn-sm" onclick="closeMetadataOverrideModal()">Cancel</button>
+                <button type="button" class="btn btn-primary btn-sm" id="metadata-save-btn" onclick="saveMetadataOverrides(false)">Save</button>
+            </div>
+        </div>
     </div>
 
     {# ── Cover Picker Modal ── #}

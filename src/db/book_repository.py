@@ -15,6 +15,7 @@ from .models import (
 )
 
 logger = logging.getLogger(__name__)
+_UNSET = object()
 
 
 class BookRepository(BaseRepository):
@@ -112,6 +113,23 @@ class BookRepository(BaseRepository):
             return self._upsert(Book, [Book.abs_id == book.abs_id], book, update_attrs)
         else:
             return self._save_new(book)
+
+    def update_book_metadata_overrides(self, book_id, *, title_override=_UNSET, author_override=_UNSET):
+        """Update PageKeeper-local metadata override fields for a book."""
+        with self.get_session() as session:
+            book = session.query(Book).filter(Book.id == book_id).first()
+            if not book:
+                return None
+
+            if title_override is not _UNSET:
+                book.title_override = title_override or None
+            if author_override is not _UNSET:
+                book.author_override = author_override or None
+
+            session.flush()
+            session.refresh(book)
+            session.expunge(book)
+            return book
 
     def delete_book(self, book_id):
         with self.get_session() as session:

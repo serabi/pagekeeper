@@ -53,6 +53,11 @@ def _synthetic_journal(abs_id, event, date_str, percentage=None):
     return _SyntheticJournal()
 
 
+def _metadata_override_value(book, field):
+    value = getattr(book, field, None)
+    return value if isinstance(value, str) and value else None
+
+
 def _build_book_reading_data(
     book,
     database_service,
@@ -100,6 +105,13 @@ def _build_book_reading_data(
     if not display_author:
         display_author = book.ebook_filename or ""
 
+    source_title = display_title
+    source_author = display_author
+    title_override = _metadata_override_value(book, "title_override")
+    author_override = _metadata_override_value(book, "author_override")
+    display_title = title_override or display_title
+    display_author = author_override or display_author
+
     covers = resolve_book_covers(
         book, abs_service, database_service, book_type, grimmory_meta=bl_meta, hardcover_details=hardcover_details
     )
@@ -109,6 +121,11 @@ def _build_book_reading_data(
         "abs_id": book.abs_id,
         "title": display_title,
         "abs_author": display_author,
+        "source_title": source_title,
+        "source_author": source_author,
+        "title_override": title_override,
+        "author_override": author_override,
+        "has_metadata_override": bool(title_override or author_override),
         "ebook_filename": book.ebook_filename,
         "kosync_doc_id": book.kosync_doc_id,
         "status": book.status,
@@ -352,6 +369,9 @@ def reading_detail(book_ref):
 
     container = get_container()
     metadata = build_book_metadata(book, container, database_service, abs_service)
+    author_override = _metadata_override_value(book, "author_override")
+    if author_override:
+        metadata["author"] = author_override
     hardcover = metadata.get("_hardcover")
 
     service_states, integrations, services_enabled = build_service_info(
@@ -577,6 +597,52 @@ def update_dates(book_ref):
             "success": True,
             "started_at": book.started_at,
             "finished_at": book.finished_at,
+        }
+    )
+
+
+@reading_bp.route("/api/reading/book/<book_ref>/metadata-overrides", methods=["POST"])
+def update_metadata_overrides(book_ref):
+    """Update PageKeeper-local title/author display overrides."""
+    database_service = get_database_service()
+    book = get_book_or_404(book_ref)
+    data = request.get_json(silent=True) or {}
+    allowed_fields = {"title_override", "author_override"}
+    present_fields = allowed_fields.intersection(data)
+
+    if not present_fields:
+        return json_error("No metadata override fields provided", 400)
+
+    updates = {}
+    for field in ("title_override", "author_override"):
+        if field not in data:
+            continue
+        value = data.get(field)
+        if value is None:
+            updates[field] = None
+            continue
+        value = str(value).strip()
+        if len(value) > 500:
+            label = "Title" if field == "title_override" else "Author"
+            return json_error(f"{label} override must be 500 characters or fewer", 400)
+        updates[field] = value or None
+
+    clears_all = updates.get("title_override") is None and updates.get("author_override") is None
+    has_existing_override = bool(book.title_override or book.author_override)
+    if set(updates) == allowed_fields and clears_all and not has_existing_override:
+        return json_error("Enter a title or author override before saving", 400)
+
+    updated = database_service.update_book_metadata_overrides(book.id, **updates)
+    if not updated:
+        return json_error("Book not found", 404)
+
+    return jsonify(
+        {
+            "success": True,
+            "title": updated.display_title,
+            "author": updated.display_author,
+            "title_override": updated.title_override,
+            "author_override": updated.author_override,
         }
     )
 
