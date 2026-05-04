@@ -193,10 +193,12 @@ class Book(Base):
 
     @property
     def display_title(self):
+        """Stored title plus override only (no Grimmory/ABS enrichment). Prefer reading APIs for UI strings."""
         return self.title_override or self.title or ""
 
     @property
     def display_author(self):
+        """Stored author plus override only. Prefer reading APIs for detail hero author."""
         return self.author_override or self.author or ""
 
     def __repr__(self):

@@ -64,9 +64,9 @@
                 <div class="r-hero-info">
                     <div class="r-detail-title-row">
                         <div class="r-detail-title-copy">
-                            <h1 class="r-detail-title">{{ book.title }}{% if metadata.subtitle %}: {{ metadata.subtitle }}{% endif %}</h1>
-                            {% if metadata.author %}
-                            <div class="r-detail-author">{{ metadata.author }}</div>
+                            <h1 class="r-detail-title">{{ book.title }}{% if metadata.subtitle and not book.has_metadata_override %}: {{ metadata.subtitle }}{% endif %}</h1>
+                            {% if book.abs_author %}
+                            <div class="r-detail-author">{{ book.abs_author|e }}</div>
                             {% endif %}
                         </div>
                         <div class="r-metadata-actions">
