@@ -545,3 +545,29 @@ class TestReadingRoutes(unittest.TestCase):
 
         self.assertEqual(resp.status_code, 200)
         self.assertIn(b'<h1 class="r-detail-title">Source Title: Catalog Subtitle</h1>', resp.data)
+
+    def test_reading_detail_keeps_subtitle_with_author_only_override(self):
+        book = Book(
+            abs_id="book-1",
+            title="Source Title",
+            author="Source Author",
+            subtitle="Catalog Subtitle",
+            status="active",
+            author_override="Override Author",
+        )
+        book.id = 1
+        self.db.get_book_by_ref.return_value = book
+        self.db.get_states_by_book.return_value = {}
+        self.db.get_grimmory_by_filename.return_value = {}
+        self.db.get_hardcover_details.return_value = None
+        self.db.get_reading_journals.return_value = []
+        self.db.get_bookfusion_highlights_for_book_by_book_id.return_value = []
+        self.db.is_bookfusion_linked_by_book_id.return_value = False
+        self.db.find_tbr_by_book_id.return_value = None
+        self.db.get_bookfusion_book_by_book_id.return_value = None
+
+        resp = self.client.get("/reading/book/1")
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn(b'<h1 class="r-detail-title">Source Title: Catalog Subtitle</h1>', resp.data)
+        self.assertIn(b"Override Author", resp.data)
