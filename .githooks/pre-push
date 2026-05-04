@@ -20,14 +20,8 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     branch="$(echo "$remote_ref" | sed 's|refs/heads/||')"
     expected_local_ref="refs/heads/$branch"
 
-    if [ "$branch" != "dev" ] && [ "$branch" != "main" ]; then
-        echo "Blocked: refusing to push '$branch' to origin." >&2
-        echo "Push private branches to the 'private' remote instead." >&2
-        exit 1
-    fi
-
     if [ "$local_ref" != "$expected_local_ref" ]; then
-        echo "Blocked: push local '$local_ref' to matching public branch '$branch' instead of rewriting refs." >&2
+        echo "Blocked: push local '$local_ref' to matching origin branch '$branch' instead of rewriting refs." >&2
         exit 1
     fi
 
@@ -37,6 +31,11 @@ while read -r local_ref local_sha remote_ref remote_sha; do
     fi
 
     "$verify_script" --ref "$local_sha"
+
+    if [ "$branch" != "dev" ] && [ "$branch" != "main" ]; then
+        echo "Verified public-safe branch '$branch' for origin." >&2
+        continue
+    fi
 
     if [ "$branch" = "main" ]; then
         echo "You're pushing directly to main on origin." >&2

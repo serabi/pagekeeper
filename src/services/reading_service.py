@@ -1,11 +1,12 @@
 """Service for reading status transitions, progress updates, and related side effects."""
 
 import logging
+import os
 import time
 from datetime import date
 
 from src.db.models import State
-from src.services.reading_date_service import push_grimmory_read_status
+from src.services.mapping_cleanup_service import cleanup_mapping_resources
 from src.services.status_machine import StatusMachine
 
 logger = logging.getLogger(__name__)
@@ -66,7 +67,6 @@ class ReadingService:
         This is the books.py mark_complete path which pushes progress to all sync clients
         and handles the delete-after-completion flow.
         """
-        from src.blueprints.helpers import cleanup_mapping_resources
         from src.sync_clients.sync_client_interface import LocatorResult, UpdateProgressRequest
 
         book = self.database_service.get_book_by_ref(book_id)
@@ -96,26 +96,21 @@ class ReadingService:
                 )
                 self.database_service.save_state(state)
 
-        # Record completion locally (skip if already completed — idempotent)
         if book.status != "completed":
-            today = date.today().isoformat()
-            reading_updates = {"finished_at": today}
-            if not book.started_at:
-                reading_updates["started_at"] = self.pull_started_at(book_id, container)
-            if book.finished_at:
-                reading_updates["read_count"] = (book.read_count or 1) + 1
-
-            book.status = "completed"
-            self.database_service.save_book(book)
-            self.database_service.update_book_reading_fields(book.id, **reading_updates)
-            self.database_service.add_reading_journal(book.id, event="finished", percentage=1.0, abs_id=book.abs_id)
-
-        # Push READ status to Grimmory instances
-        if book.ebook_filename:
-            push_grimmory_read_status(book, container, "READ")
+            result = self.status_machine.transition(book, "completed", "completion_sync", container=container)
+            if not result["success"]:
+                return result
 
         if perform_delete:
-            cleanup_mapping_resources(book)
+            cleanup_mapping_resources(
+                book,
+                container=container,
+                manager=container.sync_manager(),
+                database_service=self.database_service,
+                abs_service=container.abs_service(),
+                grimmory_client=container.grimmory_client_group(),
+                collection_name=os.environ.get("ABS_COLLECTION_NAME", "Synced with KOReader"),
+            )
             self.database_service.delete_book(book.id)
 
         return {"success": True}
@@ -129,12 +124,10 @@ class ReadingService:
         if not book:
             return {"success": False, "error": "Book not found"}
 
-        # Mark book as active if it hasn't been started yet
         if percentage > 0 and book.status not in ("active", "paused", "dnf", "completed"):
-            book.status = "active"
-            if not book.started_at:
-                book.started_at = self.pull_started_at(book_id, container)
-            self.database_service.save_book(book)
+            result = self.status_machine.transition(book, "active", "manual_progress", container=container)
+            if not result["success"]:
+                return result
 
         state = State(
             abs_id=book.abs_id,

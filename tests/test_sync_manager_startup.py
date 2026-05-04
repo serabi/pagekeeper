@@ -41,7 +41,9 @@ def test_startup_checks_treats_false_return_as_failed_connection():
 
     manager = _make_sync_manager({"Storyteller": client})
 
-    with patch("src.sync_manager.time.sleep"), patch("src.sync_manager.logger") as mock_logger:
+    with patch("src.services.sync_manager_startup.time.sleep"), patch(
+        "src.services.sync_manager_startup.logger"
+    ) as mock_logger:
         manager.startup_checks()
 
     assert client.check_connection.call_count == 2
@@ -56,7 +58,9 @@ def test_startup_checks_logs_retry_success_only_when_second_attempt_succeeds():
 
     manager = _make_sync_manager({"Storyteller": client})
 
-    with patch("src.sync_manager.time.sleep"), patch("src.sync_manager.logger") as mock_logger:
+    with patch("src.services.sync_manager_startup.time.sleep"), patch(
+        "src.services.sync_manager_startup.logger"
+    ) as mock_logger:
         manager.startup_checks()
 
     assert client.check_connection.call_count == 2
