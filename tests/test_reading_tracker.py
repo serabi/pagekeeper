@@ -36,10 +36,10 @@ class TestReadingTrackerModels(unittest.TestCase):
 
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    def _create_book(self, abs_id="test-book-1", title="Test Book", status="active"):
+    def _create_book(self, abs_id="test-book-1", title="Test Book", status="active", author=None):
         from src.db.models import Book
 
-        book = Book(abs_id=abs_id, title=title, status=status)
+        book = Book(abs_id=abs_id, title=title, status=status, author=author)
         return self.db.save_book(book)
 
     # -- Book reading fields --
@@ -51,6 +51,69 @@ class TestReadingTrackerModels(unittest.TestCase):
         self.assertIsNone(book.finished_at)
         self.assertIsNone(book.rating)
         self.assertEqual(book.read_count, 1)
+
+    def test_book_metadata_override_defaults(self):
+        """New books fall back to imported title/author when no overrides exist."""
+        book = self._create_book(author="Source Author")
+        self.assertIsNone(book.title_override)
+        self.assertIsNone(book.author_override)
+        self.assertEqual(book.display_title, "Test Book")
+        self.assertEqual(book.display_author, "Source Author")
+
+    def test_update_book_metadata_overrides(self):
+        """Metadata overrides persist separately from imported metadata."""
+        book = self._create_book(author="Source Author")
+        updated = self.db.update_book_metadata_overrides(
+            book.id,
+            title_override="Clean Title",
+            author_override="Clean Author",
+        )
+        self.assertEqual(updated.title_override, "Clean Title")
+        self.assertEqual(updated.author_override, "Clean Author")
+        self.assertEqual(updated.display_title, "Clean Title")
+        self.assertEqual(updated.display_author, "Clean Author")
+
+    def test_clearing_book_metadata_override_falls_back_to_source(self):
+        """Clearing one override restores source metadata for that field."""
+        book = self._create_book(author="Source Author")
+        self.db.update_book_metadata_overrides(
+            book.id,
+            title_override="Clean Title",
+            author_override="Clean Author",
+        )
+
+        updated = self.db.update_book_metadata_overrides(book.id, title_override=None)
+
+        self.assertIsNone(updated.title_override)
+        self.assertEqual(updated.author_override, "Clean Author")
+        self.assertEqual(updated.display_title, "Test Book")
+        self.assertEqual(updated.display_author, "Clean Author")
+
+    def test_update_book_metadata_overrides_nonexistent(self):
+        """Returns None for a missing book."""
+        result = self.db.update_book_metadata_overrides(99999, title_override="Missing")
+        self.assertIsNone(result)
+
+    def test_save_book_source_refresh_preserves_metadata_overrides(self):
+        """Source metadata refreshes should not clear PageKeeper overrides."""
+        from src.db.models import Book
+
+        book = self._create_book(title="Imported Title", author="Imported Author")
+        self.db.update_book_metadata_overrides(
+            book.id,
+            title_override="Override Title",
+            author_override="Override Author",
+        )
+
+        self.db.save_book(Book(abs_id=book.abs_id, title="Refreshed Title", author="Refreshed Author"))
+        refreshed = self.db.get_book_by_abs_id(book.abs_id)
+
+        self.assertEqual(refreshed.title, "Refreshed Title")
+        self.assertEqual(refreshed.author, "Refreshed Author")
+        self.assertEqual(refreshed.title_override, "Override Title")
+        self.assertEqual(refreshed.author_override, "Override Author")
+        self.assertEqual(refreshed.display_title, "Override Title")
+        self.assertEqual(refreshed.display_author, "Override Author")
 
     def test_update_book_reading_fields(self):
         """update_book_reading_fields sets only reading fields."""

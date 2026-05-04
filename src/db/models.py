@@ -115,6 +115,8 @@ class Book(Base):
     custom_cover_url = Column(String(500), nullable=True)
     author = Column(String(500), nullable=True)
     subtitle = Column(String(500), nullable=True)
+    title_override = Column(String(500), nullable=True)
+    author_override = Column(String(500), nullable=True)
 
     # Reading tracker fields
     started_at = Column(String(10), nullable=True)  # YYYY-MM-DD
@@ -160,6 +162,8 @@ class Book(Base):
         custom_cover_url: str = None,
         author: str = None,
         subtitle: str = None,
+        title_override: str = None,
+        author_override: str = None,
         started_at: str = None,
         finished_at: str = None,
         rating: float = None,
@@ -180,10 +184,22 @@ class Book(Base):
         self.custom_cover_url = custom_cover_url
         self.author = author
         self.subtitle = subtitle
+        self.title_override = title_override
+        self.author_override = author_override
         self.started_at = started_at
         self.finished_at = finished_at
         self.rating = rating
         self.read_count = read_count
+
+    @property
+    def display_title(self):
+        """Stored title plus override only (no Grimmory/ABS enrichment). Prefer reading APIs for UI strings."""
+        return self.title_override or self.title or ""
+
+    @property
+    def display_author(self):
+        """Stored author plus override only. Prefer reading APIs for detail hero author."""
+        return self.author_override or self.author or ""
 
     def __repr__(self):
         return f"<Book(id={self.id}, abs_id='{self.abs_id}', title='{self.title}')>"

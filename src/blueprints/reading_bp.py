@@ -52,16 +52,22 @@ def _synthetic_journal(abs_id, event, date_str, percentage=None):
     return _SyntheticJournal()
 
 
-def _build_book_reading_data(
-    book,
-    database_service,
-    abs_service,
-    states_by_book,
-    grimmory_by_filename=None,
-    abs_metadata_by_id=None,
-    hardcover_details=None,
-):
-    """Build a reading-focused data dict for a single book."""
+def _metadata_override_value(book, field):
+    value = getattr(book, field, None)
+    return value if isinstance(value, str) and value else None
+
+
+def _compute_reading_display_names(book, *, grimmory_by_filename=None, abs_metadata_by_id=None):
+    """Resolve enriched title/author the same way as reading cards and detail `book` dict.
+
+    Used by `_build_book_reading_data` and the metadata-overrides API so clients see
+    the same strings as the web UI (Grimmory stem replacement, optional ABS bulk author,
+    then PageKeeper overrides).
+
+    Returns a dict with display_title, display_author (reading card byline and detail hero),
+    source_*
+    fields, override flags, bl_meta for cover resolution, and book_type.
+    """
     sync_mode = book.sync_mode
     if sync_mode == "ebook_only":
         book_type = "ebook-only"
@@ -70,11 +76,6 @@ def _build_book_reading_data(
     else:
         book_type = "linked"
 
-    # Get unified progress from states
-    states = states_by_book.get(book.id, [])
-    max_progress = ReadingService.max_progress(states, as_percent=True)
-
-    # Enrich title/author from Grimmory or ABS metadata when available
     display_title = book.title or ""
     display_author = ""
     bl_meta = find_grimmory_metadata(book, grimmory_by_filename) if grimmory_by_filename else None
@@ -89,8 +90,8 @@ def _build_book_reading_data(
     if bl_meta and bl_meta.authors:
         display_author = bl_meta.authors
 
-    if not display_author and book_type != "ebook-only":
-        abs_meta = (abs_metadata_by_id or {}).get(book.abs_id, {})
+    if not display_author and book_type != "ebook-only" and book.abs_id:
+        abs_meta = (abs_metadata_by_id or {}).get(str(book.abs_id), {})
         display_author = abs_meta.get("author") or ""
 
     if not display_author and book.author:
@@ -98,6 +99,70 @@ def _build_book_reading_data(
 
     if not display_author:
         display_author = book.ebook_filename or ""
+
+    source_title = display_title
+    source_author = display_author
+    title_override = _metadata_override_value(book, "title_override")
+    author_override = _metadata_override_value(book, "author_override")
+    display_title = title_override or display_title
+    display_author = author_override or display_author
+
+    return {
+        "display_title": display_title,
+        "display_author": display_author,
+        "source_title": source_title,
+        "source_author": source_author,
+        "title_override": title_override,
+        "author_override": author_override,
+        "has_metadata_override": bool(title_override or author_override),
+        "bl_meta": bl_meta,
+        "book_type": book_type,
+    }
+
+
+def _load_abs_reading_metadata_by_id(abs_service):
+    """Bulk ABS author map keyed by library item id (same source as the reading log)."""
+    abs_metadata_by_id: dict[str, dict[str, str]] = {}
+    try:
+        all_abs_books = abs_service.get_audiobooks()
+        for ab in all_abs_books:
+            ab_id = ab.get("id")
+            if not ab_id:
+                continue
+            metadata = ab.get("media", {}).get("metadata", {})
+            abs_metadata_by_id[str(ab_id)] = {
+                "author": metadata.get("authorName") or "",
+            }
+    except Exception as e:
+        logger.warning("Could not fetch ABS metadata for reading enrichment: %s", e)
+    return abs_metadata_by_id
+
+
+def _build_book_reading_data(
+    book,
+    database_service,
+    abs_service,
+    states_by_book,
+    grimmory_by_filename=None,
+    abs_metadata_by_id=None,
+    hardcover_details=None,
+):
+    """Build a reading-focused data dict for a single book."""
+    names = _compute_reading_display_names(
+        book, grimmory_by_filename=grimmory_by_filename, abs_metadata_by_id=abs_metadata_by_id
+    )
+    display_title = names["display_title"]
+    display_author = names["display_author"]
+    source_title = names["source_title"]
+    source_author = names["source_author"]
+    title_override = names["title_override"]
+    author_override = names["author_override"]
+    bl_meta = names["bl_meta"]
+    book_type = names["book_type"]
+
+    # Get unified progress from states
+    states = states_by_book.get(book.id, [])
+    max_progress = ReadingService.max_progress(states, as_percent=True)
 
     covers = resolve_book_covers(
         book, abs_service, database_service, book_type, grimmory_meta=bl_meta, hardcover_details=hardcover_details
@@ -108,6 +173,11 @@ def _build_book_reading_data(
         "abs_id": book.abs_id,
         "title": display_title,
         "abs_author": display_author,
+        "source_title": source_title,
+        "source_author": source_author,
+        "title_override": title_override,
+        "author_override": author_override,
+        "has_metadata_override": names["has_metadata_override"],
         "ebook_filename": book.ebook_filename,
         "kosync_doc_id": book.kosync_doc_id,
         "status": book.status,
@@ -153,19 +223,7 @@ def reading_index():
     reading_statuses = {"active", "completed", "paused", "dnf", "not_started"}
     books = [b for b in books if b.status in reading_statuses]
 
-    abs_metadata_by_id = {}
-    try:
-        all_abs_books = abs_service.get_audiobooks()
-        for ab in all_abs_books:
-            ab_id = ab.get("id")
-            if not ab_id:
-                continue
-            metadata = ab.get("media", {}).get("metadata", {})
-            abs_metadata_by_id[ab_id] = {
-                "author": metadata.get("authorName") or "",
-            }
-    except Exception as e:
-        logger.warning(f"Could not fetch ABS metadata for reading log enrichment: {e}")
+    abs_metadata_by_id = _load_abs_reading_metadata_by_id(abs_service)
 
     # Fetch all states at once to avoid N+1
     states_by_book = database_service.get_states_by_book()
@@ -316,13 +374,20 @@ def reading_detail(book_ref):
 
     states_by_book = database_service.get_states_by_book()
 
-    # Grimmory enrichment
+    # Grimmory + ABS bulk enrichment (same inputs as the reading log for list/detail parity)
     enabled_bl_ids = get_enabled_grimmory_server_ids()
     grimmory_by_filename = database_service.get_grimmory_by_filename(enabled_server_ids=enabled_bl_ids)
+    abs_metadata_by_id = _load_abs_reading_metadata_by_id(abs_service)
 
     hc_details = database_service.get_hardcover_details(book.id)
     book_data = _build_book_reading_data(
-        book, database_service, abs_service, states_by_book, grimmory_by_filename, hardcover_details=hc_details
+        book,
+        database_service,
+        abs_service,
+        states_by_book,
+        grimmory_by_filename,
+        abs_metadata_by_id=abs_metadata_by_id,
+        hardcover_details=hc_details,
     )
     journals = database_service.get_reading_journals(book.id)
 
@@ -351,6 +416,9 @@ def reading_detail(book_ref):
 
     container = get_container()
     metadata = build_book_metadata(book, container, database_service, abs_service)
+    author_override = _metadata_override_value(book, "author_override")
+    if author_override:
+        metadata["author"] = author_override
     hardcover = metadata.get("_hardcover")
 
     service_states, integrations, services_enabled = build_service_info(
@@ -576,6 +644,67 @@ def update_dates(book_ref):
             "success": True,
             "started_at": book.started_at,
             "finished_at": book.finished_at,
+        }
+    )
+
+
+@reading_bp.route("/api/reading/book/<book_ref>/metadata-overrides", methods=["POST"])
+def update_metadata_overrides(book_ref):
+    """Update PageKeeper-local title/author display overrides.
+
+    Response title and author match the reading log and detail page after reload: same
+    Grimmory title enrichment, ABS bulk author map, and overrides as the reading card dict.
+    Native apps can treat these as canonical display strings without re-implementing enrichment.
+    """
+    database_service = get_database_service()
+    book = get_book_or_404(book_ref)
+    data = request.get_json(silent=True) or {}
+    allowed_fields = {"title_override", "author_override"}
+    present_fields = allowed_fields.intersection(data)
+
+    if not present_fields:
+        return json_error("No metadata override fields provided", 400)
+
+    updates = {}
+    for field in ("title_override", "author_override"):
+        if field not in data:
+            continue
+        value = data.get(field)
+        if value is None:
+            updates[field] = None
+            continue
+        value = str(value).strip()
+        if len(value) > 500:
+            label = "Title" if field == "title_override" else "Author"
+            return json_error(f"{label} override must be 500 characters or fewer", 400)
+        updates[field] = value or None
+
+    clears_all = updates.get("title_override") is None and updates.get("author_override") is None
+    has_existing_override = bool(book.title_override or book.author_override)
+    if set(updates) == allowed_fields and clears_all and not has_existing_override:
+        return json_error("Enter a title or author override before saving", 400)
+
+    updated = database_service.update_book_metadata_overrides(book.id, **updates)
+    if not updated:
+        return json_error("Book not found", 404)
+
+    abs_service = get_abs_service()
+    enabled_bl_ids = get_enabled_grimmory_server_ids()
+    grimmory_by_filename = database_service.get_grimmory_by_filename(enabled_server_ids=enabled_bl_ids)
+    abs_metadata_by_id = _load_abs_reading_metadata_by_id(abs_service)
+    names = _compute_reading_display_names(
+        updated,
+        grimmory_by_filename=grimmory_by_filename,
+        abs_metadata_by_id=abs_metadata_by_id,
+    )
+
+    return jsonify(
+        {
+            "success": True,
+            "title": names["display_title"],
+            "author": names["display_author"],
+            "title_override": updated.title_override,
+            "author_override": updated.author_override,
         }
     )
 
