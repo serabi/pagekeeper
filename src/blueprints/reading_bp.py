@@ -3,6 +3,7 @@
 import json as _json
 import logging
 import math
+import time
 from datetime import date, datetime
 from pathlib import Path
 
@@ -27,6 +28,12 @@ from src.utils.markdown import render_markdown_html
 logger = logging.getLogger(__name__)
 
 reading_bp = Blueprint("reading", __name__)
+
+_ABS_READING_METADATA_CACHE_TTL_SECONDS = 300
+_abs_reading_metadata_cache = {
+    "loaded_at": 0.0,
+    "metadata_by_id": None,
+}
 
 
 def _get_reading_service():
@@ -122,6 +129,11 @@ def _compute_reading_display_names(book, *, grimmory_by_filename=None, abs_metad
 
 def _load_abs_reading_metadata_by_id(abs_service):
     """Bulk ABS author map keyed by library item id (same source as the reading log)."""
+    now = time.monotonic()
+    cached = _abs_reading_metadata_cache["metadata_by_id"]
+    if cached is not None and now - _abs_reading_metadata_cache["loaded_at"] < _ABS_READING_METADATA_CACHE_TTL_SECONDS:
+        return cached
+
     abs_metadata_by_id: dict[str, dict[str, str]] = {}
     try:
         all_abs_books = abs_service.get_audiobooks()
@@ -135,7 +147,19 @@ def _load_abs_reading_metadata_by_id(abs_service):
             }
     except Exception as e:
         logger.warning("Could not fetch ABS metadata for reading enrichment: %s", e)
+    _abs_reading_metadata_cache["loaded_at"] = now
+    _abs_reading_metadata_cache["metadata_by_id"] = abs_metadata_by_id
     return abs_metadata_by_id
+
+
+def _get_cached_abs_reading_metadata_by_id():
+    """Return the warm ABS author map, if still within TTL, without refreshing it."""
+    cached = _abs_reading_metadata_cache["metadata_by_id"]
+    if cached is None:
+        return None
+    if time.monotonic() - _abs_reading_metadata_cache["loaded_at"] >= _ABS_READING_METADATA_CACHE_TTL_SECONDS:
+        return None
+    return cached
 
 
 def _build_book_reading_data(
@@ -374,10 +398,10 @@ def reading_detail(book_ref):
 
     states_by_book = database_service.get_states_by_book()
 
-    # Grimmory + ABS bulk enrichment (same inputs as the reading log for list/detail parity)
+    # Grimmory + warm ABS enrichment (same cached input as the reading log when available).
     enabled_bl_ids = get_enabled_grimmory_server_ids()
     grimmory_by_filename = database_service.get_grimmory_by_filename(enabled_server_ids=enabled_bl_ids)
-    abs_metadata_by_id = _load_abs_reading_metadata_by_id(abs_service)
+    abs_metadata_by_id = _get_cached_abs_reading_metadata_by_id()
 
     hc_details = database_service.get_hardcover_details(book.id)
     book_data = _build_book_reading_data(
@@ -688,10 +712,9 @@ def update_metadata_overrides(book_ref):
     if not updated:
         return json_error("Book not found", 404)
 
-    abs_service = get_abs_service()
     enabled_bl_ids = get_enabled_grimmory_server_ids()
     grimmory_by_filename = database_service.get_grimmory_by_filename(enabled_server_ids=enabled_bl_ids)
-    abs_metadata_by_id = _load_abs_reading_metadata_by_id(abs_service)
+    abs_metadata_by_id = _get_cached_abs_reading_metadata_by_id()
     names = _compute_reading_display_names(
         updated,
         grimmory_by_filename=grimmory_by_filename,

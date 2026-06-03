@@ -164,6 +164,10 @@ class TestReadingRoutes(unittest.TestCase):
         self.db.get_hardcover_details.return_value = None
         self.db.get_grimmory_by_filename.return_value = {}
         self.db.get_bookfusion_book_by_book_id.return_value = None
+        from src.blueprints import reading_bp
+
+        reading_bp._abs_reading_metadata_cache["loaded_at"] = 0.0
+        reading_bp._abs_reading_metadata_cache["metadata_by_id"] = None
 
     def test_stats_endpoint_returns_rich_payload(self):
         self.db.get_all_books.return_value = [
@@ -399,9 +403,29 @@ class TestReadingRoutes(unittest.TestCase):
         self.assertEqual(data["title"], "Enriched From Grimmory")
         self.assertEqual(data["author"], "Override Author")
 
-    def test_metadata_overrides_response_uses_abs_bulk_author_when_stored_author_empty(self):
+    def test_abs_reading_metadata_cache_reuses_bulk_author_map_until_ttl_expires(self):
+        from src.blueprints import reading_bp
+
+        abs_row = {"id": "bulk-abs-1", "media": {"metadata": {"authorName": "Audiobookshelf Author"}}}
+        abs_service = Mock()
+        abs_service.get_audiobooks.return_value = [abs_row]
+
+        with patch("src.blueprints.reading_bp.time.monotonic", side_effect=[100.0, 200.0, 401.0]):
+            first = reading_bp._load_abs_reading_metadata_by_id(abs_service)
+            second = reading_bp._load_abs_reading_metadata_by_id(abs_service)
+            third = reading_bp._load_abs_reading_metadata_by_id(abs_service)
+
+        self.assertEqual(first, {"bulk-abs-1": {"author": "Audiobookshelf Author"}})
+        self.assertIs(second, first)
+        self.assertEqual(third, first)
+        self.assertEqual(abs_service.get_audiobooks.call_count, 2)
+
+    def test_metadata_overrides_response_uses_warm_abs_author_when_stored_author_empty(self):
+        from src.blueprints import reading_bp
+
         abs_row = {"id": "bulk-abs-1", "media": {"metadata": {"authorName": "Audiobookshelf Author"}}}
         with patch.object(self.mock_container.mock_abs_service, "get_audiobooks", return_value=[abs_row]):
+            reading_bp._load_abs_reading_metadata_by_id(self.mock_container.mock_abs_service)
             book = Book(abs_id="bulk-abs-1", title="T", author="", status="active")
             book.id = 42
             updated = Book(abs_id="bulk-abs-1", title="T", author="", status="active", title_override="T2")
@@ -419,6 +443,26 @@ class TestReadingRoutes(unittest.TestCase):
         self.assertTrue(data["success"])
         self.assertEqual(data["title"], "T2")
         self.assertEqual(data["author"], "Audiobookshelf Author")
+
+    def test_metadata_overrides_response_skips_cold_abs_bulk_author_lookup(self):
+        book = Book(abs_id="bulk-abs-1", title="T", author="", ebook_filename="fallback.epub", status="active")
+        book.id = 42
+        updated = Book(abs_id="bulk-abs-1", title="T", author="", ebook_filename="fallback.epub", status="active")
+        updated.id = 42
+        self.db.get_book_by_ref.return_value = book
+        self.db.update_book_metadata_overrides.return_value = updated
+
+        with patch.object(self.mock_container.mock_abs_service, "get_audiobooks") as get_audiobooks:
+            resp = self.client.post(
+                "/api/reading/book/42/metadata-overrides",
+                json={"title_override": "T"},
+            )
+        data = resp.get_json()
+
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(data["success"])
+        self.assertEqual(data["author"], "fallback.epub")
+        get_audiobooks.assert_not_called()
 
     def test_reading_page_renders_log_and_stats_tabs(self):
         book = Book(abs_id="book-1", title="Test Book", status="active")
