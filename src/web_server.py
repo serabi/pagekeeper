@@ -6,16 +6,16 @@ import signal
 
 from flask import Flask
 
+from src import app_setup as _app_setup
 from src.app_runtime import (
     apply_settings,
-    get_runtime_state,
     get_or_create_secret_key,
+    get_runtime_state,
     handle_exit_signal,
     reconcile_socket_listener,
     reconfigure_logging,
     start_runtime_services,
 )
-from src import app_setup as _app_setup
 from src.app_setup import setup_dependencies as _setup_dependencies
 from src.app_template_context import inject_global_vars
 from src.blueprints import register_blueprints
@@ -23,6 +23,7 @@ from src.blueprints.helpers import safe_folder_name
 from src.utils.markdown import render_markdown_markup, sanitize_html
 
 logger = logging.getLogger(__name__)
+SYNC_PERIOD_MINS = _app_setup.SYNC_PERIOD_MINS
 
 __all__ = [
     "SYNC_PERIOD_MINS",
