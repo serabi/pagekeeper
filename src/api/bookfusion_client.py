@@ -359,18 +359,144 @@ class BookFusionClient:
 
     # ── Highlights (Obsidian API, X-Token) ──
 
-    def fetch_highlights(self, cursor: str | None = None) -> dict:
+    def fetch_highlights(self, cursor: str | None = None, bookfusion_id: str | None = None) -> dict:
         """Fetch one page of highlights from the Obsidian sync API."""
         if not self.highlights_api_key:
             raise ValueError("Highlights API key not configured")
+        body = {"cursor": cursor}
+        if bookfusion_id:
+            body["book_id"] = bookfusion_id
         resp = self.session.post(
             f"{BASE_URL}/obsidian-api/sync",
             headers={"X-Token": self.highlights_api_key, "API-Version": "1", "Content-Type": "application/json"},
-            json={"cursor": cursor},
+            json=body,
             timeout=30,
         )
         resp.raise_for_status()
         return resp.json()
+
+    def _process_highlight_pages(
+        self, pages: list, db_service, bookfusion_id: str | None = None, save_books: bool = True
+    ) -> dict:
+        total_new = 0
+        all_new_ids = []
+        all_books = {}
+        highlights_batch = []
+        target_id = str(bookfusion_id).strip() if bookfusion_id else None
+
+        for page in pages:
+            if not isinstance(page, dict):
+                continue
+            if page.get("type") != "book":
+                continue
+
+            book_id = str(page.get("id", "")).strip()
+            if not book_id:
+                continue
+            if target_id and book_id != target_id:
+                continue
+
+            raw_frontmatter = page.get("frontmatter")
+            parsed = _parse_frontmatter(raw_frontmatter)
+            book_title = parsed["title"] or page.get("filename", "")
+            if book_title.endswith(".md"):
+                book_title = book_title[:-3].strip()
+
+            hl_count = len(page.get("highlights") or [])
+            if book_id not in all_books:
+                all_books[book_id] = {
+                    "bookfusion_id": book_id,
+                    "title": book_title,
+                    "authors": parsed["authors"],
+                    "filename": page.get("filename", ""),
+                    "frontmatter": raw_frontmatter,
+                    "tags": parsed["tags"],
+                    "series": parsed["series"],
+                    "highlight_count": hl_count,
+                }
+            else:
+                all_books[book_id]["highlight_count"] += hl_count
+
+            for hl in page.get("highlights") or []:
+                if not isinstance(hl, dict):
+                    continue
+                highlight_id = str(hl.get("id", "")).strip()
+                if not highlight_id:
+                    continue
+                content = hl.get("content") or ""
+                highlights_batch.append(
+                    {
+                        "bookfusion_book_id": book_id,
+                        "highlight_id": highlight_id,
+                        "content": content,
+                        "chapter_heading": hl.get("chapter_heading"),
+                        "book_title": book_title,
+                        "highlighted_at": _parse_highlight_date(content),
+                        "quote_text": _parse_highlight_quote(content),
+                    }
+                )
+
+        if highlights_batch:
+            result = db_service.save_bookfusion_highlights(highlights_batch)
+            total_new += result["saved"]
+            all_new_ids.extend(result["new_ids"])
+
+        books_saved = 0
+        if save_books and all_books:
+            books_saved = db_service.save_bookfusion_books(list(all_books.values()))
+
+        return {
+            "new_highlights": total_new,
+            "books_saved": books_saved,
+            "new_ids": all_new_ids,
+            "books": list(all_books.values()),
+        }
+
+    def sync_highlights_for_book(self, bookfusion_id: str, db_service) -> dict:
+        """Fetch and save highlights for one BookFusion book."""
+        target_id = str(bookfusion_id).strip()
+        if not target_id:
+            return {"new_highlights": 0, "books_saved": 0, "new_ids": []}
+
+        cursor = None
+        total_new = 0
+        all_new_ids = []
+        all_books = {}
+        seen_cursors = set()
+
+        while True:
+            data = self.fetch_highlights(cursor=cursor, bookfusion_id=target_id)
+            pages = data.get("pages") or []
+            result = self._process_highlight_pages(
+                pages, db_service, bookfusion_id=target_id, save_books=False
+            )
+            total_new += result["new_highlights"]
+            all_new_ids.extend(result["new_ids"])
+            for book in result.get("books", []):
+                book_id = book["bookfusion_id"]
+                if book_id not in all_books:
+                    all_books[book_id] = book
+                else:
+                    all_books[book_id]["highlight_count"] += book.get("highlight_count", 0)
+
+            next_page = data.get("cursor")
+            if next_page is None:
+                break
+            if next_page == cursor:
+                logger.warning("BookFusion scoped sync: next cursor same as current, stopping")
+                break
+            if next_page in seen_cursors:
+                logger.warning("BookFusion scoped sync: pagination loop detected, stopping")
+                break
+
+            seen_cursors.add(next_page)
+            cursor = next_page
+
+        books_saved = 0
+        if all_books:
+            books_saved = db_service.save_bookfusion_books(list(all_books.values()))
+
+        return {"new_highlights": total_new, "books_saved": books_saved, "new_ids": all_new_ids}
 
     def sync_all_highlights(self, db_service) -> dict:
         """Paginate through all highlights and save to DB.
@@ -396,60 +522,15 @@ class BookFusionClient:
             if data.get("next_sync_cursor"):
                 last_next_sync_cursor = data["next_sync_cursor"]
 
-            highlights_batch = []
-            for page in pages:
-                if not isinstance(page, dict):
-                    continue
-                if page.get("type") != "book":
-                    continue
-
-                book_id = str(page.get("id", "")).strip()
-                if not book_id:
-                    continue
-                raw_frontmatter = page.get("frontmatter")
-                parsed = _parse_frontmatter(raw_frontmatter)
-                book_title = parsed["title"] or page.get("filename", "")
-                if book_title.endswith(".md"):
-                    book_title = book_title[:-3].strip()
-
-                hl_count = len(page.get("highlights") or [])
+            result = self._process_highlight_pages(pages, db_service, save_books=False)
+            total_new += result["new_highlights"]
+            all_new_ids.extend(result["new_ids"])
+            for book in result.get("books", []):
+                book_id = book["bookfusion_id"]
                 if book_id not in all_books:
-                    all_books[book_id] = {
-                        "bookfusion_id": book_id,
-                        "title": book_title,
-                        "authors": parsed["authors"],
-                        "filename": page.get("filename", ""),
-                        "frontmatter": raw_frontmatter,
-                        "tags": parsed["tags"],
-                        "series": parsed["series"],
-                        "highlight_count": hl_count,
-                    }
+                    all_books[book_id] = book
                 else:
-                    all_books[book_id]["highlight_count"] += hl_count
-
-                for hl in page.get("highlights") or []:
-                    if not isinstance(hl, dict):
-                        continue
-                    highlight_id = str(hl.get("id", "")).strip()
-                    if not highlight_id:
-                        continue
-                    content = hl.get("content") or ""
-                    highlights_batch.append(
-                        {
-                            "bookfusion_book_id": book_id,
-                            "highlight_id": highlight_id,
-                            "content": content,
-                            "chapter_heading": hl.get("chapter_heading"),
-                            "book_title": book_title,
-                            "highlighted_at": _parse_highlight_date(content),
-                            "quote_text": _parse_highlight_quote(content),
-                        }
-                    )
-
-            if highlights_batch:
-                result = db_service.save_bookfusion_highlights(highlights_batch)
-                total_new += result["saved"]
-                all_new_ids.extend(result["new_ids"])
+                    all_books[book_id]["highlight_count"] += book.get("highlight_count", 0)
 
             next_page = data.get("cursor")
             if next_page is None:

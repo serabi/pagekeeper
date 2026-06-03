@@ -223,3 +223,61 @@ class TestBookFusionClient:
 
         assert result == {"new_highlights": 1, "books_saved": 1, "new_ids": ["hl-1"]}
         db_service.set_bookfusion_sync_cursor.assert_called_once_with("cursor-1")
+
+    @patch("src.api.bookfusion_client.requests.Session")
+    def test_sync_highlights_for_book_scopes_request_and_saved_rows(self, mock_session_cls):
+        session = Mock()
+        highlights_response = Mock(status_code=200)
+        highlights_response.json.return_value = {
+            "pages": [
+                {
+                    "type": "book",
+                    "id": "bf-target",
+                    "filename": "target.md",
+                    "frontmatter": "title: Target Book\nauthor: Author One",
+                    "highlights": [
+                        {
+                            "id": "hl-target",
+                            "content": "> Target quote\n\n**Date Created**: 2025-01-15 10:00:00 UTC",
+                            "chapter_heading": "# Chapter 1",
+                        }
+                    ],
+                },
+                {
+                    "type": "book",
+                    "id": "bf-other",
+                    "filename": "other.md",
+                    "frontmatter": "title: Other Book",
+                    "highlights": [
+                        {
+                            "id": "hl-other",
+                            "content": "> Other quote",
+                            "chapter_heading": "# Chapter 2",
+                        }
+                    ],
+                },
+            ],
+            "cursor": None,
+            "next_sync_cursor": None,
+        }
+        highlights_response.raise_for_status = Mock()
+        session.post.return_value = highlights_response
+        mock_session_cls.return_value = session
+
+        db_service = Mock()
+        db_service.save_bookfusion_highlights.return_value = {"saved": 1, "new_ids": ["hl-target"]}
+        db_service.save_bookfusion_books.return_value = 1
+
+        with patch.dict(os.environ, {"BOOKFUSION_API_KEY": "hl-key"}, clear=True):
+            client = BookFusionClient()
+            client.session = session
+            result = client.sync_highlights_for_book("bf-target", db_service)
+
+        assert result["new_highlights"] == 1
+        assert result["books_saved"] == 1
+        assert result["new_ids"] == ["hl-target"]
+        session.post.assert_called_once()
+        assert session.post.call_args.kwargs["json"] == {"cursor": None, "book_id": "bf-target"}
+        db_service.save_bookfusion_highlights.assert_called_once()
+        saved_highlights = db_service.save_bookfusion_highlights.call_args.args[0]
+        assert [h["highlight_id"] for h in saved_highlights] == ["hl-target"]

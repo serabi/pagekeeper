@@ -1,3 +1,5 @@
+# pyright: reportMissingImports=false
+
 """
 Unified SQLAlchemy database service for PageKeeper.
 Facade that delegates to domain-specific repositories.
@@ -7,6 +9,7 @@ import json
 import logging
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Any, cast
 
 from .book_repository import BookRepository
 from .bookfusion_repository import BookFusionRepository
@@ -16,6 +19,7 @@ from .kosync_repository import KoSyncRepository
 from .models import (
     Base,
     DatabaseManager,
+    KosyncDocument,
 )
 from .reading_repository import VALID_JOURNAL_EVENTS, ReadingRepository
 from .settings_repository import SettingsRepository
@@ -82,10 +86,9 @@ class DatabaseService:
     def _run_alembic_migrations(self):
         """Run Alembic migrations to bring the database schema up to date."""
         try:
+            import alembic.command as alembic_command
             from alembic.config import Config
             from alembic.runtime.migration import MigrationContext
-
-            from alembic import command
 
             alembic_dir = Path(__file__).parent.parent.parent / "alembic"
             alembic_ini = alembic_dir.parent / "alembic.ini"
@@ -119,8 +122,8 @@ class DatabaseService:
                             "before upgrading to head",
                             LEGACY_BASELINE_REVISION,
                         )
-                        command.stamp(alembic_cfg, LEGACY_BASELINE_REVISION)
-                        command.upgrade(alembic_cfg, "head")
+                        alembic_command.stamp(alembic_cfg, LEGACY_BASELINE_REVISION)
+                        alembic_command.upgrade(alembic_cfg, "head")
                     else:
                         # Unknown populated schema with no revision history. We keep the
                         # previous safety behavior here because we cannot infer a correct
@@ -129,7 +132,7 @@ class DatabaseService:
                             "Populated database has no alembic_version table but does not "
                             "match the known pre-Alembic schema; stamping at head"
                         )
-                        command.stamp(alembic_cfg, "head")
+                        alembic_command.stamp(alembic_cfg, "head")
                 else:
                     # Normal migration path
                     with engine.connect() as conn:
@@ -139,9 +142,9 @@ class DatabaseService:
                     if current_rev is None and not tables:
                         # Fresh database — will be created by create_all, then stamp
                         Base.metadata.create_all(engine)
-                        command.stamp(alembic_cfg, "head")
+                        alembic_command.stamp(alembic_cfg, "head")
                     else:
-                        command.upgrade(alembic_cfg, "head")
+                        alembic_command.upgrade(alembic_cfg, "head")
 
                 logger.debug("Alembic migrations completed successfully")
             finally:
@@ -256,7 +259,7 @@ class DatabaseService:
             from .models import BookfusionBook
 
             with self.get_session() as session:
-                dirty = session.query(BookfusionBook).filter(BookfusionBook.title.like("%.md")).all()
+                dirty = session.query(BookfusionBook).filter(cast(Any, BookfusionBook.title).like("%.md")).all()
                 for b in dirty:
                     stripped = b.title[:-3].strip()
                     b.title = stripped if stripped else b.title
@@ -297,6 +300,15 @@ class DatabaseService:
         "_tbr",
     )
 
+    def _delegated_method_names(self):
+        names = set()
+        for repo_name in DatabaseService._REPOS:
+            repo = object.__getattribute__(self, repo_name)
+            for attr in dir(repo):
+                if not attr.startswith("_"):
+                    names.add(attr)
+        return names
+
     def __getattr__(self, name):
         if name.startswith("_"):
             raise AttributeError(name)
@@ -306,6 +318,9 @@ class DatabaseService:
             if method is not None:
                 return method
         raise AttributeError(f"'{type(self).__name__}' has no attribute '{name}'")
+
+    def __dir__(self):
+        return sorted(set(super().__dir__()) | self._delegated_method_names())
 
     # ── Bulk data helpers (avoid N+1 in views) ──
 
@@ -335,10 +350,40 @@ class DatabaseService:
 
     def save_book(self, book, is_new=False):
         result = self._books.save_book(book)
+        self._ensure_book_kosync_document(result)
         if is_new and book.title:
             self._tbr.auto_link_by_title(book)
             self._bookfusion.auto_link_by_title(book)
         return result
+
+    def _ensure_book_kosync_document(self, book):
+        if not book or not book.kosync_doc_id or not book.id:
+            return
+        try:
+            existing = self._kosync.get_kosync_document(book.kosync_doc_id)
+            if existing:
+                changed = False
+                if not existing.linked_book_id:
+                    existing.linked_book_id = book.id
+                    existing.linked_abs_id = book.abs_id
+                    changed = True
+                if not existing.filename and book.ebook_filename:
+                    existing.filename = book.ebook_filename
+                    changed = True
+                if changed:
+                    self._kosync.save_kosync_document(existing)
+                return
+
+            self._kosync.save_kosync_document(
+                KosyncDocument(
+                    document_hash=book.kosync_doc_id,
+                    linked_book_id=book.id,
+                    linked_abs_id=book.abs_id,
+                    filename=book.ebook_filename,
+                )
+            )
+        except Exception as exc:
+            logger.warning("Failed to ensure KoSync document for book %s: %s", book.id, exc)
 
     def save_hardcover_details(self, details):
         result = self._hardcover.save_hardcover_details(details)

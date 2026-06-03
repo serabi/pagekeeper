@@ -1,6 +1,9 @@
 """Tests for dashboard graceful degradation when services fail."""
 
+from types import SimpleNamespace
 from unittest.mock import Mock
+
+from src.db.models import Book
 
 
 def _setup_dashboard_db_defaults(mock_db):
@@ -91,6 +94,50 @@ def test_index_renders_with_no_books(client, mock_container):
     _setup_dashboard_db_defaults(mock_container.mock_database_service)
     response = client.get("/")
     assert response.status_code == 200
+
+
+def test_index_uses_metadata_overrides_over_source_enrichment(flask_app, mock_container):
+    """Dashboard cards should prefer PageKeeper metadata overrides."""
+    book = Book(
+        abs_id="abs-1",
+        title="default_source_title",
+        author="Cached Author",
+        ebook_filename="default_source_title.epub",
+        status="completed",
+        title_override="Override Title",
+        author_override="Override Author",
+    )
+    book.id = 1
+    db = mock_container.mock_database_service
+    _setup_dashboard_db_defaults(db)
+    db.get_all_books.return_value = [book]
+    db.get_grimmory_by_filename.return_value = {
+        "default_source_title.epub": [
+            SimpleNamespace(
+                title="Grimmory Title",
+                authors="Grimmory Author",
+                raw_metadata_dict={},
+                server_id="1",
+            )
+        ]
+    }
+
+    abs_service = Mock()
+    abs_service.get_audiobooks.return_value = [
+        {"id": "abs-1", "media": {"metadata": {"authorName": "Live ABS Author", "subtitle": ""}}}
+    ]
+    abs_service.is_available.return_value = True
+    abs_service.get_cover_proxy_url.return_value = "/covers/abs-1.jpg"
+    flask_app.config["abs_service"] = abs_service
+
+    with flask_app.test_client() as client:
+        response = client.get("/")
+
+    assert response.status_code == 200
+    assert b"Override Title" in response.data
+    assert b"Override Author" in response.data
+    assert b"Grimmory Title" not in response.data
+    assert b"Live ABS Author" not in response.data
 
 
 # ── Multiple service failures ─────────────────────────────────────

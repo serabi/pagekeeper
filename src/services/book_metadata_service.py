@@ -121,7 +121,10 @@ def build_book_metadata(book, container, database_service, abs_service, grimmory
 
     # ABS item URL
     if sync_mode != "ebook_only":
-        abs_base = get_service_web_url("ABS") or (abs_service.abs_client.base_url if abs_service.is_available() else "")
+        abs_client = getattr(abs_service, "abs_client", None)
+        abs_base = get_service_web_url("ABS") or (
+            getattr(abs_client, "base_url", "") if abs_service.is_available() else ""
+        )
         metadata["abs_url"] = f"{abs_base}/item/{abs_id}" if abs_base else None
 
     # Stash the hardcover row for callers that need it (service info, template flags)

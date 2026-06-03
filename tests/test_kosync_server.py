@@ -194,6 +194,14 @@ class TestKosyncEndpoints(unittest.TestCase):
         if not hasattr(web_server, "app"):
             web_server.app, _ = web_server.create_app(test_container=cls.mock_container)
         cls.app = web_server.app
+        cls.app.config["database_service"] = web_server.database_service
+        from src.services.kosync_service import KosyncService
+
+        cls.app.config["kosync_service"] = KosyncService(
+            web_server.database_service,
+            cls.mock_container,
+            cls.mock_container.mock_sync_manager,
+        )
         cls.client = cls.app.test_client()
 
     def setUp(self):

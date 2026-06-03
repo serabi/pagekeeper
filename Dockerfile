@@ -1,12 +1,13 @@
 FROM python:3.13-slim
 
 # LD_LIBRARY_PATH includes CUDA paths — ignored when NVIDIA/CUDA libs are not installed
+ENV LD_LIBRARY_PATH="/usr/local/lib/python3.13/site-packages/nvidia/cublas/lib:/usr/local/lib/python3.13/site-packages/nvidia/cudnn/lib"
+
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     FLASK_APP=web_server.py \
     PYTHONPATH="/app" \
-    HF_HOME=/data/huggingface \
-    LD_LIBRARY_PATH="$LD_LIBRARY_PATH:/usr/local/lib/python3.13/site-packages/nvidia/cublas/lib:/usr/local/lib/python3.13/site-packages/nvidia/cudnn/lib"
+    HF_HOME=/data/huggingface
 
 WORKDIR /app
 

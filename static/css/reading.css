@@ -1107,6 +1107,53 @@
   line-height: 1.3;
 }
 
+.r-detail-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.r-detail-title-copy {
+  min-width: 0;
+}
+
+.r-metadata-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.r-metadata-override-badge {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary-border);
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+}
+
+.r-metadata-edit-btn {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+
+.r-metadata-edit-btn:hover {
+  color: var(--color-text);
+  background: var(--color-surface-hover);
+  border-color: var(--color-border);
+}
+
 .r-detail-badges {
   display: flex;
   align-items: center;
@@ -1428,6 +1475,53 @@
   color: var(--color-error);
   border-color: rgba(239,68,68,0.3);
   background: rgba(239,68,68,0.08);
+}
+
+.metadata-override-modal-content {
+  max-width: 480px;
+}
+
+.metadata-override-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.metadata-override-help {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.metadata-override-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.metadata-override-field input {
+  width: 100%;
+}
+
+.metadata-override-status {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.metadata-override-status--error {
+  color: var(--color-error);
+}
+
+.metadata-override-footer {
+  align-items: center;
+}
+
+.metadata-override-footer .btn-danger-subtle {
+  margin-right: auto;
 }
 
 /* Metadata within overview tab (not wrapped in .r-meta-panel) */
@@ -2037,6 +2131,14 @@ a.r-service-row-name:hover { text-decoration: underline; }
   white-space: pre-wrap;
 }
 
+.r-tl-text > :first-child {
+  margin-top: 0;
+}
+
+.r-tl-text > :last-child {
+  margin-bottom: 0;
+}
+
 .r-tl-menu {
   position: absolute;
   top: 12px;
@@ -2214,6 +2316,16 @@ a.r-service-row-name:hover { text-decoration: underline; }
   .r-hero-info {
     width: 100%;
     gap: 10px;
+  }
+
+  .r-detail-title-row {
+    align-items: center;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .r-metadata-actions {
+    align-items: center;
   }
 
   .r-detail-title {

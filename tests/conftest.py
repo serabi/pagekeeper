@@ -1,11 +1,12 @@
 """Shared pytest fixtures and module stubs for the test suite."""
 
 import os
+import re
 import shutil
 import sys
 import tempfile
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -15,6 +16,23 @@ import pytest
 for _mod_name in ("epubcfi",):
     if _mod_name not in sys.modules:
         sys.modules[_mod_name] = ModuleType(_mod_name)
+
+def _clean_html_stub(value, tags=None, attributes=None, **kwargs):
+    return value
+
+
+def _markdown_html_stub(value):
+    if not value:
+        return ""
+    rendered = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", value)
+    rendered = re.sub(r"`([^`]+)`", r"<code>\1</code>", rendered)
+    rendered = re.sub(r"\[([^\]]+)\]\((https?://[^)]+|mailto:[^)]+)\)", r'<a href="\2">\1</a>', rendered)
+    rendered = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1", rendered)
+    return f"<p>{rendered}</p>"
+
+
+sys.modules.setdefault("nh3", SimpleNamespace(clean=_clean_html_stub))
+sys.modules.setdefault("mistune", SimpleNamespace(html=_markdown_html_stub))
 
 
 # ── MockABSService ─────────────────────────────────────────────────
@@ -103,6 +121,7 @@ class MockContainer:
 
         # ── Paths (temp) ──
         self._tmp = Path(tempfile.gettempdir())
+        self.config = {}
 
     # ── Accessors (match Container's callable interface) ──
 

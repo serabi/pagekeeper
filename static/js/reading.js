@@ -434,6 +434,78 @@ function initReadingPage(currentYear, activeTab) {
 
 
 function initReadingDetail() {
+  // ── PageKeeper metadata overrides ──
+  const metadataModal = document.getElementById('metadata-override-modal');
+  const metadataTitleInput = document.getElementById('metadata-title-override');
+  const metadataAuthorInput = document.getElementById('metadata-author-override');
+  const metadataStatus = document.getElementById('metadata-override-status');
+  const metadataSaveBtn = document.getElementById('metadata-save-btn');
+  const metadataClearBtn = document.getElementById('metadata-clear-btn');
+
+  function setMetadataStatus(message, state) {
+    if (!metadataStatus) return;
+    metadataStatus.hidden = !message;
+    metadataStatus.textContent = message || '';
+    metadataStatus.className = 'metadata-override-status' + (state ? ` metadata-override-status--${state}` : '');
+  }
+
+  function setMetadataSaving(isSaving) {
+    if (metadataSaveBtn) metadataSaveBtn.disabled = isSaving;
+    if (metadataClearBtn) metadataClearBtn.disabled = isSaving;
+  }
+
+  function openMetadataOverrideModal() {
+    if (!metadataModal) return;
+    setMetadataStatus('', '');
+    metadataModal.style.display = 'flex';
+    if (metadataTitleInput) metadataTitleInput.focus();
+  }
+
+  function closeMetadataOverrideModal() {
+    if (!metadataModal) return;
+    metadataModal.style.display = 'none';
+    setMetadataStatus('', '');
+  }
+
+  function saveMetadataOverrides(clear) {
+    if (!metadataModal) return;
+    const bookId = metadataModal.dataset.bookId;
+    const hasExistingOverride = metadataModal.dataset.hasOverride === 'true';
+    const titleOverride = clear ? null : ((metadataTitleInput && metadataTitleInput.value.trim()) || null);
+    const authorOverride = clear ? null : ((metadataAuthorInput && metadataAuthorInput.value.trim()) || null);
+
+    if (!clear && !hasExistingOverride && !titleOverride && !authorOverride) {
+      setMetadataStatus('Enter a title or author override before saving.', 'error');
+      return;
+    }
+
+    setMetadataSaving(true);
+    setMetadataStatus(clear ? 'Clearing overrides...' : 'Saving...', 'muted');
+    fetch(`/api/reading/book/${bookId}/metadata-overrides`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title_override: titleOverride,
+        author_override: authorOverride,
+      }),
+    })
+      .then(r => r.json().then(data => ({ ok: r.ok, data })))
+      .then(result => {
+        if (!result.ok || !result.data.success) {
+          throw result.data;
+        }
+        window.location.reload();
+      })
+      .catch(err => {
+        setMetadataSaving(false);
+        setMetadataStatus((err && err.error) || 'Metadata was not saved.', 'error');
+      });
+  }
+
+  window.openMetadataOverrideModal = openMetadataOverrideModal;
+  window.closeMetadataOverrideModal = closeMetadataOverrideModal;
+  window.saveMetadataOverrides = saveMetadataOverrides;
+
   // ── Rating stars (5 stars, half-star support) ──
   const rc = document.getElementById('rating-stars');
   if (rc) {
@@ -726,7 +798,7 @@ function initReadingDetail() {
             if (editJournalId) {
               const item = timeline.querySelector(`.r-tl-item[data-journal-id="${editJournalId}"]`);
               const text = item?.querySelector('.r-tl-text');
-              if (text) text.textContent = data.journal.entry;
+              if (text) renderJournalEntry(text, data.journal);
               if (item) item.dataset.entry = data.journal.entry;
             } else {
               const empty = timeline.querySelector('.r-journal-empty');
@@ -786,7 +858,7 @@ function initReadingDetail() {
           return;
         }
         if (eventType !== 'note') return;
-        const text = item?.querySelector('.r-tl-text')?.textContent || '';
+        const text = item?.dataset.entry || '';
         form.dataset.editJournalId = journalId;
         textarea.value = text;
         if (submitBtn) submitBtn.textContent = 'Save Note';
@@ -819,6 +891,16 @@ function initReadingDetail() {
     });
   }
 
+}
+
+
+function renderJournalEntry(container, journal) {
+  if (!container) return;
+  if (journal.entry_html) {
+    container.innerHTML = journal.entry_html;
+    return;
+  }
+  container.textContent = journal.entry || '';
 }
 
 
@@ -868,9 +950,9 @@ function buildJournalNode(j) {
   body.appendChild(head);
 
   if (j.entry) {
-    const text = document.createElement('p');
+    const text = document.createElement('div');
     text.className = 'r-tl-text';
-    text.textContent = j.entry;
+    renderJournalEntry(text, j);
     body.appendChild(text);
   }
 

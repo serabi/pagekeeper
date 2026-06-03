@@ -192,12 +192,15 @@ def index():
                 if book not in books_needing_title_save:
                     books_needing_title_save.append(book)
 
+        display_title = book.title_override or enriched_title
+        display_author = book.author_override or abs_author
+
         mapping = {
             "id": book.id,
             "abs_id": book.abs_id,
-            "title": enriched_title,
+            "title": display_title,
             "abs_subtitle": abs_subtitle,
-            "abs_author": abs_author,
+            "abs_author": display_author,
             "ebook_filename": book.ebook_filename,
             "kosync_doc_id": book.kosync_doc_id,
             "transcript_file": book.transcript_file,
@@ -265,7 +268,7 @@ def index():
                     "asin": hardcover_details.asin,
                     "matched_by": hardcover_details.matched_by,
                     "hardcover_linked": True,
-                    "hardcover_title": book.title,
+                    "hardcover_title": display_title,
                     "hardcover_cover_url": hardcover_details.hardcover_cover_url,
                     "hardcover_status_mismatch": hc_mismatch,
                 }

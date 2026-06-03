@@ -17,6 +17,7 @@ from src.blueprints.helpers import (
     serialize_suggestion,
 )
 from src.db.models import Book
+from src.utils.http import json_error
 
 logger = logging.getLogger(__name__)
 
@@ -142,10 +143,10 @@ def hide_suggestion(source_id):
     database_service = get_database_service()
     source = request.args.get("source", "abs")
     if source not in _VALID_SUGGESTION_SOURCES:
-        return jsonify({"success": False, "error": "Invalid source"}), 400
+        return json_error("Invalid source", 400)
     if database_service.hide_suggestion(source_id, source=source):
         return jsonify({"success": True})
-    return jsonify({"success": False, "error": "Not found"}), 404
+    return json_error("Not found", 404)
 
 
 @api_bp.route("/api/suggestions/<source_id>/unhide", methods=["POST"])
@@ -153,10 +154,10 @@ def unhide_suggestion(source_id):
     database_service = get_database_service()
     source = request.args.get("source", "abs")
     if source not in _VALID_SUGGESTION_SOURCES:
-        return jsonify({"success": False, "error": "Invalid source"}), 400
+        return json_error("Invalid source", 400)
     if database_service.unhide_suggestion(source_id, source=source):
         return jsonify({"success": True})
-    return jsonify({"success": False, "error": "Not found"}), 404
+    return json_error("Not found", 404)
 
 
 @api_bp.route("/api/suggestions/<source_id>/ignore", methods=["POST"])
@@ -164,10 +165,10 @@ def ignore_suggestion(source_id):
     database_service = get_database_service()
     source = request.args.get("source", "abs")
     if source not in _VALID_SUGGESTION_SOURCES:
-        return jsonify({"success": False, "error": "Invalid source"}), 400
+        return json_error("Invalid source", 400)
     if database_service.ignore_suggestion(source_id, source=source):
         return jsonify({"success": True})
-    return jsonify({"success": False, "error": "Not found"}), 404
+    return json_error("Not found", 404)
 
 
 @api_bp.route("/api/suggestions/clear_stale", methods=["POST"])
@@ -185,21 +186,21 @@ def link_suggestion_bookfusion(source_id):
     data = request.get_json(silent=True) or {}
     source = data.get("source", "abs")
     if source not in _VALID_SUGGESTION_SOURCES:
-        return jsonify({"success": False, "error": "Invalid source"}), 400
+        return json_error("Invalid source", 400)
 
     suggestion = database_service.get_pending_suggestion(source_id, source=source)
     if not suggestion:
-        return jsonify({"success": False, "error": "Suggestion not found"}), 404
+        return json_error("Suggestion not found", 404)
 
     match_index = data.get("match_index")
     matches = suggestion.matches or []
     if match_index is None or not isinstance(match_index, int) or match_index < 0 or match_index >= len(matches):
-        return jsonify({"success": False, "error": "Valid match_index required"}), 400
+        return json_error("Valid match_index required", 400)
 
     match = matches[match_index]
     bookfusion_ids = match.get("bookfusion_ids") or []
     if match.get("source_family") != "bookfusion" or not bookfusion_ids:
-        return jsonify({"success": False, "error": "Selected match is not a BookFusion candidate"}), 400
+        return json_error("Selected match is not a BookFusion candidate", 400)
 
     # Find or create the book to link BookFusion to
     if source == "abs":
@@ -249,7 +250,7 @@ def link_suggestion_bookfusion(source_id):
             book = database_service.get_book_by_id(book.id)
 
     if not book:
-        return jsonify({"success": False, "error": "Could not find or create book"}), 500
+        return json_error("Could not find or create book", 500)
 
     for bid in bookfusion_ids:
         database_service.set_bookfusion_book_match_by_book_id(bid, book.id)
@@ -276,7 +277,7 @@ def api_storyteller_search():
     container = get_container()
     query = request.args.get("q", "")
     if not query:
-        return jsonify({"success": False, "error": "Query parameter 'q' is required"}), 400
+        return json_error("Query parameter 'q' is required", 400)
     results = container.storyteller_client().search_books(query)
     return jsonify(results)
 
@@ -287,7 +288,7 @@ def api_storyteller_link(book_ref):
 
     data = request.get_json()
     if not data or "uuid" not in data:
-        return jsonify({"success": False, "error": "Missing 'uuid' in JSON payload"}), 400
+        return json_error("Missing 'uuid' in JSON payload", 400)
 
     storyteller_uuid = data["uuid"]
     book = get_book_or_404(book_ref)
@@ -315,7 +316,7 @@ def _get_grimmory_libraries(client_getter, name):
     container = get_container()
     client = client_getter(container)
     if not client.is_configured():
-        return jsonify({"success": False, "error": f"{name} not configured"}), 400
+        return json_error(f"{name} not configured", 400)
     return jsonify(client.get_libraries())
 
 
@@ -370,15 +371,15 @@ def api_grimmory_link(book_ref):
 
     data = request.get_json(silent=True)
     if not isinstance(data, dict):
-        return jsonify({"success": False, "error": "No data provided"}), 400
+        return json_error("No data provided", 400)
 
     if "filename" not in data:
-        return jsonify({"success": False, "error": "Missing 'filename' in JSON payload"}), 400
+        return json_error("Missing 'filename' in JSON payload", 400)
     filename_raw = data.get("filename")
     if filename_raw is None:
         filename = ""
     elif not isinstance(filename_raw, str):
-        return jsonify({"success": False, "error": "'filename' must be a string or null"}), 400
+        return json_error("'filename' must be a string or null", 400)
     else:
         filename = filename_raw.strip()
 
