@@ -66,3 +66,22 @@ def test_startup_checks_logs_retry_success_only_when_second_attempt_succeeds():
     assert client.check_connection.call_count == 2
     assert any("connection verified (retry)" in call.args[0] for call in mock_logger.info.call_args_list)
     assert not any("connection failed after retry" in call.args[0] for call in mock_logger.warning.call_args_list)
+
+
+def test_startup_checks_treats_legacy_migration_failure_as_non_fatal():
+    hardcover_service = Mock()
+    hardcover_client = Mock(hardcover_service=hardcover_service)
+    migration_service = Mock()
+    migration_service.migrate_legacy_data.side_effect = RuntimeError("legacy boom")
+
+    manager = _make_sync_manager({"Hardcover": hardcover_client})
+    manager._startup.migration_service = migration_service
+
+    with patch("src.services.sync_manager_startup.time.sleep"), patch(
+        "src.services.sync_manager_startup.logger"
+    ) as mock_logger:
+        manager.startup_checks()
+
+    migration_service.migrate_legacy_data.assert_called_once()
+    hardcover_service.backfill_hardcover_states.assert_called_once()
+    assert any("Legacy migration failed (non-fatal)" in call.args[0] for call in mock_logger.warning.call_args_list)

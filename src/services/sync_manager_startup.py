@@ -62,7 +62,10 @@ class SyncManagerStartup:
 
         if self.migration_service:
             logger.info("Checking for legacy data to migrate...")
-            self.migration_service.migrate_legacy_data()
+            try:
+                self.migration_service.migrate_legacy_data()
+            except Exception as exc:
+                logger.warning("Legacy migration failed (non-fatal): %s", sanitize_exception(exc))
 
         hc_client = self.sync_clients.get("Hardcover") if self.sync_clients else None
         if hc_client and getattr(hc_client, "hardcover_service", None):
