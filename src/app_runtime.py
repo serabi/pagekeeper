@@ -338,5 +338,14 @@ def start_runtime_services(app, container, database_service, sync_manager):
     log_ebook_source_configuration(container)
 
     sync_port = get_str("KOSYNC_PORT", "")
-    if sync_port and int(sync_port) != 4477:
-        start_split_port_server(app, sync_port)
+    if sync_port:
+        try:
+            port_num = int(sync_port)
+        except ValueError:
+            logger.error(
+                "Invalid KOSYNC_PORT value: %r. Expected an integer. Using default port.",
+                sync_port,
+            )
+        else:
+            if port_num != 4477:
+                start_split_port_server(app, sync_port)
