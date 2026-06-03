@@ -11,8 +11,8 @@
   "reportOptionalMemberAccess": "none",
   "reportOptionalOperand": "none",
   "reportOptionalSubscript": "none",
-  "reportAssignmentType": "none",
-  "reportCallIssue": "none",
+  "reportAssignmentType": "warning",
+  "reportCallIssue": "warning",
   "reportIncompatibleMethodOverride": "none",
   "executionEnvironments": [
     {

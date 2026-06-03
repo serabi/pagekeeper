@@ -185,17 +185,15 @@ def sync_book_highlights():
             result["books_saved"] += sync_result["books_saved"]
             result["new_ids"].extend(sync_result.get("new_ids", []))
 
-        linked_count = 0
         for bf_id in bf_book_ids:
             db_service.link_bookfusion_highlights_by_book_id(bf_id, book.id)
-            linked_count += 1
 
         return jsonify(
             {
                 "success": True,
                 "new_highlights": result["new_highlights"],
                 "books_saved": result["books_saved"],
-                "linked_books": linked_count,
+                "linked_books": len(bf_book_ids),
             }
         )
     except Exception:
