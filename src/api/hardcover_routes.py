@@ -215,9 +215,6 @@ def link_hardcover(abs_id):
             return jsonify({"error": "Missing book_id"}), 400
 
         try:
-            # Use pages if available, otherwise use -1 for audiobooks (indicates no page count)
-            hardcover_pages = pages if pages is not None else (-1 if audio_seconds else None)
-
             # Determine cover URL: use provided cached_image, or preserve existing
             cover_url = cached_image
             book = database_service.get_book_by_ref(abs_id)
@@ -231,10 +228,10 @@ def link_hardcover(abs_id):
                 abs_id=abs_id,
                 book_id=book.id,
                 hardcover_book_id=str(book_id),
-                hardcover_slug=slug or "",
-                hardcover_edition_id=str(edition_id) if edition_id else "",
-                hardcover_pages=int(hardcover_pages) if hardcover_pages is not None else 0,
-                hardcover_audio_seconds=int(audio_seconds) if audio_seconds is not None else 0,
+                hardcover_slug=slug,
+                hardcover_edition_id=str(edition_id) if edition_id is not None else None,
+                hardcover_pages=int(pages) if pages is not None else None,
+                hardcover_audio_seconds=int(audio_seconds) if audio_seconds is not None else None,
                 hardcover_cover_url=cover_url,
                 matched_by="manual",
             )
@@ -277,13 +274,17 @@ def link_hardcover(abs_id):
         if not book:
             flash("Book not found", "error")
             return redirect(url_for("dashboard.index"))
+        edition_id = book_data.get("edition_id")
+        pages = book_data.get("pages")
+        audio_seconds = book_data.get("audio_seconds")
         hardcover_details = HardcoverDetails(
             abs_id=abs_id,
             book_id=book.id,
             hardcover_book_id=str(book_data["book_id"]),
-            hardcover_slug=book_data.get("slug") or "",
-            hardcover_edition_id=str(book_data.get("edition_id") or ""),
-            hardcover_pages=int(book_data.get("pages") or 0),
+            hardcover_slug=book_data.get("slug"),
+            hardcover_edition_id=str(edition_id) if edition_id is not None else None,
+            hardcover_pages=int(pages) if pages is not None else None,
+            hardcover_audio_seconds=int(audio_seconds) if audio_seconds is not None else None,
             matched_by="manual",
         )
 
@@ -378,7 +379,7 @@ def set_book_cover(abs_id):
                 abs_id=abs_id,
                 book_id=book.id,
                 hardcover_book_id=str(book_id) if book_id else "",
-                hardcover_slug=slug or "",
+                hardcover_slug=slug,
                 hardcover_cover_url=cover_url,
                 matched_by="cover_picker",
             )
