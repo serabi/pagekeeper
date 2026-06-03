@@ -71,6 +71,10 @@ class KosyncService:
         self._active_scans_lock = threading.Lock()
         self._progress = KosyncProgressService(self, self._db, self._container, self._manager)
 
+    def reload_from_env(self):
+        """Re-read configuration from os.environ so settings changes take effect without restart."""
+        self._ebook_dir = self._container.books_dir()
+
     # ------------------------------------------------------------------ #
     #  Progress serialization (was duplicated 3x in kosync_server.py)
     # ------------------------------------------------------------------ #

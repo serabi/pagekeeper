@@ -36,6 +36,12 @@ class GrimmoryClient:
         if self.is_configured():
             self._load_cache()
 
+    def reload_from_env(self):
+        """Re-read configuration from os.environ so settings changes take effect without restart."""
+        self._token = None
+        self._token_timestamp = 0
+        self.session.headers.clear()
+
     @property
     def base_url(self) -> str:
         raw_url = os.environ.get(f"{self.env_prefix}_SERVER", "").rstrip("/")

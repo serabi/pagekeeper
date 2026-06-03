@@ -252,3 +252,8 @@ class ConfigLoader:
         except Exception as e:
             logger.error(f"Error loading settings from database: {e}")
             # Do not re-raise, fall back to existing env vars
+
+
+def load_settings(db_service: DatabaseService):
+    """Load settings from database into os.environ."""
+    return ConfigLoader.load_settings(db_service)

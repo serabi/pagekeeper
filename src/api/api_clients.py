@@ -23,6 +23,12 @@ class ABSClient:
         self._audiobooks_cache_time = 0
         self._AUDIOBOOKS_CACHE_TTL = 300  # 5 minutes
 
+    def reload_from_env(self):
+        """Re-read configuration from os.environ so settings changes take effect without restart."""
+        self.session.headers.clear()
+        self._update_session_headers()
+        self.invalidate_audiobooks_cache()
+
     @property
     def base_url(self):
         """Dynamic base_url from environment (no caching)."""
@@ -632,6 +638,10 @@ class KoSyncClient:
     def __init__(self):
         # Configuration is now dynamic via properties
         self.session = requests.Session()
+
+    def reload_from_env(self):
+        """Re-read configuration from os.environ so settings changes take effect without restart."""
+        self.session.headers.clear()
 
     @property
     def base_url(self):

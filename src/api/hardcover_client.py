@@ -33,6 +33,10 @@ class HardcoverClient(JsonHttpClientBase):
         self._rate_lock = threading.Lock()
         self._min_interval = 1.0
 
+    def reload_from_env(self):
+        """Re-read configuration from os.environ so settings changes take effect without restart."""
+        self.user_id = None
+
     @property
     def token(self) -> str | None:
         raw = os.environ.get("HARDCOVER_TOKEN", "").strip()

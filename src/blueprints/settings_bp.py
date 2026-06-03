@@ -7,6 +7,7 @@ import requests as http_requests
 from flask import Blueprint, current_app, jsonify, redirect, render_template, request, session, url_for
 
 from src.blueprints.helpers import get_container, get_database_service
+from src.utils.config_loader import load_settings
 from src.utils.logging_utils import sanitize_log_data
 from src.version import APP_VERSION, get_update_status
 
@@ -122,6 +123,40 @@ def _request_value(key: str, env_key: str | None = None, *, secret: bool = False
     return value.strip()
 
 
+def _reload_client_config(client_getter, label: str):
+    try:
+        client = client_getter()
+        reload_from_env = getattr(client, "reload_from_env", None)
+        if callable(reload_from_env):
+            reload_from_env()
+            logger.info("%s configuration reloaded from environment", label)
+    except Exception as e:
+        logger.warning("Failed to reload %s configuration: %s", label, e)
+
+
+def _reload_integration_clients():
+    try:
+        container = current_app.config.get("container")
+        if container is None:
+            from src import app_setup
+
+            container = app_setup.container
+    except Exception as e:
+        logger.warning("Failed to locate DI container for settings reload: %s", e)
+        container = None
+
+    if container is not None:
+        _reload_client_config(lambda: container.grimmory_client(), "Grimmory")
+        if hasattr(container, "grimmory_client_2"):
+            _reload_client_config(lambda: container.grimmory_client_2(), "Grimmory 2")
+        _reload_client_config(lambda: container.abs_client(), "Audiobookshelf")
+        _reload_client_config(lambda: container.hardcover_client(), "Hardcover")
+        if hasattr(container, "kosync_client"):
+            _reload_client_config(lambda: container.kosync_client(), "KoSync client")
+
+    _reload_client_config(lambda: current_app.config["kosync_service"], "KoSync service")
+
+
 @settings_bp.route("/settings", methods=["GET", "POST"])
 def settings():
     """
@@ -191,6 +226,9 @@ def settings():
                 os.environ[key] = ""
 
         try:
+            load_settings(database_service)
+            _reload_integration_clients()
+
             from src.app_runtime import apply_settings
 
             apply_settings(current_app._get_current_object())
