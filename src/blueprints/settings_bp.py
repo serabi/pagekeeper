@@ -191,7 +191,7 @@ def settings():
                 os.environ[key] = ""
 
         try:
-            from src.web_server import apply_settings
+            from src.app_runtime import apply_settings
 
             apply_settings(current_app._get_current_object())
             session["message"] = "Settings saved successfully."

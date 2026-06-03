@@ -8,13 +8,14 @@ from flask import Flask
 
 from src.app_runtime import (
     apply_settings,
+    get_runtime_state,
     get_or_create_secret_key,
     handle_exit_signal,
     reconcile_socket_listener,
     reconfigure_logging,
     start_runtime_services,
 )
-from src.app_setup import get_runtime_state
+from src import app_setup as _app_setup
 from src.app_setup import setup_dependencies as _setup_dependencies
 from src.app_template_context import inject_global_vars
 from src.blueprints import register_blueprints
@@ -22,11 +23,6 @@ from src.blueprints.helpers import safe_folder_name
 from src.utils.markdown import render_markdown_markup, sanitize_html
 
 logger = logging.getLogger(__name__)
-
-container = None
-manager = None
-database_service = None
-SYNC_PERIOD_MINS = 5.0
 
 __all__ = [
     "SYNC_PERIOD_MINS",
@@ -46,14 +42,17 @@ _reconcile_socket_listener = reconcile_socket_listener
 
 def setup_dependencies(app, test_container=None):
     """Initialize app dependencies and expose runtime globals for legacy callers/tests."""
-    global container, manager, database_service, SYNC_PERIOD_MINS
-    container, manager, database_service = _setup_dependencies(
+    return _setup_dependencies(
         app,
         test_container=test_container,
         logging_reconfigure=reconfigure_logging,
     )
-    _, _, _, SYNC_PERIOD_MINS = get_runtime_state()
-    return container, manager, database_service
+
+
+def __getattr__(name):
+    if name in {"container", "manager", "database_service", "SYNC_PERIOD_MINS"}:
+        return getattr(_app_setup, name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 # --- Application Factory ---
@@ -80,14 +79,15 @@ def create_app(test_container=None):
         response.headers["X-Content-Type-Options"] = "nosniff"
         return response
 
-    return app, container
+    return app, app.config["container"]
 
 
 if __name__ == "__main__":
     signal.signal(signal.SIGTERM, handle_exit_signal)
     signal.signal(signal.SIGINT, handle_exit_signal)
 
-    app, container = create_app()
+    app, _ = create_app()
+    container, manager, database_service, _ = get_runtime_state(app)
 
     start_runtime_services(app, container, database_service, manager)
 

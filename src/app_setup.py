@@ -77,6 +77,7 @@ def setup_dependencies(app, test_container=None, logging_reconfigure=None):
     app.config["container"] = container
     app.config["sync_manager"] = manager
     app.config["database_service"] = database_service
+    app.config["SYNC_PERIOD_MINS"] = SYNC_PERIOD_MINS
     if hasattr(container, "abs_service"):
         app.config["abs_service"] = container.abs_service()
     else:

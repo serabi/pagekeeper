@@ -17,6 +17,16 @@ from src.version import get_update_status
 logger = logging.getLogger(__name__)
 
 
+def get_runtime_state(app):
+    """Return runtime dependencies from Flask config."""
+    return (
+        app.config.get("container"),
+        app.config.get("sync_manager"),
+        app.config.get("database_service"),
+        app.config.get("SYNC_PERIOD_MINS"),
+    )
+
+
 def reconfigure_logging():
     """Update root logger level from LOG_LEVEL."""
     try:
@@ -94,6 +104,10 @@ def apply_settings(app):
         schedule.clear("sync_cycle")
         if sync_mgr:
             schedule.every(new_period).minutes.do(sync_mgr.sync_cycle).tag("sync_cycle")
+        app.config["SYNC_PERIOD_MINS"] = new_period
+        from src import app_setup
+
+        app_setup.SYNC_PERIOD_MINS = float(new_period)
         logger.info("Sync schedule updated to every %s minutes", new_period)
     except Exception as exc:
         errors.append(f"sync reschedule failed: {exc}")
