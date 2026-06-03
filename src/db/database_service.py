@@ -19,6 +19,7 @@ from .kosync_repository import KoSyncRepository
 from .models import (
     Base,
     DatabaseManager,
+    KosyncDocument,
 )
 from .reading_repository import VALID_JOURNAL_EVENTS, ReadingRepository
 from .settings_repository import SettingsRepository
@@ -349,10 +350,40 @@ class DatabaseService:
 
     def save_book(self, book, is_new=False):
         result = self._books.save_book(book)
+        self._ensure_book_kosync_document(result)
         if is_new and book.title:
             self._tbr.auto_link_by_title(book)
             self._bookfusion.auto_link_by_title(book)
         return result
+
+    def _ensure_book_kosync_document(self, book):
+        if not book or not book.kosync_doc_id or not book.id:
+            return
+        try:
+            existing = self._kosync.get_kosync_document(book.kosync_doc_id)
+            if existing:
+                changed = False
+                if not existing.linked_book_id:
+                    existing.linked_book_id = book.id
+                    existing.linked_abs_id = book.abs_id
+                    changed = True
+                if not existing.filename and book.ebook_filename:
+                    existing.filename = book.ebook_filename
+                    changed = True
+                if changed:
+                    self._kosync.save_kosync_document(existing)
+                return
+
+            self._kosync.save_kosync_document(
+                KosyncDocument(
+                    document_hash=book.kosync_doc_id,
+                    linked_book_id=book.id,
+                    linked_abs_id=book.abs_id,
+                    filename=book.ebook_filename,
+                )
+            )
+        except Exception as exc:
+            logger.warning("Failed to ensure KoSync document for book %s: %s", book.id, exc)
 
     def save_hardcover_details(self, details):
         result = self._hardcover.save_hardcover_details(details)

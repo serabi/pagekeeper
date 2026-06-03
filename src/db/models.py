@@ -502,7 +502,7 @@ class PendingSuggestion(Base):
     author = Column(String(500))
     cover_url = Column(String(500))
     matches_json = Column(Text)
-    status = Column(String(20), default="pending")
+    status = Column(String(20), default="pending", index=True)
     created_at = Column(DateTime, default=utc_now)
 
     def __init__(

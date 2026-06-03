@@ -42,10 +42,13 @@ class SyncManagerStartup:
         if self.library_service and self.library_service.cwa_client:
             cwa = self.library_service.cwa_client
             if cwa.is_configured():
-                if cwa.check_connection():
-                    template = cwa._get_search_template()
-                    if template:
-                        logger.info("   CWA search template: %s", template)
+                try:
+                    if cwa.check_connection():
+                        template = cwa._get_search_template()
+                        if template:
+                            logger.info("   CWA search template: %s", template)
+                except Exception as exc:
+                    logger.warning("CWA connection check failed (non-fatal): %s", sanitize_exception(exc))
             else:
                 logger.debug("CWA not configured (disabled or missing server URL)")
         else:

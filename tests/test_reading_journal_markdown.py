@@ -37,7 +37,7 @@ def test_add_journal_returns_rendered_entry_html(client, mock_container):
     assert resp.status_code == 200
     data = resp.get_json()
     assert data["journal"]["entry"] == journal.entry
-    assert data["journal"]["entry_html"] == f"<p>{journal.entry}</p>"
+    assert data["journal"]["entry_html"] == "<p>A <strong>bold</strong> note</p>"
 
 
 def test_update_note_returns_rendered_entry_html(client, mock_container):

@@ -26,3 +26,24 @@ def test_cache_cleanup_service_removes_only_orphaned_files(tmp_path: Path):
     assert keep_book.exists()
     assert keep_suggestion.exists()
     assert not orphan.exists()
+
+
+def test_cache_cleanup_service_skips_malformed_suggestion_matches(tmp_path: Path):
+    cache_dir = tmp_path / "epub_cache"
+    cache_dir.mkdir()
+
+    orphan = cache_dir / "orphan.epub"
+    orphan.write_text("orphan")
+
+    db = Mock()
+    db.get_all_books.return_value = []
+    db.get_all_actionable_suggestions.return_value = [
+        Mock(matches=None),
+        Mock(matches={"filename": "bad-shape.epub"}),
+        Mock(matches=["bad-item", {"filename": "keep.epub"}]),
+    ]
+
+    service = CacheCleanupService(db, cache_dir)
+    service.cleanup()
+
+    assert not orphan.exists()

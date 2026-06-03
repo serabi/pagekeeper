@@ -257,7 +257,7 @@ def save_highlight_to_journal():
 
         entry_text = quote
         if chapter:
-            chapter_clean = chapter.lstrip("#").strip()
+            chapter_clean = _normalize_bookfusion_chapter(chapter)
             entry_text += f"\n— *{chapter_clean}*"
 
         created_at = None

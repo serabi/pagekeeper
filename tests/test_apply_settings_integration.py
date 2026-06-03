@@ -317,7 +317,7 @@ class TestSettingsRouteIntegration:
         with patch(
             "src.blueprints.settings_bp.get_database_service", return_value=mock_container.mock_database_service
         ):
-            with patch("src.web_server.apply_settings") as mock_apply:
+            with patch("src.app_runtime.apply_settings") as mock_apply:
                 mock_apply.return_value = True
 
                 resp = client.post(
@@ -340,7 +340,7 @@ class TestSettingsRouteIntegration:
         with patch(
             "src.blueprints.settings_bp.get_database_service", return_value=mock_container.mock_database_service
         ):
-            with patch("src.web_server.apply_settings", side_effect=RuntimeError("boom")):
+            with patch("src.app_runtime.apply_settings", side_effect=RuntimeError("boom")):
                 resp = client.post(
                     "/settings",
                     data={

@@ -16,6 +16,14 @@ logger = logging.getLogger(__name__)
 hardcover_bp = Blueprint("hardcover", __name__)
 
 
+def _hardcover_pages_value(pages, audio_seconds):
+    if pages is not None:
+        return int(pages)
+    if audio_seconds is not None:
+        return -1
+    return None
+
+
 def _get_dependencies():
     database_service = current_app.config.get("database_service")
     container = current_app.config.get("container")
@@ -230,7 +238,7 @@ def link_hardcover(abs_id):
                 hardcover_book_id=str(book_id),
                 hardcover_slug=slug,
                 hardcover_edition_id=str(edition_id) if edition_id is not None else None,
-                hardcover_pages=int(pages) if pages is not None else None,
+                hardcover_pages=_hardcover_pages_value(pages, audio_seconds),
                 hardcover_audio_seconds=int(audio_seconds) if audio_seconds is not None else None,
                 hardcover_cover_url=cover_url,
                 matched_by="manual",
@@ -283,7 +291,7 @@ def link_hardcover(abs_id):
             hardcover_book_id=str(book_data["book_id"]),
             hardcover_slug=book_data.get("slug"),
             hardcover_edition_id=str(edition_id) if edition_id is not None else None,
-            hardcover_pages=int(pages) if pages is not None else None,
+            hardcover_pages=_hardcover_pages_value(pages, audio_seconds),
             hardcover_audio_seconds=int(audio_seconds) if audio_seconds is not None else None,
             matched_by="manual",
         )

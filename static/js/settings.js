@@ -554,13 +554,14 @@ document.addEventListener('DOMContentLoaded', function () {
                     bfResyncBtn.classList.remove('done');
                     bfResyncBtn.textContent = data.error || 'Failed';
                     bfResyncBtn.classList.add('error');
-                    bfResyncBtn.disabled = false;
                 }
             })
             .catch(function() {
                 bfResyncBtn.classList.remove('done');
                 bfResyncBtn.textContent = 'Error';
                 bfResyncBtn.classList.add('error');
+            })
+            .finally(function() {
                 bfResyncBtn.disabled = false;
             });
         });

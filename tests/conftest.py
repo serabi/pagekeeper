@@ -1,6 +1,7 @@
 """Shared pytest fixtures and module stubs for the test suite."""
 
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -16,8 +17,22 @@ for _mod_name in ("epubcfi",):
     if _mod_name not in sys.modules:
         sys.modules[_mod_name] = ModuleType(_mod_name)
 
-sys.modules.setdefault("nh3", SimpleNamespace(clean=lambda value, tags=None, attributes=None: value))
-sys.modules.setdefault("mistune", SimpleNamespace(html=lambda value: f"<p>{value}</p>" if value else ""))
+def _clean_html_stub(value, tags=None, attributes=None, **kwargs):
+    return value
+
+
+def _markdown_html_stub(value):
+    if not value:
+        return ""
+    rendered = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", value)
+    rendered = re.sub(r"`([^`]+)`", r"<code>\1</code>", rendered)
+    rendered = re.sub(r"\[([^\]]+)\]\((https?://[^)]+|mailto:[^)]+)\)", r'<a href="\2">\1</a>', rendered)
+    rendered = re.sub(r"\[([^\]]+)\]\(([^)]+)\)", r"\1", rendered)
+    return f"<p>{rendered}</p>"
+
+
+sys.modules.setdefault("nh3", SimpleNamespace(clean=_clean_html_stub))
+sys.modules.setdefault("mistune", SimpleNamespace(html=_markdown_html_stub))
 
 
 # ── MockABSService ─────────────────────────────────────────────────

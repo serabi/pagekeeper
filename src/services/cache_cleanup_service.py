@@ -26,7 +26,7 @@ class CacheCleanupService:
                 if not suggestion.matches or not isinstance(suggestion.matches, list):
                     continue
                 for match in suggestion.matches:
-                    if match.get("filename"):
+                    if isinstance(match, dict) and match.get("filename"):
                         valid_filenames.add(match["filename"])
 
             deleted_count = 0

@@ -68,10 +68,12 @@ class KosyncProgressService:
                     existing_pct,
                     new_pct,
                 )
-                return {
-                    "document": doc_hash,
-                    "timestamp": int(kosync_doc.timestamp.timestamp()) if kosync_doc.timestamp else int(now.timestamp()),
-                }, 200
+                ts_source = kosync_doc.timestamp or now
+                if device and device.lower() == "booknexus":
+                    ignored_timestamp = int(calendar.timegm(ts_source.timetuple()))
+                else:
+                    ignored_timestamp = ts_source.isoformat()
+                return {"document": doc_hash, "timestamp": ignored_timestamp}, 200
 
         if kosync_doc is None:
             kosync_doc = KosyncDocument(
@@ -188,7 +190,7 @@ class KosyncProgressService:
             return {"message": "Document not found on server"}, 502
 
         kosync_state = next((s for s in states if s.client_name.lower() == "kosync"), None)
-        latest_state = kosync_state or max(states, key=lambda s: s.last_updated or datetime.min)
+        latest_state = kosync_state or max(states, key=lambda s: s.last_updated or float("-inf"))
         return {
             "device": "pagekeeper",
             "device_id": "pagekeeper",

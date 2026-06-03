@@ -265,6 +265,8 @@ def initialize_abs_listener(app, container, database_service, sync_manager):
         logger.info("ABS Socket.IO listener disabled (INSTANT_SYNC_ENABLED=false)")
     elif not abs_socket_enabled:
         logger.info("ABS Socket.IO listener disabled (ABS_SOCKET_ENABLED=false)")
+    elif not container.abs_client().is_configured():
+        logger.info("ABS Socket.IO listener disabled (ABS client not configured)")
     return None
 
 
@@ -331,6 +333,8 @@ def start_runtime_services(app, container, database_service, sync_manager):
     logger.info("=== Unified ABS Manager Started (Integrated Mode) ===")
     log_security_warnings()
     sync_period_mins = int(get_float("SYNC_PERIOD_MINS", 5))
+    if sync_period_mins <= 0:
+        raise ValueError("SYNC_PERIOD_MINS must be an integer greater than 0")
     start_sync_daemon_thread(sync_manager, sync_period_mins)
     threading.Thread(target=get_update_status, daemon=True).start()
     initialize_abs_listener(app, container, database_service, sync_manager)

@@ -6,7 +6,7 @@ Create Date: 2026-06-03 07:03:24
 
 """
 
-from typing import Sequence, Union
+from typing import Sequence
 
 import sqlalchemy as sa
 
@@ -14,9 +14,9 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "v2w3x4y5z6a7"
-down_revision: Union[str, Sequence[str], None] = "u1v2w3x4y5z6"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = "u1v2w3x4y5z6"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 INDEXES = (
@@ -24,6 +24,7 @@ INDEXES = (
     ("books", "ix_books_status", ["status"]),
     ("bookfusion_highlights", "ix_bookfusion_highlights_bookfusion_book_id", ["bookfusion_book_id"]),
     ("bookfusion_highlights", "ix_bookfusion_highlights_highlighted_at", ["highlighted_at"]),
+    ("pending_suggestions", "ix_pending_suggestions_status", ["status"]),
 )
 
 

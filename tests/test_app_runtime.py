@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, Mock, patch
 
 import schedule
 
-from src.app_runtime import apply_settings, reconcile_socket_listener
+from src.app_runtime import apply_settings, initialize_abs_listener, reconcile_socket_listener, start_runtime_services
 
 
 class TestApplySettingsHelpers:
@@ -78,3 +78,34 @@ class TestSocketListenerHelpers:
 
         assert app.config["abs_listener"] is mock_listener
         mock_thread_cls.return_value.start.assert_called_once()
+
+    def test_initialize_abs_listener_logs_when_abs_client_unconfigured(self, caplog):
+        app = MagicMock()
+        app.config = {}
+        container = Mock()
+        container.abs_client.return_value.is_configured.return_value = False
+        caplog.set_level("INFO")
+
+        with patch.dict(
+            "os.environ",
+            {
+                "INSTANT_SYNC_ENABLED": "true",
+                "ABS_SOCKET_ENABLED": "true",
+            },
+            clear=False,
+        ):
+            listener = initialize_abs_listener(app, container, Mock(), Mock())
+
+        assert listener is None
+        assert "ABS Socket.IO listener disabled (ABS client not configured)" in caplog.text
+
+
+class TestRuntimeStartup:
+    def test_start_runtime_services_rejects_non_positive_sync_period(self):
+        with patch.dict("os.environ", {"SYNC_PERIOD_MINS": "0"}, clear=False):
+            try:
+                start_runtime_services(MagicMock(), Mock(), Mock(), Mock())
+            except ValueError as exc:
+                assert str(exc) == "SYNC_PERIOD_MINS must be an integer greater than 0"
+            else:
+                raise AssertionError("expected ValueError")
