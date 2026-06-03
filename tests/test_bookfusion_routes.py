@@ -218,9 +218,10 @@ def test_sync_book_success(client, mock_container):
     mock_container.mock_database_service.get_book_by_ref.return_value = book
     mock_container.mock_database_service.get_bookfusion_books_by_book_id.return_value = [bf_book]
     mock_container.mock_bookfusion_client.highlights_api_key = "test-key"
-    mock_container.mock_bookfusion_client.sync_all_highlights.return_value = {
+    mock_container.mock_bookfusion_client.sync_highlights_for_book.return_value = {
         "new_highlights": 3,
         "books_saved": 1,
+        "new_ids": ["hl-1"],
     }
 
     resp = client.post("/api/bookfusion/sync-book", json={"abs_id": book.abs_id})
@@ -232,6 +233,10 @@ def test_sync_book_success(client, mock_container):
         "books_saved": 1,
         "linked_books": 1,
     }
+    mock_container.mock_bookfusion_client.sync_highlights_for_book.assert_called_once_with(
+        "bf-123", mock_container.mock_database_service
+    )
+    mock_container.mock_bookfusion_client.sync_all_highlights.assert_not_called()
     mock_container.mock_database_service.link_bookfusion_highlights_by_book_id.assert_called_once_with("bf-123", 42)
 
 

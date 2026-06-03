@@ -178,7 +178,12 @@ def sync_book_highlights():
     bf_book_ids = [b.bookfusion_id for b in bf_books]
 
     try:
-        result = bf_client.sync_all_highlights(db_service)
+        result = {"new_highlights": 0, "books_saved": 0, "new_ids": []}
+        for bf_id in bf_book_ids:
+            sync_result = bf_client.sync_highlights_for_book(bf_id, db_service)
+            result["new_highlights"] += sync_result["new_highlights"]
+            result["books_saved"] += sync_result["books_saved"]
+            result["new_ids"].extend(sync_result.get("new_ids", []))
 
         linked_count = 0
         for bf_id in bf_book_ids:
