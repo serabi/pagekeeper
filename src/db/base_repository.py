@@ -37,8 +37,8 @@ class BaseRepository:
             session.expunge(item)
         return items
 
-    def _query_and_expunge(self, session, query, first=False):
-        if first:
+    def _query_and_expunge(self, session, query, *, one=False):
+        if one:
             obj = query.first()
             if obj:
                 session.expunge(obj)
@@ -57,7 +57,7 @@ class BaseRepository:
         """Query a single row, expunge and return it (or None)."""
         with self.get_session() as session:
             query = session.query(model).filter(*filters)
-            return self._query_and_expunge(session, query, first=True)
+            return self._query_and_expunge(session, query, one=True)
 
     def _get_all(self, model, *filters, order_by=None):
         """Query multiple rows, expunge and return them."""
@@ -67,7 +67,7 @@ class BaseRepository:
                 query = query.filter(*filters)
             if order_by is not None:
                 query = query.order_by(order_by)
-            return self._query_and_expunge(session, query)
+            return self._query_and_expunge(session, query, one=False)
 
     def _delete_one(self, model, *filters):
         """Find and delete a single row. Returns True if deleted."""

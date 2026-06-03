@@ -14,11 +14,11 @@ logger = logging.getLogger(__name__)
 class KosyncProgressService:
     """KoSync GET/PUT progress flow extracted from KosyncService."""
 
-    def __init__(self, service):
+    def __init__(self, service, db, container, manager):
         self.service = service
-        self.db = service._db
-        self.container = service._container
-        self.manager = service._manager
+        self.db = db
+        self.container = container
+        self.manager = manager
 
     def handle_put_progress(self, data, remote_addr, debounce_manager=None):
         if not data:

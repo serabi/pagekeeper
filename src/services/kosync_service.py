@@ -69,7 +69,7 @@ class KosyncService:
         self._ebook_dir = ebook_dir
         self._active_scans = set()
         self._active_scans_lock = threading.Lock()
-        self._progress = KosyncProgressService(self)
+        self._progress = KosyncProgressService(self, self._db, self._container, self._manager)
 
     # ------------------------------------------------------------------ #
     #  Progress serialization (was duplicated 3x in kosync_server.py)
