@@ -69,6 +69,16 @@ def test_upload_requires_data(client):
     assert resp.get_json()["error"] == "No data provided"
 
 
+def test_upload_requires_safe_abs_id(client, mock_container):
+    mock_container.mock_bookfusion_client.upload_api_key = "test-key"
+
+    resp = client.post("/api/bookfusion/upload", json={"abs_id": "../secret"})
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "Valid abs_id required"
+    mock_container.mock_database_service.get_book_by_ref.assert_not_called()
+
+
 def test_upload_book_not_found(client, mock_container):
     mock_container.mock_bookfusion_client.upload_api_key = "test-key"
     mock_container.mock_database_service.get_book_by_ref.return_value = None
@@ -112,6 +122,40 @@ def test_upload_success_when_local_epub_missing(client, mock_container):
     assert resp.get_json()["error"] == "Could not locate ebook file"
 
 
+def test_upload_rejects_traversal_ebook_filename(client, mock_container):
+    mock_container.mock_bookfusion_client.upload_api_key = "test-key"
+    mock_container.mock_database_service.get_book_by_ref.return_value = _make_mock_book(
+        ebook_filename="../secret.epub",
+    )
+
+    resp = client.post("/api/bookfusion/upload", json={"abs_id": "test-abs-id"})
+
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "Invalid ebook filename"
+    mock_container.mock_bookfusion_client.upload_book.assert_not_called()
+
+
+def test_upload_rejects_resolved_epub_outside_allowed_roots(client, mock_container, tmp_path):
+    book = _make_mock_book(ebook_filename="test.epub", book_id=42)
+    outside_file = tmp_path / "outside.epub"
+    outside_file.write_bytes(b"fake epub content")
+    books_dir = tmp_path / "books"
+    cache_dir = tmp_path / "cache"
+    books_dir.mkdir()
+    cache_dir.mkdir()
+    mock_container.config["BOOKS_DIR"] = str(books_dir)
+    mock_container.config["EPUB_CACHE_DIR"] = str(cache_dir)
+    mock_container.mock_bookfusion_client.upload_api_key = "test-key"
+    mock_container.mock_database_service.get_book_by_ref.return_value = book
+
+    with patch("src.utils.epub_resolver.get_local_epub", return_value=outside_file):
+        resp = client.post("/api/bookfusion/upload", json={"abs_id": "test-abs-id"})
+
+    assert resp.status_code == 500
+    assert resp.get_json()["error"] == "Could not locate ebook file"
+    mock_container.mock_bookfusion_client.upload_book.assert_not_called()
+
+
 def test_upload_saves_bookfusion_link(client, mock_container, tmp_path):
     book = _make_mock_book(ebook_filename="test.epub", book_id=42)
     mock_container.mock_bookfusion_client.upload_api_key = "test-key"
@@ -119,7 +163,11 @@ def test_upload_saves_bookfusion_link(client, mock_container, tmp_path):
     mock_container.mock_database_service.get_book_by_ref.return_value = book
     mock_container.mock_database_service.get_bookfusion_book_by_book_id.return_value = None
 
-    test_file = tmp_path / "test.epub"
+    books_dir = tmp_path / "books"
+    books_dir.mkdir()
+    mock_container.config["BOOKS_DIR"] = str(books_dir)
+    mock_container.config["EPUB_CACHE_DIR"] = str(tmp_path / "cache")
+    test_file = books_dir / "test.epub"
     test_file.write_bytes(b"fake epub content")
 
     with patch("src.utils.epub_resolver.get_local_epub", return_value=test_file):

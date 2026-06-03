@@ -3,6 +3,7 @@
 import logging
 import re
 from datetime import datetime
+from pathlib import Path, PurePath
 
 from flask import Blueprint, jsonify, request
 
@@ -13,6 +14,41 @@ logger = logging.getLogger(__name__)
 
 bookfusion_bp = Blueprint("bookfusion", __name__)
 BOOKFUSION_ENTRY_SPLIT = "\n— "
+SAFE_BOOK_REF_RE = re.compile(r"^[A-Za-z0-9_.:-]{1,255}$")
+
+
+def _safe_book_ref(value):
+    ref = str(value or "").strip()
+    if not ref or not SAFE_BOOK_REF_RE.fullmatch(ref):
+        return None
+    return ref
+
+
+def _safe_ebook_filename(filename):
+    if not filename:
+        return None
+    candidate = str(filename).strip()
+    if not candidate:
+        return None
+    path = PurePath(candidate)
+    if path.name != candidate or candidate in {".", ".."} or ".." in path.parts:
+        return None
+    return candidate
+
+
+def _is_path_within_roots(file_path, roots):
+    try:
+        resolved_path = Path(file_path).resolve()
+    except (OSError, RuntimeError, ValueError):
+        return False
+
+    for root in roots:
+        try:
+            if resolved_path.is_relative_to(Path(root).resolve()):
+                return True
+        except (OSError, RuntimeError, ValueError):
+            continue
+    return False
 
 
 def _normalize_bookfusion_chapter(chapter):
@@ -47,9 +83,9 @@ def upload_book():
     if not data:
         return jsonify({"error": "No data provided"}), 400
 
-    abs_id = data.get("abs_id")
+    abs_id = _safe_book_ref(data.get("abs_id"))
     if not abs_id:
-        return jsonify({"error": "abs_id required"}), 400
+        return jsonify({"error": "Valid abs_id required"}), 400
 
     container = get_container()
     bf_client = container.bookfusion_client()
@@ -65,7 +101,9 @@ def upload_book():
     if not book.ebook_filename and not book.original_ebook_filename:
         return jsonify({"error": "No ebook file associated with this book"}), 400
 
-    ebook_filename = book.original_ebook_filename or book.ebook_filename
+    ebook_filename = _safe_ebook_filename(book.original_ebook_filename or book.ebook_filename)
+    if not ebook_filename:
+        return jsonify({"error": "Invalid ebook filename"}), 400
 
     from src.utils.epub_resolver import get_local_epub
 
@@ -75,6 +113,9 @@ def upload_book():
 
     file_path = get_local_epub(ebook_filename, books_dir, epub_cache_dir, grimmory_client)
     if not file_path:
+        return jsonify({"error": "Could not locate ebook file"}), 500
+    if not _is_path_within_roots(file_path, (books_dir, epub_cache_dir)):
+        logger.error("Resolved ebook path is outside allowed roots")
         return jsonify({"error": "Could not locate ebook file"}), 500
 
     try:
