@@ -293,9 +293,9 @@ else 0 %}
                             <div class="service-item">
                                 <img src="/static/bookfusion-logo.svg" alt="BF" class="service-icon {% if not mapping.bookfusion_linked %}grayscale-muted{% endif %}">
                                 <span class="service-name">BookFusion</span>
-                                <a href="/bookfusion?tab=library&q={{ mapping.title|urlencode }}" class="service-value cursor-pointer color-inherit" title="{% if mapping.bookfusion_linked %}Manage BookFusion link{% else %}Link in BookFusion{% endif %}">
+                                <span class="service-value color-inherit">
                                     {% if mapping.bookfusion_linked %}Linked{% else %}<span class="link-icon">+</span>{% endif %}
-                                </a>
+                                </span>
                             </div>
                             {% endif %}
                         </div>

@@ -1,6 +1,7 @@
 # pyright: reportMissingImports=false
 
 import os
+import time
 
 from flask import current_app, request
 
@@ -37,6 +38,8 @@ TEMPLATE_DEFAULTS = {
     "REPROCESS_ON_CLEAR_IF_NO_ALIGNMENT": "true",
 }
 
+_PENDING_COUNT_CACHE = {"value": None, "expires": 0}
+
 
 def _get_val(key, default_val=None):
     if key in os.environ:
@@ -67,6 +70,14 @@ def _is_active_path(path):
     return req_path == target_path or req_path.startswith(f"{target_path}/")
 
 
+def _get_pending_count_cached(db_svc):
+    now = time.monotonic()
+    if now > _PENDING_COUNT_CACHE["expires"]:
+        _PENDING_COUNT_CACHE["value"] = db_svc.get_pending_suggestion_count()
+        _PENDING_COUNT_CACHE["expires"] = now + 5
+    return _PENDING_COUNT_CACHE["value"]
+
+
 def inject_global_vars():
     """Provide common template variables and helpers for Jinja templates."""
     pagekeeper_env = os.environ.get("PAGEKEEPER_ENV", "").strip().lower()
@@ -78,9 +89,9 @@ def inject_global_vars():
         try:
             db_svc = current_app.config.get("database_service")
             if db_svc:
-                suggestion_count = db_svc.get_pending_suggestion_count()
+                suggestion_count = _get_pending_count_cached(db_svc)
         except Exception:
-            pass
+            current_app.logger.debug("Failed to get pending suggestion count", exc_info=True)
 
     return dict(
         abs_server=os.environ.get("ABS_SERVER", ""),
