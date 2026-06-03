@@ -2,7 +2,6 @@
 
 import logging
 import os
-import threading
 from pathlib import Path
 
 from flask import Blueprint, current_app, flash, redirect, render_template, request, session, url_for
@@ -23,8 +22,7 @@ from src.blueprints.helpers import (
     get_searchable_ebooks,
     serialize_suggestion,
 )
-from src.db.models import Book, StorytellerSubmission
-from src.services.kosync_service import ensure_kosync_document
+from src.services.book_intake_service import BookIntakeService
 from src.utils.logging_utils import sanitize_log_data
 from src.utils.path_utils import sanitize_filename
 
@@ -33,73 +31,23 @@ logger = logging.getLogger(__name__)
 matching_bp = Blueprint("matching", __name__)
 
 
-def _create_storyteller_reservation(database_service, abs_id):
-    """Create a submission record synchronously so the job scheduler knows to defer.
-
-    This prevents a race condition where the background job picks up the book
-    and starts Whisper transcription before the async submission thread has
-    finished copying files and creating its own record.
-    """
-    book = database_service.get_book_by_ref(abs_id)
-    storyteller_uuid = book.storyteller_uuid if book else None
-    submission = StorytellerSubmission(
-        abs_id=abs_id, book_id=book.id if book else None, status="queued", storyteller_uuid=storyteller_uuid
-    )
-    database_service.save_storyteller_submission(submission)
-    return submission
-
-
-def _submit_to_storyteller_async(container, abs_id, book_title, ebook_filename, books_dir, epub_cache_dir):
-    """Submit a book to Storyteller in a background thread so the response isn't blocked."""
-
-    def _do_submit():
-        try:
-            st_sub_svc = container.storyteller_submission_service()
-            if not st_sub_svc.is_available():
-                logger.warning(f"Storyteller submission skipped for '{book_title}': service not available")
-                return
-            from src.utils.epub_resolver import get_local_epub
-
-            epub_path = get_local_epub(ebook_filename, books_dir, epub_cache_dir, container.grimmory_client())
-            audio_files = container.abs_client().get_audio_files(abs_id)
-            if epub_path and audio_files:
-                result = st_sub_svc.submit_book(abs_id, book_title, Path(epub_path), audio_files)
-                if not result.success:
-                    logger.warning(f"Storyteller submission failed for '{book_title}': {result.error}")
-            else:
-                logger.warning(
-                    f"Storyteller submission skipped for '{book_title}': "
-                    f"epub={'found' if epub_path else 'missing'}, audio={len(audio_files or [])} files"
-                )
-        except Exception as e:
-            logger.warning(f"Storyteller submission error for '{book_title}': {e}")
-            try:
-                db_svc = container.database_service()
-                book = db_svc.get_book_by_abs_id(abs_id)
-                submission = db_svc.get_active_storyteller_submission_by_book_id(book.id) if book else None
-                if submission:
-                    db_svc.update_storyteller_submission_status(submission.id, "failed")
-            except Exception:
-                pass
-
-    threading.Thread(target=_do_submit, daemon=True).start()
-
-
 def _copy_book_merge_metadata(existing_book, overrides=None):
-    metadata = {
-        "storyteller_uuid": existing_book.storyteller_uuid,
-        "original_ebook_filename": existing_book.original_ebook_filename,
-        "abs_ebook_item_id": existing_book.abs_ebook_item_id,
-        "ebook_item_id": existing_book.ebook_item_id or existing_book.abs_ebook_item_id,
-        "custom_cover_url": existing_book.custom_cover_url,
-        "started_at": existing_book.started_at,
-        "finished_at": existing_book.finished_at,
-        "rating": existing_book.rating,
-        "read_count": existing_book.read_count or 1,
-    }
-    if overrides:
-        metadata.update({key: value for key, value in overrides.items() if value is not None})
-    return metadata
+    return BookIntakeService._copy_book_merge_metadata(existing_book, overrides)
+
+
+def _get_book_intake_service(container=None):
+    container = container or get_container()
+    return BookIntakeService(
+        container=container,
+        database_service=get_database_service(),
+        abs_service=get_abs_service(),
+        collection_name=current_app.config["ABS_COLLECTION_NAME"],
+        books_dir=current_app.config.get("BOOKS_DIR", ""),
+        epub_cache_dir=current_app.config.get("EPUB_CACHE_DIR", ""),
+        find_in_grimmory=find_in_grimmory,
+        get_kosync_id_for_ebook=get_kosync_id_for_ebook,
+        attempt_hardcover_automatch=attempt_hardcover_automatch,
+    )
 
 
 def _create_book_mapping(
@@ -113,127 +61,18 @@ def _create_book_mapping(
     author=None,
     subtitle=None,
 ):
-    """Create a book mapping with full pipeline: Grimmory, KOSync, merge, Hardcover, etc.
-
-    Returns (book, error_message). On success error_message is None.
-    On failure book is None and error_message describes the problem.
-    """
-    database_service = get_database_service()
-    abs_service = get_abs_service()
-
-    # Grimmory lookup
-    grimmory_id = None
-    bl_match, bl_match_client = find_in_grimmory(ebook_filename)
-    if bl_match:
-        grimmory_id = bl_match.get("id")
-
-    # KOSync ID
-    kosync_doc_id = get_kosync_id_for_ebook(ebook_filename, grimmory_id, bl_client=bl_match_client)
-    if not kosync_doc_id:
-        logger.warning(f"Cannot compute KOSync ID for '{sanitize_log_data(ebook_filename)}'")
-        return None, "Could not compute KOSync ID for ebook"
-
-    # Hash preservation
-    current_book_entry = database_service.get_book_by_ref(abs_id)
-    if current_book_entry and current_book_entry.kosync_doc_id:
-        logger.info(f"Preserving existing hash '{current_book_entry.kosync_doc_id}' for '{abs_id}'")
-        kosync_doc_id = current_book_entry.kosync_doc_id
-
-    # Duplicate merge detection
-    existing_book = database_service.get_book_by_kosync_id(kosync_doc_id)
-    migration_source_id = None
-    original_ebook_filename = None
-
-    if existing_book and existing_book.abs_id != abs_id:
-        logger.info(f"Merging existing '{existing_book.abs_id}' into '{abs_id}'")
-        migration_source_id = existing_book.abs_id
-        ebook_item_id = existing_book.ebook_item_id or existing_book.abs_ebook_item_id or existing_book.abs_id
-        original_ebook_filename = existing_book.original_ebook_filename or existing_book.ebook_filename
-        merge_metadata = _copy_book_merge_metadata(
-            existing_book,
-            {
-                "abs_ebook_item_id": ebook_item_id,
-                "ebook_item_id": ebook_item_id,
-                "original_ebook_filename": original_ebook_filename,
-                "storyteller_uuid": storyteller_uuid or existing_book.storyteller_uuid,
-            },
-        )
-    else:
-        merge_metadata = {
-            "storyteller_uuid": storyteller_uuid,
-            "original_ebook_filename": None,
-            "abs_ebook_item_id": None,
-            "ebook_item_id": None,
-        }
-
-    # Create book
-    book = Book(
+    """Compatibility wrapper around the Book Intake Module."""
+    result = _get_book_intake_service(container).map_audiobook_ebook(
         abs_id=abs_id,
         title=title,
         ebook_filename=ebook_filename,
-        kosync_doc_id=kosync_doc_id,
-        transcript_file=None,
-        status="pending",
         duration=duration,
+        storyteller_uuid=storyteller_uuid,
+        storyteller_submit=storyteller_submit,
         author=author,
         subtitle=subtitle,
-        **merge_metadata,
     )
-    database_service.save_book(book, is_new=True)
-    ensure_kosync_document(book, database_service)
-
-    # Storyteller reservation (before HTTP calls to prevent race)
-    if storyteller_submit:
-        _create_storyteller_reservation(database_service, abs_id)
-
-    # Duplicate merge migration
-    if migration_source_id:
-        try:
-            database_service.migrate_book_data(migration_source_id, abs_id)
-            database_service.delete_book(existing_book.id)
-            abs_service.add_to_collection(abs_id, current_app.config["ABS_COLLECTION_NAME"])
-            logger.info(f"Successfully merged {migration_source_id} into {abs_id}")
-        except Exception as e:
-            logger.error(f"Failed to merge book data: {e}")
-            raise
-
-    # Hardcover automatch
-    attempt_hardcover_automatch(container, book)
-
-    # ABS collection add
-    if not migration_source_id:
-        abs_service.add_to_collection(abs_id, current_app.config["ABS_COLLECTION_NAME"])
-
-    # Grimmory shelf add
-    if bl_match_client:
-        shelf_filename = original_ebook_filename or ebook_filename
-        try:
-            bl_match_client.add_to_shelf(shelf_filename)
-        except Exception as e:
-            logger.warning(f"Grimmory add_to_shelf failed for '{sanitize_log_data(shelf_filename)}': {e}")
-
-    # Storyteller submission (background thread)
-    if storyteller_submit:
-        _submit_to_storyteller_async(
-            container,
-            abs_id,
-            title,
-            ebook_filename,
-            current_app.config.get("BOOKS_DIR", ""),
-            current_app.config.get("EPUB_CACHE_DIR", ""),
-        )
-
-    # Resolve suggestions
-    database_service.resolve_suggestion(abs_id)
-    database_service.resolve_suggestion(kosync_doc_id)
-    try:
-        device_doc = database_service.get_kosync_doc_by_filename(ebook_filename)
-        if device_doc and device_doc.document_hash != kosync_doc_id:
-            database_service.resolve_suggestion(device_doc.document_hash)
-    except Exception as e:
-        logger.warning(f"Failed to check/resolve device hash: {e}")
-
-    return book, None
+    return result.book, result.error
 
 
 def _build_batch_queue_item(item):
@@ -313,6 +152,7 @@ def match():
 
     if request.method == "POST":
         action = request.form.get("action", "")
+        intake_service = _get_book_intake_service(container)
 
         # --- Audio-only import (no ebook required) ---
         if action == "audio_only":
@@ -324,21 +164,13 @@ def match():
             selected_ab = next((ab for ab in audiobooks if ab["id"] == abs_id), None)
             if not selected_ab:
                 return "Audiobook not found", 404
-            book = Book(
+            intake_service.import_audio_only(
                 abs_id=abs_id,
                 title=manager.get_audiobook_title(selected_ab),
-                ebook_filename=None,
-                kosync_doc_id=None,
-                status="not_started",
                 duration=manager.get_duration(selected_ab),
-                sync_mode="audiobook",
                 author=get_audiobook_author(selected_ab),
                 subtitle=selected_ab.get("media", {}).get("metadata", {}).get("subtitle") or None,
             )
-            database_service.save_book(book, is_new=True)
-            abs_service.add_to_collection(abs_id, current_app.config["ABS_COLLECTION_NAME"])
-            attempt_hardcover_automatch(container, book)
-            database_service.resolve_suggestion(abs_id)
             return redirect(url_for("dashboard.index"))
 
         # --- Ebook-only import (no audiobook required) ---
@@ -351,70 +183,23 @@ def match():
             if not ebook_filename and not storyteller_uuid:
                 return "An ebook or Storyteller selection is required", 400
 
-            if ebook_filename:
-                # Ebook present (possibly with Storyteller too)
-                grimmory_id = None
-                matched_bl_client = None
-                bl_book, matched_bl_client = find_in_grimmory(ebook_filename)
-                if bl_book:
-                    grimmory_id = bl_book.get("id")
-                kosync_doc_id = get_kosync_id_for_ebook(ebook_filename, grimmory_id, bl_client=matched_bl_client)
-                if not kosync_doc_id:
-                    return "Could not compute KOSync ID for ebook", 404
-                title = ebook_display_name or (bl_book.get("title") if bl_book else None) or Path(ebook_filename).stem
-            else:
-                # Storyteller-only (no ebook file)
-                title = storyteller_title or ebook_display_name or "Storyteller Book"
-                ebook_filename = None
-                kosync_doc_id = None
-
-            book = Book(
-                abs_id=None,
-                title=title,
+            result = intake_service.import_ebook_only(
                 ebook_filename=ebook_filename,
-                kosync_doc_id=kosync_doc_id,
-                status="not_started",
-                sync_mode="ebook_only",
+                ebook_display_name=ebook_display_name,
                 storyteller_uuid=storyteller_uuid,
+                storyteller_title=storyteller_title,
             )
-            database_service.save_book(book, is_new=True)
-            ensure_kosync_document(book, database_service)
-            # Resolve any suggestions involving these source IDs
-            if kosync_doc_id:
-                database_service.resolve_suggestion(kosync_doc_id, source="kosync")
-            if storyteller_uuid:
-                database_service.resolve_suggestion(storyteller_uuid, source="storyteller")
-            if ebook_filename:
-                database_service.resolve_suggestion(ebook_filename, source="grimmory")
+            if result.error:
+                return result.error, result.status_code
             return redirect(url_for("dashboard.index"))
 
         # --- Attach ebook to audio-only book ---
         if action == "attach_ebook":
             attach_abs_id = request.form.get("attach_abs_id")
             ebook_filename = sanitize_filename(request.form.get("ebook_filename"))
-            if not attach_abs_id or not ebook_filename:
-                return "Missing book ID or ebook filename", 400
-            book = database_service.get_book_by_ref(attach_abs_id)
-            if not book:
-                return "Book not found", 404
-            grimmory_id = None
-            bl_book, bl_client = find_in_grimmory(ebook_filename)
-            if bl_book:
-                grimmory_id = bl_book.get("id")
-            kosync_doc_id = get_kosync_id_for_ebook(ebook_filename, grimmory_id, bl_client=bl_client)
-            if not kosync_doc_id:
-                return "Could not compute KOSync ID for ebook", 404
-            book.ebook_filename = ebook_filename
-            book.kosync_doc_id = kosync_doc_id
-            book.status = "pending"
-            database_service.save_book(book)
-            ensure_kosync_document(book, database_service)
-            if bl_client:
-                try:
-                    bl_client.add_to_shelf(ebook_filename)
-                except Exception as e:
-                    logger.warning(f"Grimmory add_to_shelf failed for '{sanitize_log_data(ebook_filename)}': {e}")
-            database_service.resolve_suggestion(kosync_doc_id)
+            result = intake_service.attach_ebook(abs_id=attach_abs_id, ebook_filename=ebook_filename)
+            if result.error:
+                return result.error, result.status_code
             return redirect(url_for("dashboard.index"))
 
         # --- Attach audiobook to ebook-only book ---
@@ -433,38 +218,16 @@ def match():
             selected_ab = next((ab for ab in audiobooks if ab["id"] == abs_id), None)
             if not selected_ab:
                 return "Audiobook not found", 404
-            new_book = Book(
+            result = intake_service.attach_audiobook(
+                source_book_id=link_book_id,
                 abs_id=abs_id,
                 title=manager.get_audiobook_title(selected_ab),
-                ebook_filename=book.ebook_filename,
-                kosync_doc_id=book.kosync_doc_id,
-                status=book.status or "not_started",
                 duration=manager.get_duration(selected_ab),
-                sync_mode="audiobook",
                 author=get_audiobook_author(selected_ab),
                 subtitle=selected_ab.get("media", {}).get("metadata", {}).get("subtitle") or None,
-                **_copy_book_merge_metadata(
-                    book,
-                    {
-                        "storyteller_uuid": book.storyteller_uuid,
-                        "original_ebook_filename": book.original_ebook_filename,
-                    },
-                ),
             )
-            database_service.save_book(new_book)
-            ensure_kosync_document(new_book, database_service)
-            try:
-                database_service.migrate_book_data(link_book_id, abs_id)
-                database_service.delete_book(book.id)
-                abs_service.add_to_collection(abs_id, current_app.config["ABS_COLLECTION_NAME"])
-                logger.info(f"Successfully merged {link_book_id} into {abs_id}")
-            except Exception as e:
-                logger.error(f"Failed to merge book data: {e}")
-                raise
-            attempt_hardcover_automatch(container, new_book)
-            database_service.resolve_suggestion(abs_id)
-            if new_book.kosync_doc_id:
-                database_service.resolve_suggestion(new_book.kosync_doc_id)
+            if result.error:
+                return result.error, result.status_code
             return redirect(url_for("dashboard.index"))
 
         # --- Standard flow (requires audiobook) ---
@@ -597,12 +360,12 @@ def match():
 def batch_match():
     container = get_container()
     manager = get_manager()
-    database_service = get_database_service()
 
     abs_service = get_abs_service()
 
     if request.method == "POST":
         action = request.form.get("action")
+        intake_service = _get_book_intake_service(container)
         if action == "add_to_queue":
             session.setdefault("queue", [])
             abs_id = request.form.get("audiobook_id") or ""
@@ -669,63 +432,28 @@ def batch_match():
             for item in session.get("queue", []):
                 item_label = item.get("ebook_display_name") or item.get("ebook_filename") or item.get("abs_id")
                 try:
-                    # Handle audio-only queue items
                     if item.get("audio_only"):
-                        book = Book(
+                        intake_service.import_audio_only(
                             abs_id=item["abs_id"],
                             title=item["title"],
-                            ebook_filename=None,
-                            kosync_doc_id=None,
-                            status="not_started",
                             duration=item["duration"],
-                            sync_mode="audiobook",
                             author=item.get("author"),
                             subtitle=item.get("subtitle"),
                         )
-                        database_service.save_book(book, is_new=True)
-                        abs_service.add_to_collection(item["abs_id"], current_app.config["ABS_COLLECTION_NAME"])
-                        attempt_hardcover_automatch(container, book)
-                        database_service.resolve_suggestion(item["abs_id"])
                         continue
 
-                    # Handle ebook-only queue items
                     if item.get("ebook_only"):
-                        ebook_filename = item["ebook_filename"]
-                        storyteller_uuid = item.get("storyteller_uuid") or None
-
-                        if ebook_filename:
-                            bl_book, bl_client = find_in_grimmory(ebook_filename)
-                            grimmory_id = bl_book.get("id") if bl_book else None
-                            kosync_doc_id = get_kosync_id_for_ebook(ebook_filename, grimmory_id, bl_client=bl_client)
-                            if not kosync_doc_id:
-                                failed_items.append(item.get("ebook_display_name") or ebook_filename)
-                                continue
-                            title = (
-                                item.get("ebook_display_name")
-                                or (bl_book.get("title") if bl_book else None)
-                                or Path(ebook_filename).stem
-                            )
-                        else:
-                            title = item.get("title", "Storyteller Book")
-                            ebook_filename = None
-                            kosync_doc_id = None
-
-                        book = Book(
-                            abs_id=None,
-                            title=title,
-                            ebook_filename=ebook_filename,
-                            kosync_doc_id=kosync_doc_id,
-                            status="not_started",
-                            sync_mode="ebook_only",
-                            storyteller_uuid=storyteller_uuid,
+                        result = intake_service.import_ebook_only(
+                            ebook_filename=item["ebook_filename"],
+                            ebook_display_name=item.get("ebook_display_name") or "",
+                            storyteller_uuid=item.get("storyteller_uuid") or None,
+                            storyteller_title=item.get("title", "Storyteller Book"),
                         )
-                        database_service.save_book(book, is_new=True)
-                        ensure_kosync_document(book, database_service)
-                        if kosync_doc_id:
-                            database_service.resolve_suggestion(kosync_doc_id)
+                        if result.error:
+                            failed_items.append(item.get("ebook_display_name") or item["ebook_filename"])
                         continue
 
-                    book, error = _create_book_mapping(
+                    _book, error = _create_book_mapping(
                         container,
                         abs_id=item["abs_id"],
                         title=item["title"],
