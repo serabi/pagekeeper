@@ -839,7 +839,7 @@ def update_journal(journal_id):
         try:
             new_dt = datetime.strptime(date_str, "%Y-%m-%d")
         except ValueError:
-            return jsonify({"success": False, "error": "Invalid date format (expected YYYY-MM-DD)"}), 400
+            return json_error("Invalid date format (expected YYYY-MM-DD)", 400)
         journal = database_service.update_reading_journal(journal_id, created_at=new_dt)
         # Also update the corresponding book field
         field = "started_at" if existing.event == "started" else "finished_at"
