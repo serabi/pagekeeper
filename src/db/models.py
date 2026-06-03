@@ -101,11 +101,11 @@ class Book(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     abs_id = Column(String(255), unique=True, nullable=True, index=True)
     title = Column(String(500))
-    ebook_filename = Column(String(500))
+    ebook_filename = Column(String(500), index=True)
     original_ebook_filename = Column(String(500))
     kosync_doc_id = Column(String(255), index=True)
     transcript_file = Column(String(500))
-    status = Column(String(50), default="not_started")
+    status = Column(String(50), default="not_started", index=True)
     activity_flag = Column(sa.Boolean, default=False)
     duration = Column(Float)  # Duration in seconds from AudioBookShelf
     sync_mode = Column(String(20), default="audiobook")  # 'audiobook' or 'ebook_only'
@@ -586,13 +586,13 @@ class BookfusionHighlight(Base):
     __tablename__ = "bookfusion_highlights"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    bookfusion_book_id = Column(String(255), nullable=False)
+    bookfusion_book_id = Column(String(255), nullable=False, index=True)
     highlight_id = Column(String(255), nullable=False, unique=True)
     book_title = Column(String(500))
     content = Column(Text, nullable=False)
     chapter_heading = Column(String(500))
     fetched_at = Column(DateTime, default=utc_now)
-    highlighted_at = Column(DateTime, nullable=True)
+    highlighted_at = Column(DateTime, nullable=True, index=True)
     quote_text = Column(Text, nullable=True)
     matched_book_id = Column(Integer, ForeignKey("books.id", ondelete="SET NULL"), nullable=True, index=True)
 
