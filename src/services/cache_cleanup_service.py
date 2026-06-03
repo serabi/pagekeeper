@@ -23,6 +23,8 @@ class CacheCleanupService:
                     valid_filenames.add(book.ebook_filename)
 
             for suggestion in self.database_service.get_all_actionable_suggestions():
+                if not suggestion.matches or not isinstance(suggestion.matches, list):
+                    continue
                 for match in suggestion.matches:
                     if match.get("filename"):
                         valid_filenames.add(match["filename"])

@@ -52,13 +52,10 @@ class SyncManagerStartup:
             logger.debug("CWA not available (library_service or cwa_client missing)")
 
         if self.abs_client and self.abs_client.is_configured():
-            try:
-                if hasattr(self.abs_client, "get_ebook_files") and hasattr(self.abs_client, "search_ebooks"):
-                    logger.info("ABS ebook methods available (get_ebook_files, search_ebooks)")
-                else:
-                    logger.warning("ABS ebook methods missing - ebook search may not work")
-            except Exception as exc:
-                logger.warning("ABS ebook check failed: %s", sanitize_exception(exc))
+            if hasattr(self.abs_client, "get_ebook_files") and hasattr(self.abs_client, "search_ebooks"):
+                logger.info("ABS ebook methods available (get_ebook_files, search_ebooks)")
+            else:
+                logger.warning("ABS ebook methods missing - ebook search may not work")
 
         if self.migration_service:
             logger.info("Checking for legacy data to migrate...")

@@ -8,8 +8,10 @@ def get_str(key, default=""):
 
 
 def get_bool(key, default=False):
-    raw_default = "true" if default else "false"
-    return os.environ.get(key, raw_default).strip().lower() in ("true", "1", "yes", "on")
+    value = os.environ.get(key)
+    if value is None or value.strip() == "":
+        return default
+    return value.strip().lower() in ("true", "1", "yes", "on")
 
 
 def get_int(key, default):
