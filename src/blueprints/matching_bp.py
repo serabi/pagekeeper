@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 
 from flask import Blueprint, current_app, flash, redirect, render_template, request, session, url_for
+from markupsafe import Markup
 
 from src.blueprints.helpers import (
     any_grimmory_configured,
@@ -29,6 +30,10 @@ from src.utils.path_utils import sanitize_filename
 logger = logging.getLogger(__name__)
 
 matching_bp = Blueprint("matching", __name__)
+
+
+def _escape_template_value(value):
+    return Markup.escape(value or "")
 
 
 def _copy_book_merge_metadata(existing_book, overrides=None):
@@ -139,8 +144,8 @@ def suggestions():
         bookfusion_enabled=bookfusion_enabled,
         bookfusion_catalog_count=bookfusion_catalog_count,
         suggestions_data=suggestions_list,
-        initial_search=initial_search,
-        selected_source_id=selected_source_id,
+        initial_search=_escape_template_value(initial_search),
+        selected_source_id=_escape_template_value(selected_source_id),
     )
 
 
@@ -339,13 +344,13 @@ def match():
         audiobooks=audiobooks,
         ebooks=ebooks,
         storyteller_books=storyteller_books,
-        search=search,
+        search=_escape_template_value(search),
         get_title=manager.get_audiobook_title,
-        attach_to=attach_to,
-        attach_title=attach_title,
-        link_to=link_to,
-        link_title=link_title,
-        preselect_abs_id=preselect_abs_id,
+        attach_to=_escape_template_value(attach_to),
+        attach_title=_escape_template_value(attach_title),
+        link_to=_escape_template_value(link_to),
+        link_title=_escape_template_value(link_title),
+        preselect_abs_id=_escape_template_value(preselect_abs_id),
         storyteller_submit_available=storyteller_submit_available,
         storyteller_force_mode=storyteller_force_mode,
         storyteller_configured=storyteller_configured,
@@ -522,7 +527,7 @@ def batch_match():
         storyteller_books=storyteller_books,
         queue=queue_view["items"],
         queue_summary=queue_view,
-        search=search,
+        search=_escape_template_value(search),
         get_title=manager.get_audiobook_title,
         storyteller_submit_available=storyteller_submit_available,
         storyteller_force_mode=storyteller_force_mode,
