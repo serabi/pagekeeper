@@ -122,6 +122,7 @@ def test_map_audiobook_ebook_merges_duplicate_book_data_and_metadata():
 def test_storyteller_reservation_happens_before_async_submission_thread():
     events = []
     service, db, _abs, _bl, _hc = _make_service()
+    db.get_book_by_ref.side_effect = [None, _book_ref(id=100, abs_id="abs-story")]
     db.save_storyteller_submission.side_effect = lambda submission: events.append(("reservation", submission.abs_id))
 
     thread = Mock()
@@ -138,6 +139,17 @@ def test_storyteller_reservation_happens_before_async_submission_thread():
 
     assert result.error is None
     assert events == [("reservation", "abs-story"), ("thread_start", None)]
+
+
+def test_storyteller_reservation_returns_none_when_book_not_found(caplog):
+    service, db, _abs, _bl, _hc = _make_service()
+
+    with caplog.at_level("WARNING"):
+        submission = service._create_storyteller_reservation("missing-abs")
+
+    assert submission is None
+    assert "Cannot create Storyteller reservation: book not found for abs_id=missing-abs" in caplog.messages
+    db.save_storyteller_submission.assert_not_called()
 
 
 def test_map_audiobook_ebook_resolves_abs_hash_and_device_suggestions():

@@ -257,10 +257,13 @@ class BookIntakeService:
 
     def _create_storyteller_reservation(self, abs_id):
         book = self.database_service.get_book_by_ref(abs_id)
-        storyteller_uuid = book.storyteller_uuid if book else None
+        if not book:
+            logger.warning("Cannot create Storyteller reservation: book not found for abs_id=%s", abs_id)
+            return None
+        storyteller_uuid = book.storyteller_uuid
         submission = StorytellerSubmission(
             abs_id=abs_id,
-            book_id=book.id if book else None,
+            book_id=book.id,
             status="queued",
             storyteller_uuid=storyteller_uuid,
         )
