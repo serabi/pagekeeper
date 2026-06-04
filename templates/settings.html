@@ -1052,7 +1052,7 @@
 
     <script>
         window.SETTINGS_CONFIG = {
-            kosyncPort: "{{ get_val('KOSYNC_PORT', '4477') }}"
+            kosyncPort: {{ get_val('KOSYNC_PORT', '4477')|tojson }}
         };
     </script>
     <script src="/static/js/confirm-modal.js"></script>
