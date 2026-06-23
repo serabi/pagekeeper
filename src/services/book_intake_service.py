@@ -161,7 +161,7 @@ class BookIntakeService:
         )
         self.database_service.save_book(new_book)
         ensure_kosync_document(new_book, self.database_service)
-        self._migrate_and_delete_source(source_book_id, abs_id, book)
+        self._migrate_source_identity(book.abs_id or source_book_id, abs_id)
         self.abs_service.add_to_collection(abs_id, self.collection_name)
         self.attempt_hardcover_automatch(self.container, new_book)
         self.database_service.resolve_suggestion(abs_id)
@@ -239,7 +239,7 @@ class BookIntakeService:
             self._create_storyteller_reservation(abs_id)
 
         if migration_source_id:
-            self._migrate_and_delete_source(migration_source_id, abs_id, existing_book)
+            self._migrate_source_identity(migration_source_id, abs_id)
             self.abs_service.add_to_collection(abs_id, self.collection_name)
         else:
             self.abs_service.add_to_collection(abs_id, self.collection_name)
@@ -312,10 +312,9 @@ class BookIntakeService:
 
         threading.Thread(target=_do_submit, daemon=True).start()
 
-    def _migrate_and_delete_source(self, source_id, target_abs_id, source_book):
+    def _migrate_source_identity(self, source_id, target_abs_id):
         try:
             self.database_service.migrate_book_data(source_id, target_abs_id)
-            self.database_service.delete_book(source_book.id)
             logger.info("Successfully merged %s into %s", source_id, target_abs_id)
         except Exception as e:
             logger.error("Failed to merge book data: %s", e)

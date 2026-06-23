@@ -115,7 +115,7 @@ def test_map_audiobook_ebook_merges_duplicate_book_data_and_metadata():
     assert result.book.custom_cover_url == "https://cover"
     assert result.book.read_count == 3
     db.migrate_book_data.assert_called_once_with("ebook-source", "abs-new")
-    db.delete_book.assert_called_once_with(22)
+    db.delete_book.assert_not_called()
     abs_service.add_to_collection.assert_called_once_with("abs-new", "Synced")
 
 
