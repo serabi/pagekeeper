@@ -36,6 +36,11 @@ def _escape_template_value(value):
     return Markup.escape(value or "")
 
 
+def _redirect_search_value():
+    """Return a bounded same-route search value for redirects."""
+    return (request.form.get("search") or "")[:200]
+
+
 def _copy_book_merge_metadata(existing_book, overrides=None):
     return BookIntakeService._copy_book_merge_metadata(existing_book, overrides)
 
@@ -318,8 +323,8 @@ def match():
     try:
         st_sub_svc = container.storyteller_submission_service()
         storyteller_submit_available = st_sub_svc.is_available()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Storyteller submission availability check failed: %s", e)
 
     storyteller_force_mode = os.environ.get("STORYTELLER_FORCE_MODE", "false").lower() == "true"
     storyteller_configured = container.storyteller_client().is_configured()
@@ -382,7 +387,7 @@ def batch_match():
             storyteller_uuid = request.form.get("storyteller_uuid", "")
 
             if not abs_id and not ebook_filename and not storyteller_uuid:
-                return redirect(url_for("matching.batch_match", search=request.form.get("search", "")))
+                return redirect(url_for("matching.batch_match", search=_redirect_search_value()))
 
             # Resolve audiobook metadata if present
             selected_ab = None
@@ -390,7 +395,7 @@ def batch_match():
                 audiobooks = abs_service.get_audiobooks()
                 selected_ab = next((ab for ab in audiobooks if ab["id"] == abs_id), None)
                 if not selected_ab:
-                    return redirect(url_for("matching.batch_match", search=request.form.get("search", "")))
+                    return redirect(url_for("matching.batch_match", search=_redirect_search_value()))
 
             # Dedup key: abs_id if present, otherwise ebook_filename
             queue_key = abs_id or ebook_filename
@@ -423,7 +428,7 @@ def batch_match():
                     }
                 )
                 session.modified = True
-            return redirect(url_for("matching.batch_match", search=request.form.get("search", "")))
+            return redirect(url_for("matching.batch_match", search=_redirect_search_value()))
         elif action == "remove_from_queue":
             remove_key = request.form.get("queue_key") or request.form.get("abs_id")
             session["queue"] = [
@@ -512,8 +517,8 @@ def batch_match():
     try:
         st_sub_svc = container.storyteller_submission_service()
         storyteller_submit_available = st_sub_svc.is_available()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.debug("Storyteller submission availability check failed: %s", e)
 
     storyteller_force_mode = os.environ.get("STORYTELLER_FORCE_MODE", "false").lower() == "true"
     storyteller_configured = container.storyteller_client().is_configured()

@@ -307,8 +307,8 @@ class BookIntakeService:
                     )
                     if submission:
                         self.database_service.update_storyteller_submission_status(submission.id, "failed")
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("Failed to mark Storyteller submission as failed: %s", e)
 
         threading.Thread(target=_do_submit, daemon=True).start()
 
