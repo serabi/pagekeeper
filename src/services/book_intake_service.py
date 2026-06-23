@@ -272,6 +272,7 @@ class BookIntakeService:
 
     def _submit_to_storyteller_async(self, abs_id, book_title, ebook_filename):
         def _do_submit():
+            submission_succeeded = False
             try:
                 st_sub_svc = self.container.storyteller_submission_service()
                 if not st_sub_svc.is_available():
@@ -289,7 +290,8 @@ class BookIntakeService:
                 audio_files = self.container.abs_client().get_audio_files(abs_id)
                 if epub_path and audio_files:
                     result = st_sub_svc.submit_book(abs_id, book_title, Path(epub_path), audio_files)
-                    if not result.success:
+                    submission_succeeded = result.success
+                    if not submission_succeeded:
                         logger.warning("Storyteller submission failed for '%s': %s", book_title, result.error)
                 else:
                     logger.warning(
@@ -300,17 +302,20 @@ class BookIntakeService:
                     )
             except Exception as e:
                 logger.warning("Storyteller submission error for '%s': %s", book_title, e)
-                try:
-                    book = self.database_service.get_book_by_abs_id(abs_id)
-                    submission = (
-                        self.database_service.get_active_storyteller_submission_by_book_id(book.id) if book else None
-                    )
-                    if submission:
-                        self.database_service.update_storyteller_submission_status(submission.id, "failed")
-                except Exception as e:
-                    logger.debug("Failed to mark Storyteller submission as failed: %s", e)
+            finally:
+                if not submission_succeeded:
+                    self._mark_storyteller_submission_failed(abs_id)
 
         threading.Thread(target=_do_submit, daemon=True).start()
+
+    def _mark_storyteller_submission_failed(self, abs_id):
+        try:
+            book = self.database_service.get_book_by_abs_id(abs_id)
+            submission = self.database_service.get_active_storyteller_submission_by_book_id(book.id) if book else None
+            if submission:
+                self.database_service.update_storyteller_submission_status(submission.id, "failed")
+        except Exception as e:
+            logger.debug("Failed to mark Storyteller submission as failed: %s", e)
 
     def _migrate_source_identity(self, source_id, target_abs_id):
         try:

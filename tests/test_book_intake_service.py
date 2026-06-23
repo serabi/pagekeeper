@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from src.services.book_intake_service import BookIntakeService
+from src.services.storyteller_submission_service import SubmissionResult
 
 
 def _book_ref(**overrides):
@@ -66,6 +67,17 @@ def _make_service(*, db=None, abs_service=None, bl_match=None, bl_client=None, k
         attempt_hardcover_automatch=attempt_hardcover_automatch,
     )
     return service, db, abs_service, bl_client, attempt_hardcover_automatch
+
+
+def _run_storyteller_submission_synchronously(service, *, abs_id="abs-story", title="Story Book", ebook="story.epub"):
+    def thread_factory(*, target, daemon):
+        thread = Mock()
+        thread.daemon = daemon
+        thread.start.side_effect = target
+        return thread
+
+    with patch("src.services.book_intake_service.threading.Thread", side_effect=thread_factory):
+        service._submit_to_storyteller_async(abs_id, title, ebook)
 
 
 def test_map_audiobook_ebook_preserves_existing_kosync_hash():
@@ -173,6 +185,33 @@ def test_storyteller_reservation_returns_none_when_book_not_found(caplog):
     assert submission is None
     assert "Cannot create Storyteller reservation: book not found for abs_id=missing-abs" in caplog.messages
     db.save_storyteller_submission.assert_not_called()
+
+
+def test_storyteller_submission_marks_reservation_failed_when_service_unavailable():
+    service, db, _abs, _bl, _hc = _make_service()
+    db.get_book_by_abs_id.return_value = _book_ref(id=42, abs_id="abs-story")
+    db.get_active_storyteller_submission_by_book_id.return_value = SimpleNamespace(id=84)
+
+    _run_storyteller_submission_synchronously(service)
+
+    db.update_storyteller_submission_status.assert_called_once_with(84, "failed")
+    service.container.storyteller_submission_service.return_value.submit_book.assert_not_called()
+
+
+def test_storyteller_submission_marks_reservation_failed_when_submit_book_fails():
+    service, db, _abs, _bl, _hc = _make_service()
+    db.get_book_by_abs_id.return_value = _book_ref(id=42, abs_id="abs-story")
+    db.get_active_storyteller_submission_by_book_id.return_value = SimpleNamespace(id=84)
+    storyteller_service = service.container.storyteller_submission_service.return_value
+    storyteller_service.is_available.return_value = True
+    storyteller_service.submit_book.return_value = SubmissionResult(success=False, error="copy failed")
+    service.container.abs_client.return_value.get_audio_files.return_value = [{"stream_url": "https://audio"}]
+
+    with patch("src.utils.epub_resolver.get_local_epub", return_value="/cache/story.epub"):
+        _run_storyteller_submission_synchronously(service)
+
+    db.update_storyteller_submission_status.assert_called_once_with(84, "failed")
+    storyteller_service.submit_book.assert_called_once()
 
 
 def test_map_audiobook_ebook_resolves_abs_hash_and_device_suggestions():
