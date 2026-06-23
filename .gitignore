@@ -62,3 +62,8 @@ CLAUDE.md
 .sidecar-start.sh
 .sidecar-base
 .td-root
+
+# Agent scratch directories
+.agent-prompts/
+.agent-reports/
+.worktrees/
