@@ -5,9 +5,10 @@ services:
       dockerfile: Dockerfile
     platform: linux/amd64
     user: root
-    entrypoint: ["sh", "-c", "pip install -q pytest && python -m pytest tests/ \"$@\"", "--"]
+    entrypoint: ["sh", "-c", "pip install -q pytest && python -m pytest \"$@\"", "--"]
     volumes:
       - ./src:/app/src:ro
       - ./tests:/app/tests:ro
       - ./templates:/app/templates:ro
       - ./static:/app/static:ro
+      - ./pyproject.toml:/app/pyproject.toml:ro

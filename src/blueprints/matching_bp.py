@@ -190,7 +190,6 @@ def _create_book_mapping(
     if migration_source_id:
         try:
             database_service.migrate_book_data(migration_source_id, abs_id)
-            database_service.delete_book(existing_book.id)
             abs_service.add_to_collection(abs_id, current_app.config["ABS_COLLECTION_NAME"])
             logger.info(f"Successfully merged {migration_source_id} into {abs_id}")
         except Exception as e:
@@ -454,8 +453,7 @@ def match():
             database_service.save_book(new_book)
             ensure_kosync_document(new_book, database_service)
             try:
-                database_service.migrate_book_data(link_book_id, abs_id)
-                database_service.delete_book(book.id)
+                database_service.migrate_book_data(book.abs_id or link_book_id, abs_id)
                 abs_service.add_to_collection(abs_id, current_app.config["ABS_COLLECTION_NAME"])
                 logger.info(f"Successfully merged {link_book_id} into {abs_id}")
             except Exception as e:

@@ -715,6 +715,7 @@ class CleanFlaskIntegrationTest(unittest.TestCase):
             status="active",
             sync_mode="ebook_only",
         )
+        ebook_book.id = 42
         self.mock_database_service.get_book_by_abs_id.return_value = ebook_book
         self.mock_database_service.get_book_by_ref.return_value = ebook_book
 
@@ -732,7 +733,7 @@ class CleanFlaskIntegrationTest(unittest.TestCase):
         response = self.client.post(
             "/match",
             data={
-                "link_book_id": "ebook-abc123",
+                "link_book_id": "42",
                 "audiobook_id": "real-audiobook-789",
                 "action": "attach_audiobook",
             },
@@ -749,7 +750,7 @@ class CleanFlaskIntegrationTest(unittest.TestCase):
         self.assertEqual(saved_book.sync_mode, "audiobook")
 
         self.mock_database_service.migrate_book_data.assert_called_once_with("ebook-abc123", "real-audiobook-789")
-        self.mock_database_service.delete_book.assert_called_once_with(None)
+        self.mock_database_service.delete_book.assert_not_called()
         self.mock_abs_client.add_to_collection.assert_called_once()
 
         print("[OK] Attach audiobook test passed")

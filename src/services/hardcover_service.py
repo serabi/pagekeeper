@@ -34,6 +34,11 @@ LOCAL_TO_HC_STATUS = {
 }
 
 
+def uses_hardcover_audio_progress(book: Book) -> bool:
+    """Return True when Hardcover should mirror progress as audiobook seconds."""
+    return getattr(book, "sync_mode", "audiobook") != "ebook_only"
+
+
 class HardcoverService:
     """Non-sync Hardcover operations: status push, ratings, matching."""
 
@@ -59,9 +64,8 @@ class HardcoverService:
     # ── Edition Selection ─────────────────────────────────────────────
 
     def select_edition_id(self, book, hardcover_details):
-        """Select the appropriate edition based on sync source."""
-        sync_source = getattr(book, "sync_source", None)
-        if sync_source == "audiobook" and hardcover_details.hardcover_audio_edition_id:
+        """Select the appropriate edition based on the book's sync mode."""
+        if uses_hardcover_audio_progress(book) and hardcover_details.hardcover_audio_edition_id:
             return hardcover_details.hardcover_audio_edition_id
         return hardcover_details.hardcover_edition_id
 
@@ -69,18 +73,24 @@ class HardcoverService:
         """Fetch and cache edition info (pages, audio_seconds, edition IDs).
 
         Called at match time to ensure update_progress has the data it needs.
-        If pages are already cached (>0 or -1), this is a no-op.
+        If pages and audio availability are already cached, this is a no-op.
         Returns True if editions were resolved, False otherwise.
         """
         current_pages = hardcover_details.hardcover_pages or 0
-        if current_pages != 0:
+        audio_availability_resolved = (
+            hardcover_details.hardcover_audio_seconds is not None
+            or hardcover_details.hardcover_audio_edition_id is not None
+        )
+        if current_pages != 0 and audio_availability_resolved:
             return True  # Already resolved
 
         book_id = hardcover_details.hardcover_book_id
         if not book_id:
             return False
 
-        editions = self.hardcover_client.get_all_editions(int(book_id))
+        editions = self.hardcover_client.get_all_editions(int(book_id)) or {}
+        if not isinstance(editions, dict):
+            editions = {}
         page_ed = editions.get("ebook") or editions.get("physical")
         audio_ed = editions.get("audio")
 
@@ -90,6 +100,8 @@ class HardcoverService:
             if audio_ed and audio_ed.get("audio_seconds") and audio_ed["audio_seconds"] > 0:
                 hardcover_details.hardcover_audio_edition_id = str(audio_ed["id"])
                 hardcover_details.hardcover_audio_seconds = audio_ed["audio_seconds"]
+            else:
+                hardcover_details.hardcover_audio_seconds = 0
             self.database_service.save_hardcover_details(hardcover_details)
             return True
         elif audio_ed and audio_ed.get("audio_seconds") and audio_ed["audio_seconds"] > 0:
@@ -99,8 +111,13 @@ class HardcoverService:
             hardcover_details.hardcover_pages = -1  # Audio-only
             self.database_service.save_hardcover_details(hardcover_details)
             return True
+        elif current_pages > 0:
+            hardcover_details.hardcover_audio_seconds = 0
+            self.database_service.save_hardcover_details(hardcover_details)
+            return True
         else:
             hardcover_details.hardcover_pages = -1  # No usable editions
+            hardcover_details.hardcover_audio_seconds = 0
             self.database_service.save_hardcover_details(hardcover_details)
             return False
 
@@ -479,7 +496,7 @@ class HardcoverService:
 
             self.database_service.save_hardcover_details(hardcover_details)
             self.resolve_editions(hardcover_details)
-            self._get_or_create_user_book(book, hardcover_details, match.get("edition_id"))
+            self._get_or_create_user_book(book, hardcover_details, self.select_edition_id(book, hardcover_details))
             self._pull_dates_at_match(book)
             log_hardcover_action(
                 self.database_service,
@@ -550,6 +567,6 @@ class HardcoverService:
         if not book:
             book = Book(abs_id=book_abs_id, title="", status="")
             book = self.database_service.save_book(book)
-        self._get_or_create_user_book(book, details, match.get("edition_id"))
+        self._get_or_create_user_book(book, details, self.select_edition_id(book, details))
         self._pull_dates_at_match(book)
         return True
