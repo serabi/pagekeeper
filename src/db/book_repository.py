@@ -3,6 +3,7 @@
 import logging
 
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 
 from .base_repository import BaseRepository
 from .models import (
@@ -211,17 +212,94 @@ class BookRepository(BaseRepository):
         if not state.book_id and not state.abs_id:
             logger.error("save_state called without book_id or abs_id — skipping")
             return None
-        # Prefer book_id for upsert lookup; fall back to abs_id for backward compat
+
+        update_attrs = ["last_updated", "percentage", "timestamp", "xpath", "cfi", "abs_id", "book_id"]
+        with self.get_session() as session:
+            self._hydrate_state_book_reference(session, state)
+            if not state.book_id:
+                logger.warning("save_state could not resolve abs_id '%s' to a book — skipping", state.abs_id)
+                return None
+
+            lookup = self._state_lookup_filters(state)
+            existing = self._dedupe_existing_states(session, lookup)
+
+            if existing:
+                self._apply_state_attrs(existing, state, update_attrs)
+                session.flush()
+                session.refresh(existing)
+                session.expunge(existing)
+                return existing
+
+            try:
+                session.add(state)
+                session.flush()
+            except IntegrityError:
+                session.rollback()
+                self._hydrate_state_book_reference(session, state)
+                if not state.book_id:
+                    logger.warning("save_state could not resolve abs_id '%s' to a book after conflict — skipping", state.abs_id)
+                    return None
+
+                lookup = self._state_lookup_filters(state)
+                existing = self._dedupe_existing_states(session, lookup)
+                if not existing:
+                    raise
+                self._apply_state_attrs(existing, state, update_attrs)
+                session.flush()
+                session.refresh(existing)
+                session.expunge(existing)
+                return existing
+
+            session.refresh(state)
+            session.expunge(state)
+            return state
+
+    def _hydrate_state_book_reference(self, session, state):
+        """Resolve legacy abs_id-only saves to the canonical book_id."""
         if state.book_id:
-            lookup = [State.book_id == state.book_id, State.client_name == state.client_name]
-        else:
-            lookup = [State.abs_id == state.abs_id, State.client_name == state.client_name]
-        return self._upsert(
-            State,
-            lookup,
-            state,
-            ["last_updated", "percentage", "timestamp", "xpath", "cfi", "abs_id", "book_id"],
+            if not state.abs_id:
+                book = session.query(Book).filter(Book.id == state.book_id).first()
+                if book:
+                    state.abs_id = book.abs_id or ""
+            return
+
+        if state.abs_id:
+            book = session.query(Book).filter(Book.abs_id == state.abs_id).first()
+            if book:
+                state.book_id = book.id
+
+    @staticmethod
+    def _state_lookup_filters(state):
+        if state.book_id:
+            return [State.book_id == state.book_id, State.client_name == state.client_name]
+        return [State.abs_id == state.abs_id, State.client_name == state.client_name]
+
+    @staticmethod
+    def _dedupe_existing_states(session, lookup_filters):
+        matches = (
+            session.query(State)
+            .filter(*lookup_filters)
+            .order_by(func.coalesce(State.last_updated, -1).desc(), State.id.desc())
+            .all()
         )
+        if not matches:
+            return None
+
+        keeper = matches[0]
+        for duplicate in matches[1:]:
+            session.delete(duplicate)
+        return keeper
+
+    @staticmethod
+    def _apply_state_attrs(existing, incoming, update_attrs):
+        for attr in update_attrs:
+            if hasattr(incoming, attr):
+                value = getattr(incoming, attr)
+                if attr == "book_id" and value is None:
+                    continue
+                if attr == "abs_id" and not value:
+                    continue
+                setattr(existing, attr, value)
 
     def delete_states_for_book(self, book_id):
         with self.get_session() as session:
