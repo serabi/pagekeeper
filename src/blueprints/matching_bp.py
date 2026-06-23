@@ -242,6 +242,9 @@ def match():
         storyteller_uuid = request.form.get("storyteller_uuid")
         storyteller_submit = request.form.get("storyteller_submit")
 
+        if not ebook_filename:
+            return "An ebook selection is required for audiobook + ebook matching", 400
+
         audiobooks = abs_service.get_audiobooks()
         selected_ab = next((ab for ab in audiobooks if ab["id"] == abs_id), None)
         if not selected_ab:
@@ -456,6 +459,10 @@ def batch_match():
                         )
                         if result.error:
                             failed_items.append(item.get("ebook_display_name") or item["ebook_filename"])
+                        continue
+
+                    if not item.get("ebook_filename"):
+                        failed_items.append(item_label)
                         continue
 
                     _book, error = _create_book_mapping(

@@ -470,6 +470,18 @@ class CleanFlaskIntegrationTest(unittest.TestCase):
         finally:
             src.blueprints.matching_bp.get_kosync_id_for_ebook = original_get_kosync
 
+    def test_standard_match_requires_ebook_selection(self):
+        """Standard audiobook+ebook matching rejects missing ebook selection."""
+        self.mock_abs_client.get_all_audiobooks.return_value = [
+            {"id": "test-audiobook-123", "media": {"metadata": {"title": "Test Book"}, "duration": 3600}}
+        ]
+
+        response = self.client.post("/match", data={"audiobook_id": "test-audiobook-123"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn(b"ebook selection is required", response.data)
+        self.mock_database_service.save_book.assert_not_called()
+
     def test_clear_progress_endpoint_clean_di(self):
         """Test clear progress endpoint with clean dependency injection."""
         # Setup mock book
