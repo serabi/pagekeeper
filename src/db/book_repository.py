@@ -46,6 +46,10 @@ _BOOK_MERGE_METADATA_ATTRS = (
     "read_count",
 )
 
+# A freshly created target book never carries these alignment/UX hints, so a
+# falsy value must not clobber the canonical book that already holds them.
+_BOOK_MERGE_PRESERVE_IF_EMPTY = {"transcript_file", "activity_flag"}
+
 
 class BookRepository(BaseRepository):
     # ── Book CRUD ──
@@ -201,7 +205,10 @@ class BookRepository(BaseRepository):
 
                 if target_book and target_book_id != canonical_book_id:
                     for attr in _BOOK_MERGE_METADATA_ATTRS:
-                        setattr(book, attr, getattr(target_book, attr))
+                        value = getattr(target_book, attr)
+                        if attr in _BOOK_MERGE_PRESERVE_IF_EMPTY and not value:
+                            continue
+                        setattr(book, attr, value)
 
                     if incoming_clients:
                         session.query(State).filter(
