@@ -119,6 +119,29 @@ def test_map_audiobook_ebook_merges_duplicate_book_data_and_metadata():
     abs_service.add_to_collection.assert_called_once_with("abs-new", "Synced")
 
 
+def test_map_audiobook_ebook_merges_ebook_only_book_by_integer_id():
+    existing = _book_ref(
+        id=22,
+        abs_id=None,
+        ebook_filename="old.epub",
+        kosync_doc_id="hash-dup",
+    )
+    db = Mock()
+    db.get_book_by_ref.return_value = None
+    db.get_book_by_kosync_id.return_value = existing
+    service, db, _abs_service, _bl, _hc = _make_service(db=db, kosync_id="hash-dup")
+
+    result = service.map_audiobook_ebook(
+        abs_id="abs-new",
+        title="Merged Book",
+        ebook_filename="new.epub",
+        duration=456,
+    )
+
+    assert result.error is None
+    db.migrate_book_data.assert_called_once_with(22, "abs-new")
+
+
 def test_storyteller_reservation_happens_before_async_submission_thread():
     events = []
     service, db, _abs, _bl, _hc = _make_service()

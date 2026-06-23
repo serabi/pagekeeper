@@ -200,7 +200,7 @@ class BookIntakeService:
 
         if existing_book and existing_book.abs_id != abs_id:
             logger.info("Merging existing '%s' into '%s'", existing_book.abs_id, abs_id)
-            migration_source_id = existing_book.abs_id
+            migration_source_id = existing_book.abs_id or existing_book.id
             ebook_item_id = existing_book.ebook_item_id or existing_book.abs_ebook_item_id or existing_book.abs_id
             original_ebook_filename = existing_book.original_ebook_filename or existing_book.ebook_filename
             merge_metadata = self._copy_book_merge_metadata(
