@@ -73,6 +73,7 @@ class TestSuggestionLogic(unittest.TestCase):
         self.mock_db.get_all_books.return_value = []
         self.mock_db.get_pending_suggestion.return_value = None
         self.mock_db.suggestion_exists.return_value = False
+        self.mock_db.get_detected_book.return_value = None
 
         # Prepare successful suggestion creation mocks
         self.mock_abs.get_item_details.return_value = {
@@ -84,8 +85,8 @@ class TestSuggestionLogic(unittest.TestCase):
         # Action
         self.manager.check_for_suggestions({abs_id: progress_data}, [])
 
-        # Assert
-        self.mock_db.save_pending_suggestion.assert_called_once()
+        # Assert: ABS detection persists a DetectedBook (not a legacy PendingSuggestion)
+        self.mock_db.save_detected_book.assert_called_once()
 
     def test_suggestion_ignored_when_hidden(self):
         """Test that suggestions are NOT created if they were previously hidden."""

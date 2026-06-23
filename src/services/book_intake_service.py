@@ -66,6 +66,7 @@ class BookIntakeService:
         self.abs_service.add_to_collection(abs_id, self.collection_name)
         self.attempt_hardcover_automatch(self.container, book)
         self.database_service.resolve_suggestion(abs_id)
+        self.database_service.resolve_detected_book(abs_id, source="abs")
         return book
 
     def import_ebook_only(
@@ -104,10 +105,13 @@ class BookIntakeService:
         ensure_kosync_document(book, self.database_service)
         if kosync_doc_id:
             self.database_service.resolve_suggestion(kosync_doc_id, source="kosync")
+            self.database_service.resolve_detected_book(kosync_doc_id, source="kosync")
         if storyteller_uuid:
             self.database_service.resolve_suggestion(storyteller_uuid, source="storyteller")
+            self.database_service.resolve_detected_book(storyteller_uuid, source="storyteller")
         if ebook_filename:
             self.database_service.resolve_suggestion(ebook_filename, source="grimmory")
+            self.database_service.resolve_detected_book(ebook_filename, source="grimmory")
         return IntakeResult(book=book)
 
     def attach_ebook(self, *, abs_id, ebook_filename) -> IntakeResult:
@@ -131,6 +135,7 @@ class BookIntakeService:
         ensure_kosync_document(book, self.database_service)
         self._add_to_grimmory_shelf(bl_client, ebook_filename)
         self.database_service.resolve_suggestion(kosync_doc_id)
+        self.database_service.resolve_detected_book(kosync_doc_id, source="kosync")
         return IntakeResult(book=book)
 
     def attach_audiobook(self, *, source_book_id, abs_id, title, duration, author=None, subtitle=None) -> IntakeResult:
@@ -165,8 +170,10 @@ class BookIntakeService:
         self.abs_service.add_to_collection(abs_id, self.collection_name)
         self.attempt_hardcover_automatch(self.container, new_book)
         self.database_service.resolve_suggestion(abs_id)
+        self.database_service.resolve_detected_book(abs_id, source="abs")
         if new_book.kosync_doc_id:
             self.database_service.resolve_suggestion(new_book.kosync_doc_id)
+            self.database_service.resolve_detected_book(new_book.kosync_doc_id, source="kosync")
         return IntakeResult(book=new_book)
 
     def map_audiobook_ebook(
@@ -336,10 +343,16 @@ class BookIntakeService:
     def _resolve_mapping_suggestions(self, abs_id, kosync_doc_id, ebook_filename):
         self.database_service.resolve_suggestion(abs_id)
         self.database_service.resolve_suggestion(kosync_doc_id)
+        self.database_service.resolve_detected_book(abs_id, source="abs")
+        if kosync_doc_id:
+            self.database_service.resolve_detected_book(kosync_doc_id, source="kosync")
+        if ebook_filename:
+            self.database_service.resolve_detected_book(ebook_filename, source="grimmory")
         try:
             device_doc = self.database_service.get_kosync_doc_by_filename(ebook_filename)
             if device_doc and device_doc.document_hash != kosync_doc_id:
                 self.database_service.resolve_suggestion(device_doc.document_hash)
+                self.database_service.resolve_detected_book(device_doc.document_hash, source="kosync")
         except Exception as e:
             logger.warning("Failed to check/resolve device hash: %s", e)
 
