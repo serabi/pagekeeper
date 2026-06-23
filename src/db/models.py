@@ -412,10 +412,19 @@ class State(Base):
     """
 
     __tablename__ = "states"
+    __table_args__ = (
+        sa.Index(
+            "uq_states_book_id_client_name",
+            "book_id",
+            "client_name",
+            unique=True,
+            sqlite_where=sa.text("book_id IS NOT NULL"),
+        ),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     abs_id = Column(String(255), nullable=False)
-    book_id = Column(Integer, ForeignKey("books.id", ondelete="CASCADE"), nullable=False, index=True)
+    book_id = Column(Integer, ForeignKey("books.id", ondelete="CASCADE"), nullable=True, index=True)
     client_name = Column(String(50), nullable=False)
     last_updated = Column(Float)
     percentage = Column(Float)
