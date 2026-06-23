@@ -18,6 +18,7 @@ from src.services.hardcover_service import (
     HC_WANT_TO_READ,
     PROGRESS_COMPLETE_THRESHOLD,
     PROGRESS_START_THRESHOLD,
+    uses_hardcover_audio_progress,
 )
 from src.services.write_tracker import record_write
 from src.sync_clients.sync_client_interface import ServiceState, SyncClient, SyncResult, UpdateProgressRequest
@@ -76,14 +77,13 @@ class HardcoverSyncClient(SyncClient):
     # ── Edition Selection ─────────────────────────────────────────────
 
     def select_edition_id(self, book, hardcover_details):
-        """Select the appropriate edition based on sync source.
+        """Select the appropriate edition based on sync mode.
 
         Delegates to HardcoverService if available, otherwise uses local logic.
         """
         if self.hardcover_service:
             return self.hardcover_service.select_edition_id(book, hardcover_details)
-        sync_source = getattr(book, "sync_source", None)
-        if sync_source == "audiobook" and hardcover_details.hardcover_audio_edition_id:
+        if uses_hardcover_audio_progress(book) and hardcover_details.hardcover_audio_edition_id:
             return hardcover_details.hardcover_audio_edition_id
         return hardcover_details.hardcover_edition_id
 
@@ -178,13 +178,24 @@ class HardcoverSyncClient(SyncClient):
         if not ub:
             return SyncResult(None, False)
 
+        is_audiobook = uses_hardcover_audio_progress(book)
         audio_seconds = hardcover_details.hardcover_audio_seconds or 0
-        is_audiobook = getattr(book, "sync_source", None) == "audiobook"
+        if is_audiobook and audio_seconds <= 0 and self.hardcover_service:
+            logger.info(f"Hardcover: Audio duration missing for {sanitize_log_data(book.title)}, resolving editions...")
+            self.hardcover_service.resolve_editions(hardcover_details)
+            audio_seconds = hardcover_details.hardcover_audio_seconds or 0
 
         edition_id = self.select_edition_id(book, hardcover_details)
 
         if is_audiobook and audio_seconds > 0:
             return self._update_audiobook_progress(book, hardcover_details, ub, percentage, audio_seconds, edition_id)
+
+        if is_audiobook:
+            logger.info(
+                f"Hardcover: '{sanitize_log_data(book.title)}' has audiobook sync mode but no audio edition; "
+                "skipping progress push"
+            )
+            return SyncResult(None, False)
 
         # --- PAGE-BASED PATH ---
         total_pages = hardcover_details.hardcover_pages or 0
@@ -200,7 +211,7 @@ class HardcoverSyncClient(SyncClient):
                 total_pages = hardcover_details.hardcover_pages or 0
                 audio_seconds = hardcover_details.hardcover_audio_seconds or 0
                 edition_id = self.select_edition_id(book, hardcover_details)
-                if total_pages == -1 and audio_seconds > 0:
+                if is_audiobook and total_pages == -1 and audio_seconds > 0:
                     return self._update_audiobook_progress(
                         book, hardcover_details, ub, percentage, audio_seconds, edition_id
                     )

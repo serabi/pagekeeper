@@ -68,6 +68,11 @@ class TestHardcoverSyncClient(unittest.TestCase):
 
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
+    def _set_test_book_sync_mode(self, sync_mode, kosync_doc_id=None):
+        self.test_book.sync_mode = sync_mode
+        self.test_book.kosync_doc_id = kosync_doc_id
+        self.test_book = self.database_service.save_book(self.test_book)
+
     def test_basic_interface_compliance(self):
         self.assertTrue(self.hardcover_sync_client.is_configured())
         self.assertFalse(self.hardcover_sync_client.can_be_leader())
@@ -110,6 +115,7 @@ class TestHardcoverSyncClient(unittest.TestCase):
 
     @patch("src.sync_clients.hardcover_sync_client.record_write")
     def test_update_progress_calls_hardcover_api(self, mock_record_write):
+        self._set_test_book_sync_mode("ebook_only")
         hardcover_details = HardcoverDetails(
             abs_id="test-hardcover-book",
             book_id=self.test_book.id,
@@ -144,7 +150,180 @@ class TestHardcoverSyncClient(unittest.TestCase):
         self.assertTrue(result.success)
 
     @patch("src.sync_clients.hardcover_sync_client.record_write")
+    def test_audio_only_update_progress_uses_audio_edition_and_seconds(self, mock_record_write):
+        self._set_test_book_sync_mode("audiobook")
+        hardcover_details = HardcoverDetails(
+            abs_id="test-hardcover-book",
+            book_id=self.test_book.id,
+            hardcover_book_id="123",
+            hardcover_edition_id="456",
+            hardcover_pages=300,
+            hardcover_audio_edition_id="654",
+            hardcover_audio_seconds=7200,
+            matched_by="test",
+            hardcover_user_book_id=789,
+            hardcover_status_id=HC_WANT_TO_READ,
+        )
+        self.database_service.save_hardcover_details(hardcover_details)
+
+        update_request = UpdateProgressRequest(locator_result=LocatorResult(percentage=0.25))
+
+        result = self.hardcover_sync_client.update_progress(self.test_book, update_request)
+
+        self.mock_hardcover_client.update_status.assert_called_with(123, HC_CURRENTLY_READING, 654)
+        self.mock_hardcover_client.update_progress.assert_called_with(
+            789,
+            0,
+            edition_id="654",
+            is_finished=False,
+            current_percentage=0.25,
+            audio_seconds=7200,
+            started_at=None,
+            finished_at=None,
+            cached_read_id=None,
+        )
+        self.assertTrue(result.success)
+        self.assertEqual(result.updated_state["progress_seconds"], 1800)
+        self.assertNotIn("pages", result.updated_state)
+
+    @patch("src.sync_clients.hardcover_sync_client.record_write")
+    def test_linked_audiobook_ebook_update_progress_uses_audio_edition(self, mock_record_write):
+        self._set_test_book_sync_mode("audiobook", kosync_doc_id="linked-ebook-doc")
+        hardcover_details = HardcoverDetails(
+            abs_id="test-hardcover-book",
+            book_id=self.test_book.id,
+            hardcover_book_id="123",
+            hardcover_edition_id="456",
+            hardcover_pages=300,
+            hardcover_audio_edition_id="654",
+            hardcover_audio_seconds=7200,
+            matched_by="test",
+            hardcover_user_book_id=789,
+            hardcover_status_id=HC_CURRENTLY_READING,
+        )
+        self.database_service.save_hardcover_details(hardcover_details)
+
+        update_request = UpdateProgressRequest(locator_result=LocatorResult(percentage=0.5))
+
+        result = self.hardcover_sync_client.update_progress(self.test_book, update_request)
+
+        self.mock_hardcover_client.update_status.assert_not_called()
+        self.mock_hardcover_client.update_progress.assert_called_with(
+            789,
+            0,
+            edition_id="654",
+            is_finished=False,
+            current_percentage=0.5,
+            audio_seconds=7200,
+            started_at=None,
+            finished_at=None,
+            cached_read_id=None,
+        )
+        self.assertTrue(result.success)
+        self.assertEqual(result.updated_state["progress_seconds"], 3600)
+        self.assertNotIn("pages", result.updated_state)
+
+    @patch("src.sync_clients.hardcover_sync_client.record_write")
+    def test_ebook_only_update_progress_uses_page_edition_even_when_audio_exists(self, mock_record_write):
+        self._set_test_book_sync_mode("ebook_only", kosync_doc_id="ebook-doc")
+        hardcover_details = HardcoverDetails(
+            abs_id="test-hardcover-book",
+            book_id=self.test_book.id,
+            hardcover_book_id="123",
+            hardcover_edition_id="456",
+            hardcover_pages=200,
+            hardcover_audio_edition_id="654",
+            hardcover_audio_seconds=7200,
+            matched_by="test",
+            hardcover_user_book_id=789,
+            hardcover_status_id=HC_WANT_TO_READ,
+        )
+        self.database_service.save_hardcover_details(hardcover_details)
+
+        update_request = UpdateProgressRequest(locator_result=LocatorResult(percentage=0.25))
+
+        result = self.hardcover_sync_client.update_progress(self.test_book, update_request)
+
+        self.mock_hardcover_client.update_status.assert_called_with(123, HC_CURRENTLY_READING, 456)
+        self.mock_hardcover_client.update_progress.assert_called_with(
+            789,
+            50,
+            edition_id="456",
+            is_finished=False,
+            current_percentage=0.25,
+            started_at=None,
+            finished_at=None,
+            cached_read_id=None,
+        )
+        self.assertTrue(result.success)
+        self.assertEqual(result.updated_state["pages"], 50)
+        self.assertNotIn("progress_seconds", result.updated_state)
+
+    @patch("src.sync_clients.hardcover_sync_client.record_write")
+    def test_audio_only_without_audio_edition_does_not_push_page_progress(self, mock_record_write):
+        self._set_test_book_sync_mode("audiobook")
+        hardcover_details = HardcoverDetails(
+            abs_id="test-hardcover-book",
+            book_id=self.test_book.id,
+            hardcover_book_id="123",
+            hardcover_edition_id="456",
+            hardcover_pages=300,
+            matched_by="test",
+            hardcover_user_book_id=789,
+            hardcover_status_id=HC_CURRENTLY_READING,
+        )
+        self.database_service.save_hardcover_details(hardcover_details)
+        self.mock_hardcover_client.get_all_editions.return_value = {"ebook": {"id": 456, "pages": 300}}
+
+        update_request = UpdateProgressRequest(locator_result=LocatorResult(percentage=0.25))
+
+        result = self.hardcover_sync_client.update_progress(self.test_book, update_request)
+
+        self.assertFalse(result.success)
+        self.mock_hardcover_client.update_progress.assert_not_called()
+
+    @patch("src.sync_clients.hardcover_sync_client.record_write")
+    def test_audio_progress_lazy_resolves_audio_edition_for_older_page_match(self, mock_record_write):
+        self._set_test_book_sync_mode("audiobook")
+        hardcover_details = HardcoverDetails(
+            abs_id="test-hardcover-book",
+            book_id=self.test_book.id,
+            hardcover_book_id="123",
+            hardcover_edition_id="456",
+            hardcover_pages=300,
+            matched_by="legacy",
+            hardcover_user_book_id=789,
+            hardcover_status_id=HC_CURRENTLY_READING,
+        )
+        self.database_service.save_hardcover_details(hardcover_details)
+        self.mock_hardcover_client.get_all_editions.return_value = {
+            "ebook": {"id": 456, "pages": 300},
+            "audio": {"id": 654, "audio_seconds": 7200},
+        }
+
+        update_request = UpdateProgressRequest(locator_result=LocatorResult(percentage=0.5))
+
+        result = self.hardcover_sync_client.update_progress(self.test_book, update_request)
+
+        self.mock_hardcover_client.update_progress.assert_called_with(
+            789,
+            0,
+            edition_id="654",
+            is_finished=False,
+            current_percentage=0.5,
+            audio_seconds=7200,
+            started_at=None,
+            finished_at=None,
+            cached_read_id=None,
+        )
+        self.assertTrue(result.success)
+        saved = self.database_service.get_hardcover_details(self.test_book.id)
+        self.assertEqual(saved.hardcover_audio_edition_id, "654")
+        self.assertEqual(saved.hardcover_audio_seconds, 7200)
+
+    @patch("src.sync_clients.hardcover_sync_client.record_write")
     def test_finished_book_status_promotion(self, mock_record_write):
+        self._set_test_book_sync_mode("ebook_only")
         hardcover_details = HardcoverDetails(
             abs_id="test-hardcover-book",
             book_id=self.test_book.id,
@@ -179,6 +358,7 @@ class TestHardcoverSyncClient(unittest.TestCase):
 
     @patch("src.sync_clients.hardcover_sync_client.record_write")
     def test_automatch_skip_when_already_matched(self, mock_record_write):
+        self._set_test_book_sync_mode("ebook_only")
         existing_details = HardcoverDetails(
             abs_id="test-hardcover-book",
             book_id=self.test_book.id,
@@ -201,6 +381,7 @@ class TestHardcoverSyncClient(unittest.TestCase):
 
     @patch("src.sync_clients.hardcover_sync_client.record_write")
     def test_zero_pages_edge_case(self, mock_record_write):
+        self._set_test_book_sync_mode("ebook_only")
         hardcover_details = HardcoverDetails(
             abs_id="test-hardcover-book",
             book_id=self.test_book.id,
@@ -234,6 +415,7 @@ class TestHardcoverSyncClient(unittest.TestCase):
 
     @patch("src.sync_clients.hardcover_sync_client.record_write")
     def test_api_error_handling(self, mock_record_write):
+        self._set_test_book_sync_mode("ebook_only")
         hardcover_details = HardcoverDetails(
             abs_id="test-hardcover-book",
             book_id=self.test_book.id,
@@ -282,6 +464,7 @@ class TestHardcoverSyncClient(unittest.TestCase):
     @patch("src.sync_clients.hardcover_sync_client.record_write")
     def test_dnf_status_not_auto_resumed(self, mock_record_write):
         """Test that DNF books are not auto-resumed by progress updates."""
+        self._set_test_book_sync_mode("ebook_only")
         hardcover_details = HardcoverDetails(
             abs_id="test-hardcover-book",
             book_id=self.test_book.id,
@@ -369,6 +552,7 @@ class TestHardcoverSyncClient(unittest.TestCase):
     @patch("src.sync_clients.hardcover_sync_client.record_write")
     def test_completed_book_forwards_historical_dates(self, mock_record_write):
         """Test that a completed book's started_at/finished_at are forwarded to the API."""
+        self._set_test_book_sync_mode("ebook_only")
         hardcover_details = HardcoverDetails(
             abs_id="test-hardcover-book",
             book_id=self.test_book.id,
