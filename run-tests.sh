@@ -14,7 +14,7 @@ if docker container inspect -f '{{.State.Running}}' "$CONTAINER_NAME" 2>/dev/nul
         docker exec "$CONTAINER_NAME" pip install -q pytest
     fi
 
-    docker exec -w /app "$CONTAINER_NAME" python -m pytest tests/ "$@"
+    docker exec -w /app "$CONTAINER_NAME" python -m pytest "${@:-tests/}"
 else
     echo "==> Container '$CONTAINER_NAME' is not running. Using docker compose..."
     docker compose -f "$COMPOSE_TEST_FILE" run --rm test "$@"
