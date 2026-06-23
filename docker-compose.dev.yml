@@ -2,10 +2,13 @@
 #
 # Usage:
 #   docker compose -f docker-compose.dev.yml up --build -d
+#   PAGEKEEPER_DEV_WEB_PORT=4480 PAGEKEEPER_DEV_KOSYNC_PORT=5761 docker compose -f docker-compose.dev.yml up --build -d
 #   docker compose -f docker-compose.dev.yml logs -f
 #   docker compose -f docker-compose.dev.yml down
 #
 # Ports: 4478 (web), 5759 (sync) — different from prod to allow simultaneous use.
+# Override PAGEKEEPER_DEV_WEB_PORT and PAGEKEEPER_DEV_KOSYNC_PORT when another
+# PageKeeper dev worktree is already using those host ports.
 # Source is mounted from host, so code changes take effect on container restart.
 
 services:
@@ -13,15 +16,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: pagekeeper-dev
     restart: unless-stopped
 
     environment:
       - TZ=America/New_York
       - PAGEKEEPER_ENV=dev
       - LOG_LEVEL=DEBUG
-      - HOST_WEB_URL=http://localhost:4478
-      - HOST_KOSYNC_PORT=5759
+      - HOST_WEB_URL=http://localhost:${PAGEKEEPER_DEV_WEB_PORT:-4478}
+      - HOST_KOSYNC_PORT=${PAGEKEEPER_DEV_KOSYNC_PORT:-5759}
       - KOSYNC_PORT=5758
 
     volumes:
@@ -36,5 +38,5 @@ services:
       - ./scripts:/app/scripts:ro
 
     ports:
-      - "4478:4477"   # Dev web UI
-      - "5759:5758"   # Dev sync protocol
+      - "${PAGEKEEPER_DEV_WEB_PORT:-4478}:4477"      # Dev web UI
+      - "${PAGEKEEPER_DEV_KOSYNC_PORT:-5759}:5758"   # Dev sync protocol

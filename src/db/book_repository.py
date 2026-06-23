@@ -2,20 +2,49 @@
 
 import logging
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
+from sqlalchemy.exc import IntegrityError
 
 from .base_repository import BaseRepository
 from .models import (
     Book,
+    BookAlignment,
+    BookfusionBook,
+    BookfusionHighlight,
+    HardcoverDetails,
+    HardcoverSyncLog,
     Job,
     KosyncDocument,
     ReadingJournal,
     State,
     StorytellerSubmission,
+    TbrItem,
 )
 
 logger = logging.getLogger(__name__)
 _UNSET = object()
+
+_BOOK_MERGE_METADATA_ATTRS = (
+    "title",
+    "author",
+    "subtitle",
+    "ebook_filename",
+    "original_ebook_filename",
+    "kosync_doc_id",
+    "transcript_file",
+    "status",
+    "duration",
+    "sync_mode",
+    "storyteller_uuid",
+    "abs_ebook_item_id",
+    "ebook_item_id",
+    "activity_flag",
+    "custom_cover_url",
+    "started_at",
+    "finished_at",
+    "rating",
+    "read_count",
+)
 
 
 class BookRepository(BaseRepository):
@@ -143,30 +172,79 @@ class BookRepository(BaseRepository):
             return False
 
     def migrate_book_data(self, old_abs_id, new_abs_id):
-        """Migrate book identity: update abs_id and resolve state conflicts.
+        """Migrate a book identity while preserving the source Book row.
 
-        With book_id as FK, child rows follow the book automatically —
-        only abs_id and state dedup need updating.
+        The existing book is the canonical row because child state, journals,
+        jobs, and external links already point at its primary key.  If a target
+        ABS row was pre-created to hold fresh metadata, fold that metadata into
+        the source row, move any target-only children, then delete only the
+        temporary target row.
         """
         with self.get_session() as session:
             try:
                 book = session.query(Book).filter(Book.abs_id == old_abs_id).first()
+                if not book and old_abs_id is not None:
+                    old_ref = str(old_abs_id).strip()
+                    if old_ref.isdigit():
+                        book = session.query(Book).filter(Book.id == int(old_ref)).first()
                 if not book:
                     logger.warning(f"migrate_book_data: book '{old_abs_id}' not found")
                     return
 
-                # Delete states for the new abs_id that would conflict
+                canonical_book_id = book.id
+                previous_abs_id = book.abs_id
                 incoming_clients = {
-                    r[0] for r in session.query(State.client_name).filter(State.book_id == book.id).all()
+                    r[0] for r in session.query(State.client_name).filter(State.book_id == canonical_book_id).all()
                 }
                 target_book = session.query(Book).filter(Book.abs_id == new_abs_id).first()
-                if target_book:
+                target_book_id = target_book.id if target_book else None
+
+                if target_book and target_book_id != canonical_book_id:
+                    for attr in _BOOK_MERGE_METADATA_ATTRS:
+                        setattr(book, attr, getattr(target_book, attr))
+
                     if incoming_clients:
                         session.query(State).filter(
-                            State.book_id == target_book.id,
+                            State.book_id == target_book_id,
                             State.client_name.in_(incoming_clients),
                         ).delete(synchronize_session=False)
-                    # Delete the target book so we can reuse its abs_id
+
+                    session.query(State).filter(State.book_id == target_book_id).update(
+                        {State.book_id: canonical_book_id, State.abs_id: new_abs_id},
+                        synchronize_session=False,
+                    )
+                    session.query(Job).filter(Job.book_id == target_book_id).update(
+                        {Job.book_id: canonical_book_id, Job.abs_id: new_abs_id},
+                        synchronize_session=False,
+                    )
+                    session.query(ReadingJournal).filter(ReadingJournal.book_id == target_book_id).update(
+                        {ReadingJournal.book_id: canonical_book_id, ReadingJournal.abs_id: new_abs_id},
+                        synchronize_session=False,
+                    )
+                    session.query(StorytellerSubmission).filter(StorytellerSubmission.book_id == target_book_id).update(
+                        {StorytellerSubmission.book_id: canonical_book_id, StorytellerSubmission.abs_id: new_abs_id},
+                        synchronize_session=False,
+                    )
+
+                    self._move_unique_child(session, HardcoverDetails, canonical_book_id, target_book_id, new_abs_id)
+                    self._move_unique_child(session, BookAlignment, canonical_book_id, target_book_id, new_abs_id)
+
+                    session.query(HardcoverSyncLog).filter(HardcoverSyncLog.book_id == target_book_id).update(
+                        {HardcoverSyncLog.book_id: canonical_book_id, HardcoverSyncLog.abs_id: new_abs_id},
+                        synchronize_session=False,
+                    )
+                    session.query(BookfusionHighlight).filter(
+                        BookfusionHighlight.matched_book_id == target_book_id
+                    ).update({BookfusionHighlight.matched_book_id: canonical_book_id}, synchronize_session=False)
+                    session.query(BookfusionBook).filter(BookfusionBook.matched_book_id == target_book_id).update(
+                        {BookfusionBook.matched_book_id: canonical_book_id},
+                        synchronize_session=False,
+                    )
+                    session.query(TbrItem).filter(TbrItem.book_id == target_book_id).update(
+                        {TbrItem.book_id: canonical_book_id, TbrItem.book_abs_id: new_abs_id},
+                        synchronize_session=False,
+                    )
+
                     session.delete(target_book)
                     session.flush()
 
@@ -174,27 +252,59 @@ class BookRepository(BaseRepository):
                 book.abs_id = new_abs_id
 
                 # Update denormalized abs_id on child rows
-                session.query(State).filter(State.book_id == book.id).update(
+                session.query(State).filter(State.book_id == canonical_book_id).update(
                     {State.abs_id: new_abs_id}, synchronize_session=False
                 )
-                session.query(Job).filter(Job.book_id == book.id).update(
+                session.query(Job).filter(Job.book_id == canonical_book_id).update(
                     {Job.abs_id: new_abs_id}, synchronize_session=False
                 )
-                session.query(ReadingJournal).filter(ReadingJournal.book_id == book.id).update(
+                session.query(ReadingJournal).filter(ReadingJournal.book_id == canonical_book_id).update(
                     {ReadingJournal.abs_id: new_abs_id}, synchronize_session=False
                 )
-                session.query(StorytellerSubmission).filter(StorytellerSubmission.book_id == book.id).update(
+                session.query(StorytellerSubmission).filter(StorytellerSubmission.book_id == canonical_book_id).update(
                     {StorytellerSubmission.abs_id: new_abs_id}, synchronize_session=False
                 )
+                session.query(HardcoverDetails).filter(HardcoverDetails.book_id == canonical_book_id).update(
+                    {HardcoverDetails.abs_id: new_abs_id}, synchronize_session=False
+                )
+                session.query(BookAlignment).filter(BookAlignment.book_id == canonical_book_id).update(
+                    {BookAlignment.abs_id: new_abs_id}, synchronize_session=False
+                )
+                session.query(HardcoverSyncLog).filter(HardcoverSyncLog.book_id == canonical_book_id).update(
+                    {HardcoverSyncLog.abs_id: new_abs_id}, synchronize_session=False
+                )
+                session.query(TbrItem).filter(TbrItem.book_id == canonical_book_id).update(
+                    {TbrItem.book_abs_id: new_abs_id}, synchronize_session=False
+                )
 
-                session.query(KosyncDocument).filter(KosyncDocument.linked_abs_id == old_abs_id).update(
-                    {KosyncDocument.linked_abs_id: new_abs_id}, synchronize_session=False
+                session.query(KosyncDocument).filter(
+                    or_(
+                        KosyncDocument.linked_book_id.in_([canonical_book_id, target_book_id]),
+                        KosyncDocument.linked_abs_id.in_([old_abs_id, previous_abs_id, new_abs_id]),
+                    )
+                ).update(
+                    {KosyncDocument.linked_book_id: canonical_book_id, KosyncDocument.linked_abs_id: new_abs_id},
+                    synchronize_session=False,
                 )
 
                 logger.info(f"Migrated book identity from '{old_abs_id}' to '{new_abs_id}'")
             except Exception as e:
                 logger.error(f"Failed to migrate book data: {e}")
                 raise
+
+    def _move_unique_child(self, session, model, canonical_book_id, target_book_id, new_abs_id):
+        target_child = session.query(model).filter(model.book_id == target_book_id).first()
+        if not target_child:
+            return
+
+        canonical_child = session.query(model).filter(model.book_id == canonical_book_id).first()
+        if canonical_child:
+            session.delete(target_child)
+            return
+
+        target_child.book_id = canonical_book_id
+        if hasattr(target_child, "abs_id"):
+            target_child.abs_id = new_abs_id
 
     # ── State CRUD ──
 
@@ -211,17 +321,94 @@ class BookRepository(BaseRepository):
         if not state.book_id and not state.abs_id:
             logger.error("save_state called without book_id or abs_id — skipping")
             return None
-        # Prefer book_id for upsert lookup; fall back to abs_id for backward compat
+
+        update_attrs = ["last_updated", "percentage", "timestamp", "xpath", "cfi", "abs_id", "book_id"]
+        with self.get_session() as session:
+            self._hydrate_state_book_reference(session, state)
+            if not state.book_id:
+                logger.warning("save_state could not resolve abs_id '%s' to a book — skipping", state.abs_id)
+                return None
+
+            lookup = self._state_lookup_filters(state)
+            existing = self._dedupe_existing_states(session, lookup)
+
+            if existing:
+                self._apply_state_attrs(existing, state, update_attrs)
+                session.flush()
+                session.refresh(existing)
+                session.expunge(existing)
+                return existing
+
+            try:
+                session.add(state)
+                session.flush()
+            except IntegrityError:
+                session.rollback()
+                self._hydrate_state_book_reference(session, state)
+                if not state.book_id:
+                    logger.warning("save_state could not resolve abs_id '%s' to a book after conflict — skipping", state.abs_id)
+                    return None
+
+                lookup = self._state_lookup_filters(state)
+                existing = self._dedupe_existing_states(session, lookup)
+                if not existing:
+                    raise
+                self._apply_state_attrs(existing, state, update_attrs)
+                session.flush()
+                session.refresh(existing)
+                session.expunge(existing)
+                return existing
+
+            session.refresh(state)
+            session.expunge(state)
+            return state
+
+    def _hydrate_state_book_reference(self, session, state):
+        """Resolve legacy abs_id-only saves to the canonical book_id."""
         if state.book_id:
-            lookup = [State.book_id == state.book_id, State.client_name == state.client_name]
-        else:
-            lookup = [State.abs_id == state.abs_id, State.client_name == state.client_name]
-        return self._upsert(
-            State,
-            lookup,
-            state,
-            ["last_updated", "percentage", "timestamp", "xpath", "cfi", "abs_id", "book_id"],
+            if not state.abs_id:
+                book = session.query(Book).filter(Book.id == state.book_id).first()
+                if book:
+                    state.abs_id = book.abs_id or ""
+            return
+
+        if state.abs_id:
+            book = session.query(Book).filter(Book.abs_id == state.abs_id).first()
+            if book:
+                state.book_id = book.id
+
+    @staticmethod
+    def _state_lookup_filters(state):
+        if state.book_id:
+            return [State.book_id == state.book_id, State.client_name == state.client_name]
+        return [State.abs_id == state.abs_id, State.client_name == state.client_name]
+
+    @staticmethod
+    def _dedupe_existing_states(session, lookup_filters):
+        matches = (
+            session.query(State)
+            .filter(*lookup_filters)
+            .order_by(func.coalesce(State.last_updated, -1).desc(), State.id.desc())
+            .all()
         )
+        if not matches:
+            return None
+
+        keeper = matches[0]
+        for duplicate in matches[1:]:
+            session.delete(duplicate)
+        return keeper
+
+    @staticmethod
+    def _apply_state_attrs(existing, incoming, update_attrs):
+        for attr in update_attrs:
+            if hasattr(incoming, attr):
+                value = getattr(incoming, attr)
+                if attr == "book_id" and value is None:
+                    continue
+                if attr == "abs_id" and not value:
+                    continue
+                setattr(existing, attr, value)
 
     def delete_states_for_book(self, book_id):
         with self.get_session() as session:
