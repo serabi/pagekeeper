@@ -283,6 +283,30 @@ class TestHardcoverSyncClient(unittest.TestCase):
         self.mock_hardcover_client.update_progress.assert_not_called()
 
     @patch("src.sync_clients.hardcover_sync_client.record_write")
+    def test_audio_only_with_resolved_no_audio_edition_does_not_re_resolve(self, mock_record_write):
+        self._set_test_book_sync_mode("audiobook")
+        hardcover_details = HardcoverDetails(
+            abs_id="test-hardcover-book",
+            book_id=self.test_book.id,
+            hardcover_book_id="123",
+            hardcover_edition_id="456",
+            hardcover_pages=300,
+            hardcover_audio_seconds=0,
+            matched_by="test",
+            hardcover_user_book_id=789,
+            hardcover_status_id=HC_CURRENTLY_READING,
+        )
+        self.database_service.save_hardcover_details(hardcover_details)
+
+        update_request = UpdateProgressRequest(locator_result=LocatorResult(percentage=0.25))
+
+        result = self.hardcover_sync_client.update_progress(self.test_book, update_request)
+
+        self.assertFalse(result.success)
+        self.mock_hardcover_client.get_all_editions.assert_not_called()
+        self.mock_hardcover_client.update_progress.assert_not_called()
+
+    @patch("src.sync_clients.hardcover_sync_client.record_write")
     def test_audio_progress_lazy_resolves_audio_edition_for_older_page_match(self, mock_record_write):
         self._set_test_book_sync_mode("audiobook")
         hardcover_details = HardcoverDetails(

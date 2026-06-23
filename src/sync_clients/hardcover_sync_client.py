@@ -179,11 +179,12 @@ class HardcoverSyncClient(SyncClient):
             return SyncResult(None, False)
 
         is_audiobook = uses_hardcover_audio_progress(book)
-        audio_seconds = hardcover_details.hardcover_audio_seconds or 0
-        if is_audiobook and audio_seconds <= 0 and self.hardcover_service:
+        audio_seconds = hardcover_details.hardcover_audio_seconds
+        if is_audiobook and audio_seconds is None and self.hardcover_service:
             logger.info(f"Hardcover: Audio duration missing for {sanitize_log_data(book.title)}, resolving editions...")
             self.hardcover_service.resolve_editions(hardcover_details)
-            audio_seconds = hardcover_details.hardcover_audio_seconds or 0
+            audio_seconds = hardcover_details.hardcover_audio_seconds
+        audio_seconds = audio_seconds or 0
 
         edition_id = self.select_edition_id(book, hardcover_details)
 
