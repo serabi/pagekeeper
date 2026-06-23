@@ -826,6 +826,17 @@
     margin-top: 8px;
 }
 
+.detected-meta .chip {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    line-height: 1;
+}
+
 .chip--source-abs {
     background: #3b82f6;
     color: #fff;
