@@ -339,21 +339,21 @@ class BookRepository(BaseRepository):
                 session.expunge(existing)
                 return existing
 
+            snapshot = self._snapshot_state_scalars(state, update_attrs)
             try:
                 session.add(state)
                 session.flush()
             except IntegrityError:
                 session.rollback()
-                self._hydrate_state_book_reference(session, state)
-                if not state.book_id:
-                    logger.warning("save_state could not resolve abs_id '%s' to a book after conflict — skipping", state.abs_id)
+                if not snapshot["book_id"] and not snapshot["abs_id"]:
+                    logger.warning("save_state could not resolve abs_id '%s' to a book after conflict — skipping", snapshot["abs_id"])
                     return None
 
-                lookup = self._state_lookup_filters(state)
+                lookup = self._snapshot_lookup_filters(snapshot)
                 existing = self._dedupe_existing_states(session, lookup)
                 if not existing:
                     raise
-                self._apply_state_attrs(existing, state, update_attrs)
+                self._apply_snapshot_attrs(existing, snapshot, update_attrs)
                 session.flush()
                 session.refresh(existing)
                 session.expunge(existing)
@@ -382,6 +382,37 @@ class BookRepository(BaseRepository):
         if state.book_id:
             return [State.book_id == state.book_id, State.client_name == state.client_name]
         return [State.abs_id == state.abs_id, State.client_name == state.client_name]
+
+    @staticmethod
+    def _snapshot_state_scalars(state, update_attrs):
+        """Capture scalar values off the ORM object so conflict recovery never
+        re-reads it after rollback (post-rollback lifecycle is brittle)."""
+        snapshot = {
+            "book_id": state.book_id,
+            "client_name": state.client_name,
+            "abs_id": state.abs_id,
+        }
+        for attr in update_attrs:
+            if hasattr(state, attr):
+                snapshot[attr] = getattr(state, attr)
+        return snapshot
+
+    @staticmethod
+    def _snapshot_lookup_filters(snapshot):
+        if snapshot["book_id"]:
+            return [State.book_id == snapshot["book_id"], State.client_name == snapshot["client_name"]]
+        return [State.abs_id == snapshot["abs_id"], State.client_name == snapshot["client_name"]]
+
+    @staticmethod
+    def _apply_snapshot_attrs(existing, snapshot, update_attrs):
+        for attr in update_attrs:
+            if attr in snapshot:
+                value = snapshot[attr]
+                if attr == "book_id" and value is None:
+                    continue
+                if attr == "abs_id" and not value:
+                    continue
+                setattr(existing, attr, value)
 
     @staticmethod
     def _dedupe_existing_states(session, lookup_filters):
