@@ -120,7 +120,7 @@
                         <div class="detected-progress">{{ '%.0f'|format(d.progress_percentage * 100) }}%</div>
                         {% endif %}
                         <div class="detected-meta">
-                            <span class="chip chip--source-{{ d.source }}">{{ d.source }}</span>
+                            <span class="chip chip--source-{{ d.source }}">{{ 'ABS' if d.source == 'abs' else 'KoSync' if d.source == 'kosync' else d.source|capitalize }}</span>
                             {% if d.device %}<span class="detected-device">{{ d.device }}</span>{% endif %}
                         </div>
                         <div class="detected-actions">
