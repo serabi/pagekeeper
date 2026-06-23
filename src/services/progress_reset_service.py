@@ -63,15 +63,6 @@ class ProgressResetService:
             cleared_count = self.database_service.delete_states_for_book(book.id)
             logger.info(f"Cleared {cleared_count} state records from database")
 
-            # Delete KOSync document records to prevent stale re-sync
-            sibling_docs = self.database_service.get_kosync_documents_for_book_by_book_id(book.id)
-            for doc in sibling_docs:
-                self.database_service.delete_kosync_document(doc.document_hash)
-                logger.info(f"Deleted KOSync document record: {doc.document_hash[:8]}...")
-            if not sibling_docs and book.kosync_doc_id:
-                self.database_service.delete_kosync_document(book.kosync_doc_id)
-                logger.info(f"Deleted KOSync document record: {book.kosync_doc_id[:8]}...")
-
             # Save 0% states with a fresh timestamp so the sync daemon sees
             # "already up to date" and won't pull stale progress from external services
             now = time.time()
@@ -105,6 +96,9 @@ class ProgressResetService:
                     f"Sync lock busy — external clients will be reset on next clear attempt. "
                     f"Local progress already cleared for '{sanitize_log_data(str(book_id))}'"
                 )
+                # Delete KOSync docs only after all save_book status writes so they
+                # are not resurrected by _ensure_book_kosync_document.
+                self._delete_kosync_documents(book)
                 # Keep book_id in _pending_clears so _process_deferred_clears picks it up
                 return {
                     "book_id": book_id,
@@ -130,6 +124,10 @@ class ProgressResetService:
                 # Handle alignment-based re-processing (status already set to not_started in Phase 1)
                 self._finalize_clear_status(book_id)
 
+                # Delete KOSync docs only after all save_book status writes so they
+                # are not resurrected by _ensure_book_kosync_document.
+                self._delete_kosync_documents(book)
+
                 logger.info(f"Progress clearing completed for '{sanitize_log_data(book.title)}'")
                 logger.info(f"   Database states cleared: {cleared_count}")
                 logger.info(f"   Client resets: {summary['successful_resets']}/{summary['total_clients']} successful")
@@ -146,6 +144,21 @@ class ProgressResetService:
             logger.error(f"Error clearing progress for {sanitize_log_data(str(book_id))}: {type(e).__name__}")
             logger.debug(traceback.format_exc())
             raise RuntimeError(f"Failed to clear progress for book {sanitize_log_data(str(book_id))}") from e
+
+    def _delete_kosync_documents(self, book):
+        """Delete KOSync document records for a book to prevent stale re-sync.
+
+        Must run only after all ``save_book`` status writes for this clear have
+        completed; ``save_book`` calls ``_ensure_book_kosync_document``, which
+        would otherwise resurrect a document deleted earlier in the process.
+        """
+        sibling_docs = self.database_service.get_kosync_documents_for_book_by_book_id(book.id)
+        for doc in sibling_docs:
+            self.database_service.delete_kosync_document(doc.document_hash)
+            logger.info(f"Deleted KOSync document record: {doc.document_hash[:8]}...")
+        if not sibling_docs and book.kosync_doc_id:
+            self.database_service.delete_kosync_document(book.kosync_doc_id)
+            logger.info(f"Deleted KOSync document record: {book.kosync_doc_id[:8]}...")
 
     def _finalize_clear_status(self, book_id):
         """Handle smart-reset status finalization after clearing progress."""
