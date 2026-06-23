@@ -76,6 +76,8 @@ git push origin my-feature
 
 I use AI to build PageKeeper and I'm fine with others also using AI. With that said, **please make sure you understand what your code does before submitting a PR.** AI is great as a tool but lousy as a decision maker.
 
+When opening PRs with AI assistance, follow [Agent PR Guidelines](.github/AGENT_PR_GUIDELINES.md): keep changes small, fill out the PR template, and document validation honestly.
+
 ## Reporting Bugs
 
 When opening a bug report, please include:
