@@ -4,7 +4,7 @@ import logging
 import os
 from pathlib import Path
 
-from flask import Blueprint, current_app, flash, redirect, render_template, request, session, url_for
+from flask import Blueprint, Response, current_app, flash, redirect, render_template, request, session, url_for
 from markupsafe import Markup
 
 from src.blueprints.helpers import (
@@ -39,6 +39,10 @@ def _escape_template_value(value):
 def _redirect_search_value():
     """Return a bounded same-route search value for redirects."""
     return (request.form.get("search") or "")[:200]
+
+
+def _plain_error_response(message, status_code):
+    return Response(message or "Request failed", status=status_code, mimetype="text/plain")
 
 
 def _copy_book_merge_metadata(existing_book, overrides=None):
@@ -200,7 +204,7 @@ def match():
                 storyteller_title=storyteller_title,
             )
             if result.error:
-                return result.error, result.status_code
+                return _plain_error_response(result.error, result.status_code)
             return redirect(url_for("dashboard.index"))
 
         # --- Attach ebook to audio-only book ---
@@ -209,7 +213,7 @@ def match():
             ebook_filename = sanitize_filename(request.form.get("ebook_filename"))
             result = intake_service.attach_ebook(abs_id=attach_abs_id, ebook_filename=ebook_filename)
             if result.error:
-                return result.error, result.status_code
+                return _plain_error_response(result.error, result.status_code)
             return redirect(url_for("dashboard.index"))
 
         # --- Attach audiobook to ebook-only book ---
@@ -237,7 +241,7 @@ def match():
                 subtitle=selected_ab.get("media", {}).get("metadata", {}).get("subtitle") or None,
             )
             if result.error:
-                return result.error, result.status_code
+                return _plain_error_response(result.error, result.status_code)
             return redirect(url_for("dashboard.index"))
 
         # --- Standard flow (requires audiobook) ---
@@ -268,7 +272,7 @@ def match():
             subtitle=_ab_meta.get("subtitle") or None,
         )
         if error:
-            return error, 404
+            return _plain_error_response(error, 404)
 
         return redirect(url_for("dashboard.index"))
 
