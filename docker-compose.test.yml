@@ -11,4 +11,6 @@ services:
       - ./tests:/app/tests:ro
       - ./templates:/app/templates:ro
       - ./static:/app/static:ro
+      - ./alembic:/app/alembic:ro
+      - ./alembic.ini:/app/alembic.ini:ro
       - ./pyproject.toml:/app/pyproject.toml:ro
