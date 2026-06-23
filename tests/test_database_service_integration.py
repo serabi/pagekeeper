@@ -338,6 +338,136 @@ class TestDatabaseServiceIntegration(unittest.TestCase):
         self.assertEqual(saved.id, existing.id)
         self.assertEqual(states[0].percentage, 0.65)
 
+    def test_save_state_recovers_from_genuine_unique_index_conflict(self):
+        """A real partial unique index conflict on the second save_state is
+        recovered by updating the existing row (no raise, single row)."""
+        book = self.db_service.save_book(self.Book(abs_id="genuine-conflict-book", title="Genuine Conflict"))
+        existing = self.db_service.save_state(
+            self.State(
+                abs_id=book.abs_id,
+                book_id=book.id,
+                client_name="kosync",
+                last_updated=100.0,
+                percentage=0.10,
+            )
+        )
+
+        repo = self.db_service._books
+        original_dedupe = repo._dedupe_existing_states
+        calls = 0
+
+        def miss_first_lookup(session, lookup_filters):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                # Force the INSERT path so the real uq_states_book_id_client_name
+                # partial unique index raises a genuine IntegrityError.
+                return None
+            return original_dedupe(session, lookup_filters)
+
+        repo._dedupe_existing_states = miss_first_lookup
+        try:
+            saved = self.db_service.save_state(
+                self.State(
+                    abs_id=book.abs_id,
+                    book_id=book.id,
+                    client_name="kosync",
+                    last_updated=250.0,
+                    percentage=0.65,
+                )
+            )
+        finally:
+            repo._dedupe_existing_states = original_dedupe
+
+        states = self.db_service.get_states_for_book(book.id)
+        self.assertGreaterEqual(calls, 2)
+        self.assertIsNotNone(saved)
+        self.assertEqual(len(states), 1)
+        self.assertEqual(saved.id, existing.id)
+        self.assertEqual(states[0].percentage, 0.65)
+
+    def test_save_state_recovery_never_reads_orm_state_after_rollback(self):
+        """The conflict-recovery branch must operate on the snapshot, never the
+        ORM state object (whose post-rollback lifecycle is unreliable)."""
+        book = self.db_service.save_book(self.Book(abs_id="armed-state-book", title="Armed State"))
+        existing = self.db_service.save_state(
+            self.State(
+                abs_id=book.abs_id,
+                book_id=book.id,
+                client_name="kosync",
+                last_updated=100.0,
+                percentage=0.10,
+            )
+        )
+
+        repo = self.db_service._books
+        original_dedupe = repo._dedupe_existing_states
+        original_snapshot = repo._snapshot_state_scalars
+        calls = 0
+        snapshot_taken = False
+        incoming_state = self.State(
+            abs_id=book.abs_id,
+            book_id=book.id,
+            client_name="kosync",
+            last_updated=250.0,
+            percentage=0.65,
+        )
+
+        def miss_first_lookup(session, lookup_filters):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                # Force the INSERT path so the real unique index conflicts.
+                return None
+            return original_dedupe(session, lookup_filters)
+
+        def snapshot_then_mark(state, update_attrs):
+            # Snapshot is captured from the live ORM object (allowed). After this
+            # point — i.e. in the post-rollback recovery branch — the ORM state
+            # object must never be read again. We don't subclass the mapped State
+            # model (that would register a stray entity in the global declarative
+            # registry and corrupt later metadata/migration tests); instead we
+            # spy on the helpers that take the ORM `state`, which the fixed
+            # recovery branch must avoid.
+            nonlocal snapshot_taken
+            snapshot_taken = True
+            return original_snapshot(state, update_attrs)
+
+        def guard_state_helper(name, original):
+            def wrapper(*args, **kwargs):
+                if snapshot_taken:
+                    raise AssertionError(f"recovery branch used ORM-state helper '{name}' after snapshot")
+                return original(*args, **kwargs)
+
+            return wrapper
+
+        original_hydrate = repo._hydrate_state_book_reference
+        original_state_lookup = repo._state_lookup_filters
+        original_apply_state = repo._apply_state_attrs
+
+        repo._dedupe_existing_states = miss_first_lookup
+        repo._snapshot_state_scalars = snapshot_then_mark
+        repo._hydrate_state_book_reference = guard_state_helper(
+            "_hydrate_state_book_reference", original_hydrate
+        )
+        repo._state_lookup_filters = guard_state_helper("_state_lookup_filters", original_state_lookup)
+        repo._apply_state_attrs = guard_state_helper("_apply_state_attrs", original_apply_state)
+        try:
+            saved = self.db_service.save_state(incoming_state)
+        finally:
+            repo._dedupe_existing_states = original_dedupe
+            repo._snapshot_state_scalars = original_snapshot
+            repo._hydrate_state_book_reference = original_hydrate
+            repo._state_lookup_filters = original_state_lookup
+            repo._apply_state_attrs = original_apply_state
+
+        states = self.db_service.get_states_for_book(book.id)
+        self.assertGreaterEqual(calls, 2)
+        self.assertIsNotNone(saved)
+        self.assertEqual(len(states), 1)
+        self.assertEqual(saved.id, existing.id)
+        self.assertEqual(states[0].percentage, 0.65)
+
     def test_save_state_resolves_legacy_abs_id_only_input(self):
         """Legacy callers that only pass abs_id still update the canonical book state."""
         book = self.db_service.save_book(self.Book(abs_id="legacy-abs-state", title="Legacy State"))

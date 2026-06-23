@@ -211,6 +211,52 @@ class TestBookIdentityMerge(unittest.TestCase):
             self.assertEqual(kosync_doc.linked_book_id, source.id)
             self.assertEqual(kosync_doc.linked_abs_id, survivor.abs_id)
 
+    def test_merge_preserves_alignment_and_activity_when_target_is_empty(self):
+        aligned_source = Book(
+            abs_id="ebook-aligned-1",
+            title="Aligned EPUB",
+            ebook_filename="aligned.epub",
+            kosync_doc_id="c" * 32,
+            status="active",
+            sync_mode="ebook_only",
+            transcript_file="DB_MANAGED",
+        )
+        aligned_source.activity_flag = True
+        source = self.db.save_book(aligned_source)
+
+        # A freshly mapped audiobook target never carries these hints.
+        target = self.db.save_book(
+            Book(
+                abs_id="abs-audiobook-aligned-1",
+                title="ABS Aligned Audiobook",
+                author="Aligned Author",
+                ebook_filename=source.ebook_filename,
+                kosync_doc_id=source.kosync_doc_id,
+                status="active",
+                duration=3600,
+                sync_mode="audiobook",
+                transcript_file=None,
+            )
+        )
+
+        self.db.migrate_book_data(source.abs_id, target.abs_id)
+
+        with self.db.get_session() as session:
+            books = session.query(Book).all()
+            self.assertEqual(len(books), 1)
+
+            survivor = books[0]
+            self.assertEqual(survivor.id, source.id)
+            # Alignment routing + paused-book UX hint survive the merge.
+            self.assertEqual(survivor.transcript_file, "DB_MANAGED")
+            self.assertTrue(survivor.activity_flag)
+            # Legitimately populated target fields still flow through.
+            self.assertEqual(survivor.abs_id, "abs-audiobook-aligned-1")
+            self.assertEqual(survivor.title, "ABS Aligned Audiobook")
+            self.assertEqual(survivor.author, "Aligned Author")
+            self.assertEqual(survivor.duration, 3600)
+            self.assertEqual(survivor.sync_mode, "audiobook")
+
     def test_attach_audiobook_route_merges_when_link_book_id_is_numeric(self):
         import src.db.migration_utils
 

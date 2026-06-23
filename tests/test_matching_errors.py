@@ -229,6 +229,32 @@ def test_batch_match_ebook_only_kosync_failure_adds_to_failed(flask_app, mock_co
     assert response.status_code == 302
 
 
+def test_batch_match_skips_standard_item_without_ebook(flask_app, mock_container, client):
+    """Queued audiobook+ebook mappings without an ebook are marked failed before mapping."""
+    _setup_matching_db_defaults(mock_container.mock_database_service)
+
+    with flask_app.test_client() as test_client:
+        with test_client.session_transaction() as sess:
+            sess["queue"] = [
+                {
+                    "queue_key": "abs-missing-ebook",
+                    "abs_id": "abs-missing-ebook",
+                    "title": "Missing Ebook",
+                    "ebook_filename": "",
+                    "duration": 100,
+                    "storyteller_uuid": "storyteller-id",
+                    "audio_only": False,
+                    "ebook_only": False,
+                },
+            ]
+
+        with patch("src.blueprints.matching_bp._create_book_mapping") as create_mapping:
+            response = test_client.post("/batch-match", data={"action": "process_queue"})
+
+    assert response.status_code == 302
+    create_mapping.assert_not_called()
+
+
 # ── Suggestions page: serialize edge cases ────────────────────────
 
 
