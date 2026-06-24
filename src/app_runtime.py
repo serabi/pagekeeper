@@ -206,6 +206,29 @@ def get_or_create_secret_key() -> str:
         return secrets.token_hex(32)
 
 
+def get_settings_master_secret() -> str:
+    """Return the master secret used to derive the settings-encryption key.
+
+    Discovery order:
+
+    1. ``PAGEKEEPER_SETTINGS_ENCRYPTION_KEY`` env var (preferred — keep
+       this separate from the Flask session secret).
+    2. The persistent Flask secret key (env ``FLASK_SECRET_KEY`` or the
+       ``/data/.flask_secret_key`` file via :func:`get_or_create_secret_key`).
+
+    The master secret is never written to the database.
+    """
+    explicit = get_str("PAGEKEEPER_SETTINGS_ENCRYPTION_KEY", "").strip()
+    if explicit:
+        return explicit
+    return get_or_create_secret_key()
+
+
+def get_settings_previous_secret() -> str:
+    """Return the optional previous master secret used for key rotation."""
+    return get_str("PAGEKEEPER_SETTINGS_ENCRYPTION_KEY_PREVIOUS", "").strip()
+
+
 def log_security_warnings():
     """Log warnings for common security misconfigurations at startup."""
     kosync_user = get_str("KOSYNC_USER", "")
