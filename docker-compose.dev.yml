@@ -36,6 +36,7 @@ services:
       - ./static:/app/static:ro
       - ./alembic:/app/alembic:ro
       - ./scripts:/app/scripts:ro
+      - ./tests:/app/tests:ro
 
     ports:
       - "${PAGEKEEPER_DEV_WEB_PORT:-4478}:4477"      # Dev web UI
