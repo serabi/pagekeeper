@@ -140,13 +140,14 @@ class AbsGrimmoryMigrationService:
 
     # ── Migration ──
 
-    def migrate(self, options=None, dry_run=False):
+    def migrate(self, options=None, dry_run=False, selected_abs_ids=None):
         options = options or {}
         if not self.is_configured():
             return {"configured": False, "results": [], "counts": {}}
 
         carry_sessions = options.get("carry_listening_sessions", True)
         carry_bookmarks = options.get("carry_bookmarks", True)
+        selected = set(selected_abs_ids) if selected_abs_ids is not None else None
 
         entries, counts = self._classify(options)
         results = []
@@ -154,6 +155,10 @@ class AbsGrimmoryMigrationService:
         for entry in entries:
             if entry["bucket"] != "will_migrate":
                 results.append({**_public(entry), "outcome": entry["bucket"]})
+                continue
+
+            if selected is not None and entry["abs_id"] not in selected:
+                results.append({**_public(entry), "outcome": "skipped_deselected"})
                 continue
 
             if dry_run:

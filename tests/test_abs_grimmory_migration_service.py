@@ -196,3 +196,39 @@ def test_not_configured_returns_empty():
     grimmory.is_configured.return_value = False
     assert svc.preview()["configured"] is False
     assert svc.migrate()["configured"] is False
+
+
+def test_selected_abs_ids_skips_deselected():
+    finished = [
+        {"id": "abs-1", "title": "Keep", "author": "A", "finished_at_ms": 1700000000000},
+        {"id": "abs-2", "title": "Drop", "author": "B", "finished_at_ms": 1700000000000},
+    ]
+
+    def match(isbn=None, asin=None, title=None, author=None):
+        if title == "Keep":
+            return ({"id": 1, "title": "Keep", "bookType": "EPUB"}, "title")
+        return ({"id": 2, "title": "Drop", "bookType": "EPUB"}, "title")
+
+    svc, db, _abs, grimmory = _service(finished=finished)
+    grimmory.match_book_by_identifiers.side_effect = match
+
+    result = svc.migrate(selected_abs_ids=["abs-1"])
+
+    outcomes = {r["abs_id"]: r["outcome"] for r in result["results"]}
+    assert outcomes["abs-2"] == "skipped_deselected"
+    assert outcomes["abs-1"] in ("migrated", "already_read")
+    # the deselected book is never written to Grimmory
+    written_ids = [c.args[0] for c in grimmory.update_read_status_by_id.call_args_list]
+    assert 2 not in written_ids
+
+
+def test_selected_abs_ids_none_migrates_all():
+    finished = [{"id": "abs-1", "title": "K", "author": "A", "finished_at_ms": 1700000000000}]
+    svc, db, _abs, grimmory = _service(
+        finished=finished, grimmory_match=({"id": 1, "title": "K", "bookType": "EPUB"}, "title")
+    )
+
+    result = svc.migrate(selected_abs_ids=None)
+
+    outcomes = [r["outcome"] for r in result["results"]]
+    assert "skipped_deselected" not in outcomes
