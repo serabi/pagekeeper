@@ -1445,6 +1445,134 @@ class TestLegacyDatabaseMigration(unittest.TestCase):
                 conn.commit()
             conn.close()
 
+    def test_state_uniqueness_migration_treats_null_last_updated_as_oldest(self):
+        """A duplicate with NULL last_updated loses to any row with a real timestamp.
+
+        The dedupe SQL coalesces last_updated to -1, so a NULL-timestamped row
+        must be discarded in favour of a sibling that has an actual timestamp,
+        regardless of insertion order.
+        """
+        import sqlite3
+
+        from alembic import command
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = str(Path(temp_dir) / "state_null_ts.db")
+            alembic_cfg = self._alembic_config(db_path)
+
+            command.upgrade(alembic_cfg, "v2w3x4y5z6a7")
+
+            conn = sqlite3.connect(db_path)
+            cursor = conn.execute("""
+                INSERT INTO books (abs_id, title, status)
+                VALUES ('null-ts-book', 'Null Timestamp Book', 'active')
+            """)
+            book_id = cursor.lastrowid
+            # The NULL-timestamp row is inserted LAST (higher id) to prove the
+            # tiebreak is driven by last_updated, not by insertion order.
+            conn.executescript(f"""
+                INSERT INTO states (abs_id, book_id, client_name, last_updated, percentage)
+                VALUES
+                    ('null-ts-book', {book_id}, 'kosync', 100.0, 0.60),
+                    ('null-ts-book', {book_id}, 'kosync', NULL, 0.99);
+            """)
+            conn.commit()
+            conn.close()
+
+            command.upgrade(alembic_cfg, "head")
+
+            conn = sqlite3.connect(db_path)
+            rows = conn.execute("""
+                SELECT last_updated, percentage
+                FROM states
+                WHERE book_id = ? AND client_name = 'kosync'
+            """, (book_id,)).fetchall()
+            conn.close()
+
+            self.assertEqual(len(rows), 1, "Duplicate kosync rows were not collapsed")
+            self.assertEqual(rows[0], (100.0, 0.60),
+                             "NULL last_updated row should have lost to the timestamped row")
+
+    def test_state_uniqueness_migration_downgrade_drops_unique_index(self):
+        """Downgrading the head revision removes the unique index but keeps the rows."""
+        import sqlite3
+
+        from alembic import command
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = str(Path(temp_dir) / "state_downgrade.db")
+            alembic_cfg = self._alembic_config(db_path)
+
+            command.upgrade(alembic_cfg, "head")
+
+            conn = sqlite3.connect(db_path)
+            cursor = conn.execute("""
+                INSERT INTO books (abs_id, title, status)
+                VALUES ('downgrade-book', 'Downgrade Book', 'active')
+            """)
+            book_id = cursor.lastrowid
+            conn.execute("""
+                INSERT INTO states (abs_id, book_id, client_name, last_updated, percentage)
+                VALUES ('downgrade-book', ?, 'kosync', 100.0, 0.10)
+            """, (book_id,))
+            conn.commit()
+            indexes_before = {row[1] for row in conn.execute("PRAGMA index_list(states)").fetchall()}
+            conn.close()
+
+            self.assertIn("uq_states_book_id_client_name", indexes_before)
+
+            command.downgrade(alembic_cfg, "v2w3x4y5z6a7")
+
+            conn = sqlite3.connect(db_path)
+            indexes_after = {row[1] for row in conn.execute("PRAGMA index_list(states)").fetchall()}
+            surviving = conn.execute(
+                "SELECT percentage FROM states WHERE book_id = ?", (book_id,)
+            ).fetchone()
+            conn.close()
+
+            self.assertNotIn("uq_states_book_id_client_name", indexes_after,
+                             "Downgrade did not drop the unique index")
+            self.assertIsNotNone(surviving, "Downgrade should not delete state rows")
+            self.assertEqual(surviving[0], 0.10)
+
+    def test_state_rebuild_column_list_matches_state_model(self):
+        """The states table rebuild must copy every State column.
+
+        ``w3x4y5z6a7b8`` rebuilds the states table to relax book_id nullability
+        by copying a hardcoded column list. If a future migration adds a column
+        to the State model without updating that copy, the rebuild would
+        silently drop the new column's data. This guard fails loudly at that
+        point instead.
+        """
+        import importlib.util
+        import inspect as _inspect
+
+        from src.db.models import State
+
+        migration_path = (
+            Path(__file__).parent.parent
+            / "alembic"
+            / "versions"
+            / "w3x4y5z6a7b8_add_unique_state_book_client_index.py"
+        )
+        spec = importlib.util.spec_from_file_location("_w3x4_migration", migration_path)
+        migration = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(migration)
+
+        # Read the actual copy statement out of the migration source so the test
+        # tracks the real INSERT...SELECT, not a duplicated literal.
+        source = _inspect.getsource(migration._relax_states_book_id_nullability)
+        self.assertIn("INSERT INTO _states_nullable_new", source)
+
+        model_columns = {column.name for column in State.__table__.columns}
+        for column_name in model_columns:
+            self.assertIn(
+                column_name,
+                source,
+                f"State.{column_name} is missing from the states rebuild copy in "
+                f"w3x4y5z6a7b8; the migration would silently drop its data.",
+            )
+
     def test_fresh_db_still_initializes_correctly(self):
         """
         Regression guard: a brand-new (empty) database must still initialize cleanly.
