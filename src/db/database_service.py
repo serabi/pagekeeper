@@ -13,6 +13,7 @@ from typing import Any, cast
 
 from .book_repository import BookRepository
 from .bookfusion_repository import BookFusionRepository
+from .detected_repository import DetectedRepository
 from .grimmory_repository import GrimmoryRepository
 from .hardcover_repository import HardcoverRepository
 from .kosync_repository import KoSyncRepository
@@ -70,6 +71,7 @@ class DatabaseService:
         self._kosync = KoSyncRepository(self.db_manager)
         self._reading = ReadingRepository(self.db_manager)
         self._suggestions = SuggestionRepository(self.db_manager)
+        self._detected = DetectedRepository(self.db_manager)
         self._hardcover = HardcoverRepository(self.db_manager)
         self._storyteller = StorytellerRepository(self.db_manager)
         self._bookfusion = BookFusionRepository(self.db_manager)
@@ -293,6 +295,7 @@ class DatabaseService:
         "_kosync",
         "_reading",
         "_suggestions",
+        "_detected",
         "_hardcover",
         "_storyteller",
         "_bookfusion",

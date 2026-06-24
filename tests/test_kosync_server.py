@@ -188,17 +188,22 @@ class TestKosyncEndpoints(unittest.TestCase):
         cls.db_path = os.path.join(TEST_DIR, "test.db")
         from src import web_server
 
-        web_server.database_service = DatabaseService(cls.db_path)
+        cls.database_service = DatabaseService(cls.db_path)
         # Use MockContainer to avoid epubcfi import chain
         cls.mock_container = _KosyncMockContainer()
-        if not hasattr(web_server, "app"):
-            web_server.app, _ = web_server.create_app(test_container=cls.mock_container)
-        cls.app = web_server.app
-        cls.app.config["database_service"] = web_server.database_service
+        # create_app bootstraps settings into os.environ; snapshot and restore
+        # so feature flags (e.g. GRIMMORY_ENABLED) do not leak into later tests.
+        _saved_env = os.environ.copy()
+        try:
+            cls.app, _ = web_server.create_app(test_container=cls.mock_container)
+        finally:
+            os.environ.clear()
+            os.environ.update(_saved_env)
+        cls.app.config["database_service"] = cls.database_service
         from src.services.kosync_service import KosyncService
 
         cls.app.config["kosync_service"] = KosyncService(
-            web_server.database_service,
+            cls.database_service,
             cls.mock_container,
             cls.mock_container.mock_sync_manager,
         )
@@ -214,9 +219,7 @@ class TestKosyncEndpoints(unittest.TestCase):
             "Content-Type": "application/json",
         }
         # Clear specific tables
-        from src import web_server
-
-        with web_server.database_service.get_session() as session:
+        with self.database_service.get_session() as session:
             session.query(KosyncDocument).delete()
         # Reset rate limiter between tests
         with self.app.app_context():
@@ -409,8 +412,6 @@ class TestKosyncEndpoints(unittest.TestCase):
 
     def test_get_progress_unknown_hash_creates_stub(self):
         """Test that GET for a completely unknown hash returns 502 and creates a stub for background discovery."""
-        from src import web_server
-
         # Create a book with a known kosync_doc_id
         book = Book(
             abs_id="test-sibling-book",
@@ -420,7 +421,7 @@ class TestKosyncEndpoints(unittest.TestCase):
             status="active",
             sync_mode="ebook_only",
         )
-        book = web_server.database_service.save_book(book)
+        book = self.database_service.save_book(book)
 
         # Create a KosyncDocument for hash_A linked to the book, with progress
         self.client.put(
@@ -435,7 +436,7 @@ class TestKosyncEndpoints(unittest.TestCase):
             },
         )
         # Link it to the book
-        web_server.database_service.link_kosync_document("a" * 32, book.id)
+        self.database_service.link_kosync_document("a" * 32, book.id)
 
         # Now GET with an unknown hash_B — should resolve via the book's sibling docs
         # First, we need hash_B to be findable. The sibling resolution requires
@@ -447,13 +448,11 @@ class TestKosyncEndpoints(unittest.TestCase):
         self.assertEqual(response.status_code, 502)
 
         # Clean up
-        with web_server.database_service.get_session() as session:
+        with self.database_service.get_session() as session:
             session.query(Book).filter(Book.abs_id == "test-sibling-book").delete()
 
     def test_get_progress_resolves_via_book_kosync_id(self):
         """Test that GET resolves via book.kosync_doc_id fallback (Step 2) and returns sibling progress."""
-        from src import web_server
-
         # Create a book whose kosync_doc_id matches the GET hash
         book = Book(
             abs_id="test-step2-book",
@@ -463,10 +462,10 @@ class TestKosyncEndpoints(unittest.TestCase):
             status="active",
             sync_mode="ebook_only",
         )
-        web_server.database_service.save_book(book)
+        self.database_service.save_book(book)
 
         # Retrieve saved book to get its DB-assigned id
-        saved_book = web_server.database_service.get_book_by_abs_id("test-step2-book")
+        saved_book = self.database_service.get_book_by_abs_id("test-step2-book")
 
         # Create a sibling KosyncDocument linked to the same book with progress
         sibling_doc = KosyncDocument(
@@ -479,7 +478,7 @@ class TestKosyncEndpoints(unittest.TestCase):
             linked_abs_id="test-step2-book",
             linked_book_id=saved_book.id,
         )
-        web_server.database_service.save_kosync_document(sibling_doc)
+        self.database_service.save_kosync_document(sibling_doc)
 
         # GET with the book's kosync_doc_id (not in kosync_documents itself)
         response = self.client.get("/syncs/progress/" + "s" * 32, headers=self.auth_headers)
@@ -491,13 +490,11 @@ class TestKosyncEndpoints(unittest.TestCase):
         self.assertEqual(data["document"], "s" * 32)
 
         # Clean up
-        with web_server.database_service.get_session() as session:
+        with self.database_service.get_session() as session:
             session.query(Book).filter(Book.abs_id == "test-step2-book").delete()
 
     def test_get_progress_sibling_via_filename(self):
         """Test that GET resolves an unknown hash when a sibling with the same filename is linked to a book."""
-        from src import web_server
-
         # Create a book
         book = Book(
             abs_id="test-filename-book",
@@ -507,8 +504,8 @@ class TestKosyncEndpoints(unittest.TestCase):
             status="active",
             sync_mode="ebook_only",
         )
-        web_server.database_service.save_book(book)
-        saved_book = web_server.database_service.get_book_by_abs_id("test-filename-book")
+        self.database_service.save_book(book)
+        saved_book = self.database_service.get_book_by_abs_id("test-filename-book")
 
         # Create a KosyncDocument for hash_A linked to the book, with a filename and progress
         doc_a = KosyncDocument(
@@ -522,11 +519,11 @@ class TestKosyncEndpoints(unittest.TestCase):
             linked_abs_id="test-filename-book",
             linked_book_id=saved_book.id,
         )
-        web_server.database_service.save_kosync_document(doc_a)
+        self.database_service.save_kosync_document(doc_a)
 
         # Create a KosyncDocument for hash_B with the SAME filename but NOT linked
         doc_b = KosyncDocument(document_hash="e" * 32, filename="shared_name.epub")
-        web_server.database_service.save_kosync_document(doc_b)
+        self.database_service.save_kosync_document(doc_b)
 
         # GET with hash_B — should resolve via filename sibling to the book
         response = self.client.get("/syncs/progress/" + "e" * 32, headers=self.auth_headers)
@@ -537,7 +534,7 @@ class TestKosyncEndpoints(unittest.TestCase):
         self.assertEqual(data["document"], "e" * 32)
 
         # Clean up
-        with web_server.database_service.get_session() as session:
+        with self.database_service.get_session() as session:
             session.query(Book).filter(Book.abs_id == "test-filename-book").delete()
 
     # ---------------- Security Tests ----------------
@@ -659,11 +656,16 @@ class TestCleanupCacheTraversal(unittest.TestCase):
         cls.db_path = os.path.join(TEST_DIR, "test.db")
         from src import web_server
 
-        web_server.database_service = DatabaseService(cls.db_path)
+        cls.database_service = DatabaseService(cls.db_path)
         cls.mock_container = _KosyncMockContainer()
-        if not hasattr(web_server, "app"):
-            web_server.app, _ = web_server.create_app(test_container=cls.mock_container)
-        cls.app = web_server.app
+        # create_app bootstraps settings into os.environ; snapshot and restore
+        # so feature flags (e.g. GRIMMORY_ENABLED) do not leak into later tests.
+        _saved_env = os.environ.copy()
+        try:
+            cls.app, _ = web_server.create_app(test_container=cls.mock_container)
+        finally:
+            os.environ.clear()
+            os.environ.update(_saved_env)
 
     def test_traversal_filename_blocked(self):
         """A filename containing '../' must be rejected, not deleted."""

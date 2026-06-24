@@ -470,6 +470,18 @@ class CleanFlaskIntegrationTest(unittest.TestCase):
         finally:
             src.blueprints.matching_bp.get_kosync_id_for_ebook = original_get_kosync
 
+    def test_standard_match_requires_ebook_selection(self):
+        """Standard audiobook+ebook matching rejects missing ebook selection."""
+        self.mock_abs_client.get_all_audiobooks.return_value = [
+            {"id": "test-audiobook-123", "media": {"metadata": {"title": "Test Book"}, "duration": 3600}}
+        ]
+
+        response = self.client.post("/match", data={"audiobook_id": "test-audiobook-123"})
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn(b"ebook selection is required", response.data)
+        self.mock_database_service.save_book.assert_not_called()
+
     def test_clear_progress_endpoint_clean_di(self):
         """Test clear progress endpoint with clean dependency injection."""
         # Setup mock book
@@ -715,6 +727,7 @@ class CleanFlaskIntegrationTest(unittest.TestCase):
             status="active",
             sync_mode="ebook_only",
         )
+        ebook_book.id = 42
         self.mock_database_service.get_book_by_abs_id.return_value = ebook_book
         self.mock_database_service.get_book_by_ref.return_value = ebook_book
 
@@ -732,7 +745,7 @@ class CleanFlaskIntegrationTest(unittest.TestCase):
         response = self.client.post(
             "/match",
             data={
-                "link_book_id": "ebook-abc123",
+                "link_book_id": "42",
                 "audiobook_id": "real-audiobook-789",
                 "action": "attach_audiobook",
             },
@@ -749,7 +762,7 @@ class CleanFlaskIntegrationTest(unittest.TestCase):
         self.assertEqual(saved_book.sync_mode, "audiobook")
 
         self.mock_database_service.migrate_book_data.assert_called_once_with("ebook-abc123", "real-audiobook-789")
-        self.mock_database_service.delete_book.assert_called_once_with(None)
+        self.mock_database_service.delete_book.assert_not_called()
         self.mock_abs_client.add_to_collection.assert_called_once()
 
         print("[OK] Attach audiobook test passed")

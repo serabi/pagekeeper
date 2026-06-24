@@ -72,8 +72,9 @@
 
                     {# Info row: rating, pages, year #}
                     {% set info_parts = [] %}
+                    {% set has_rating = item.rating is not none %}
                     {% if item.rating is not none %}
-                        {% set _ = info_parts.append('<span class="r-tbr-card-info-star">&#9733;</span> ' ~ '%.1f'|format(item.rating)) %}
+                        {% set _ = info_parts.append('%.1f'|format(item.rating)) %}
                     {% endif %}
                     {% if item.page_count %}
                         {% set _ = info_parts.append(item.page_count|string ~ 'p') %}
@@ -84,7 +85,7 @@
                     {% if info_parts %}
                     <div class="r-tbr-card-info" style="font-size: 14px; margin-top: 8px;">
                         {% for part in info_parts %}
-                        <span>{{ part|safe }}</span>
+                        <span>{% if has_rating and loop.first %}<span class="r-tbr-card-info-star">&#9733;</span> {% endif %}{{ part }}</span>
                         {% endfor %}
                     </div>
                     {% endif %}

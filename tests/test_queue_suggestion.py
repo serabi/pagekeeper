@@ -35,7 +35,8 @@ class TestQueueSuggestion(unittest.TestCase):
     def test_skips_when_disabled(self):
         os.environ["SUGGESTIONS_ENABLED"] = "false"
         self.manager.queue_suggestion("book-123")
-        self.mock_db.suggestion_exists.assert_not_called()
+        self.mock_db.get_all_books.assert_not_called()
+        self.mock_db.save_detected_book.assert_not_called()
 
     def test_skips_mapped_book(self):
         mock_book = Mock()
@@ -45,24 +46,28 @@ class TestQueueSuggestion(unittest.TestCase):
         self.manager.queue_suggestion("book-123")
         self.mock_db.suggestion_exists.assert_not_called()
 
-    def test_skips_existing_suggestion(self):
-        self.mock_db.suggestion_exists.return_value = True
+    def test_skips_dismissed_detected_book(self):
+        dismissed = Mock()
+        dismissed.status = "dismissed"
+        self.mock_db.get_detected_book.return_value = dismissed
 
         self.manager.queue_suggestion("book-456")
         self.mock_abs.get_item_details.assert_not_called()
 
     def test_creates_suggestion_for_new_book(self):
         self.mock_db.suggestion_exists.return_value = False
+        self.mock_db.get_detected_book.return_value = None
         self.mock_abs.get_item_details.return_value = {
             "media": {"metadata": {"title": "Test Book", "authorName": "Author"}}
         }
-        # No matches found, so suggestion creation won't save
         self.manager.queue_suggestion("book-789")
         self.mock_abs.get_item_details.assert_called_once_with("book-789")
+        self.mock_db.save_detected_book.assert_called_once()
 
     def test_thread_safety_prevents_duplicate(self):
         """Second concurrent call for same ID should be skipped."""
         self.mock_db.suggestion_exists.return_value = False
+        self.mock_db.get_detected_book.return_value = None
 
         # Simulate first call in-flight
         self.manager.suggestion_service._suggestion_in_flight.add("book-dup")
@@ -73,6 +78,7 @@ class TestQueueSuggestion(unittest.TestCase):
 
     def test_cleans_up_in_flight_on_error(self):
         self.mock_db.suggestion_exists.return_value = False
+        self.mock_db.get_detected_book.return_value = None
         self.mock_abs.get_item_details.side_effect = Exception("boom")
 
         self.manager.queue_suggestion("book-err")

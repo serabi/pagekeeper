@@ -180,6 +180,53 @@ class MockContainer:
 # ── Pytest fixtures ────────────────────────────────────────────────
 
 
+@pytest.fixture(autouse=True)
+def _reset_app_globals():
+    """Restore process-global state after each test.
+
+    Three classes of process-global state leak across tests and cause
+    order-dependent failures:
+
+    1. ``src.app_setup`` keeps module-level ``container``/``manager``/
+       ``database_service``/``SYNC_PERIOD_MINS`` singletons that
+       ``setup_dependencies`` mutates.
+    2. ``src.web_server`` re-exports those via a module-level ``__getattr__``.
+       A test that assigns directly onto the ``web_server`` module would create
+       a real attribute that permanently shadows ``__getattr__`` and leak a real
+       instance into later tests.
+    3. ``ConfigLoader`` (invoked by ``create_app``/``setup_dependencies``) writes
+       feature-flag settings such as ``GRIMMORY_ENABLED`` into ``os.environ``,
+       defaulting absent flags to ``"false"``. Leaked flags flip later tests'
+       configuration probes (e.g. ``GrimmoryClient.is_configured``).
+
+    This fixture snapshots all three before each test and restores them
+    afterwards.
+    """
+    import src.app_setup as app_setup
+    import src.web_server as web_server
+
+    tracked = ("container", "manager", "database_service", "SYNC_PERIOD_MINS")
+    saved = {name: getattr(app_setup, name) for name in tracked}
+    web_server_baseline = {
+        name: vars(web_server).get(name) for name in (*tracked, "app")
+    }
+    saved_env = os.environ.copy()
+
+    try:
+        yield
+    finally:
+        for name, value in saved.items():
+            setattr(app_setup, name, value)
+        # Drop any real attributes that a test assigned onto the web_server
+        # module, which would otherwise shadow its delegating __getattr__.
+        for name in (*tracked, "app"):
+            if web_server_baseline[name] is None and name in vars(web_server):
+                delattr(web_server, name)
+        # Restore os.environ to undo any settings bootstrapped into it.
+        os.environ.clear()
+        os.environ.update(saved_env)
+
+
 @pytest.fixture()
 def mock_container():
     """Yield a fresh MockContainer for each test."""

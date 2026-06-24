@@ -79,10 +79,51 @@ class TestDatabaseServiceIntegration(unittest.TestCase):
         self.assertEqual(saved_book.title, "Test Book Creation")
         self.assertEqual(saved_book.status, "active")
 
-        # Verify book can be retrieved
-        retrieved_book = self.db_service.get_book_by_abs_id(test_abs_id)
-        self.assertIsNotNone(retrieved_book)
-        self.assertEqual(retrieved_book.abs_id, test_abs_id)
+    def test_save_detected_book_creates_and_updates(self):
+        """Detected books upsert by source and source_id."""
+        from src.db.models import DetectedBook
+
+        first = DetectedBook(
+            source="abs",
+            source_id="detected-1",
+            title="Detected Title",
+            author="Author One",
+            progress_percentage=0.25,
+            cover_url="/cover/1",
+        )
+        saved = self.db_service.save_detected_book(first)
+        self.assertEqual(saved.title, "Detected Title")
+        self.assertAlmostEqual(saved.progress_percentage, 0.25)
+
+        second = DetectedBook(
+            source="abs",
+            source_id="detected-1",
+            title="Detected Title Updated",
+            author="Author Two",
+            progress_percentage=0.55,
+        )
+        updated = self.db_service.save_detected_book(second)
+
+        self.assertEqual(updated.id, saved.id)
+        self.assertEqual(updated.title, "Detected Title Updated")
+        self.assertEqual(updated.author, "Author Two")
+        self.assertAlmostEqual(updated.progress_percentage, 0.55)
+
+    def test_resolve_detected_book_scoped_by_source(self):
+        """Resolving a detected book only affects the matching source row."""
+        from src.db.models import DetectedBook
+
+        abs_detected = DetectedBook(source="abs", source_id="shared-id", title="ABS", progress_percentage=0.2)
+        kosync_detected = DetectedBook(source="kosync", source_id="shared-id", title="KOSync", progress_percentage=0.3)
+        self.db_service.save_detected_book(abs_detected)
+        self.db_service.save_detected_book(kosync_detected)
+
+        self.assertTrue(self.db_service.resolve_detected_book("shared-id", source="abs"))
+
+        resolved = self.db_service.get_detected_book("shared-id", source="abs")
+        still_active = self.db_service.get_detected_book("shared-id", source="kosync")
+        self.assertEqual(resolved.status, "resolved")
+        self.assertEqual(still_active.status, "detected")
 
     def test_delete_book(self):
         """Test deleting a book record with cascading deletes for states and hardcover details."""
@@ -228,6 +269,272 @@ class TestDatabaseServiceIntegration(unittest.TestCase):
 
         self.assertIn("grimmory", state_by_client)
         self.assertEqual(state_by_client["grimmory"].cfi, "epubcfi(/6/4[chapter2]!/4/2/6/1:15)")
+
+    def test_save_state_updates_existing_book_client_pair(self):
+        """save_state updates a book/client state instead of inserting duplicates."""
+        book = self.db_service.save_book(self.Book(abs_id="state-upsert-book", title="State Upsert"))
+
+        first = self.db_service.save_state(
+            self.State(
+                abs_id=book.abs_id,
+                book_id=book.id,
+                client_name="kosync",
+                last_updated=100.0,
+                percentage=0.25,
+            )
+        )
+        second = self.db_service.save_state(
+            self.State(
+                abs_id=book.abs_id,
+                book_id=book.id,
+                client_name="kosync",
+                last_updated=200.0,
+                percentage=0.75,
+                xpath="/updated",
+            )
+        )
+
+        states = self.db_service.get_states_for_book(book.id)
+        self.assertEqual(len(states), 1)
+        self.assertEqual(first.id, second.id)
+        self.assertEqual(states[0].percentage, 0.75)
+        self.assertEqual(states[0].xpath, "/updated")
+
+    def test_save_state_dedupes_existing_duplicate_book_client_rows(self):
+        """save_state collapses dirty pre-existing duplicates before updating."""
+        import sqlite3
+
+        book = self.db_service.save_book(self.Book(abs_id="dirty-state-book", title="Dirty State"))
+        self.db_service.db_manager.close()
+
+        conn = sqlite3.connect(self.test_db_path)
+        conn.execute("DROP INDEX IF EXISTS uq_states_book_id_client_name")
+        conn.executemany("""
+            INSERT INTO states (abs_id, book_id, client_name, last_updated, percentage)
+            VALUES (?, ?, ?, ?, ?)
+        """, [
+            (book.abs_id, book.id, "kosync", 100.0, 0.10),
+            (book.abs_id, book.id, "kosync", 200.0, 0.20),
+        ])
+        conn.commit()
+        conn.close()
+
+        self.db_service = self.DatabaseService(self.test_db_path)
+        saved = self.db_service.save_state(
+            self.State(
+                abs_id=book.abs_id,
+                book_id=book.id,
+                client_name="kosync",
+                last_updated=300.0,
+                percentage=0.90,
+            )
+        )
+
+        states = self.db_service.get_states_for_book(book.id)
+        self.assertEqual(len(states), 1)
+        self.assertEqual(saved.id, states[0].id)
+        self.assertEqual(states[0].percentage, 0.90)
+
+    def test_save_state_retries_after_unique_conflict(self):
+        """save_state recovers when a unique conflict appears after lookup."""
+        book = self.db_service.save_book(self.Book(abs_id="state-race-book", title="State Race"))
+        existing = self.db_service.save_state(
+            self.State(
+                abs_id=book.abs_id,
+                book_id=book.id,
+                client_name="kosync",
+                last_updated=100.0,
+                percentage=0.10,
+            )
+        )
+
+        repo = self.db_service._books
+        original_dedupe = repo._dedupe_existing_states
+        calls = 0
+
+        def miss_once(session, lookup_filters):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                return None
+            return original_dedupe(session, lookup_filters)
+
+        repo._dedupe_existing_states = miss_once
+        try:
+            saved = self.db_service.save_state(
+                self.State(
+                    abs_id=book.abs_id,
+                    book_id=book.id,
+                    client_name="kosync",
+                    last_updated=250.0,
+                    percentage=0.65,
+                )
+            )
+        finally:
+            repo._dedupe_existing_states = original_dedupe
+
+        states = self.db_service.get_states_for_book(book.id)
+        self.assertGreaterEqual(calls, 2)
+        self.assertEqual(len(states), 1)
+        self.assertEqual(saved.id, existing.id)
+        self.assertEqual(states[0].percentage, 0.65)
+
+    def test_save_state_recovers_from_genuine_unique_index_conflict(self):
+        """A real partial unique index conflict on the second save_state is
+        recovered by updating the existing row (no raise, single row)."""
+        book = self.db_service.save_book(self.Book(abs_id="genuine-conflict-book", title="Genuine Conflict"))
+        existing = self.db_service.save_state(
+            self.State(
+                abs_id=book.abs_id,
+                book_id=book.id,
+                client_name="kosync",
+                last_updated=100.0,
+                percentage=0.10,
+            )
+        )
+
+        repo = self.db_service._books
+        original_dedupe = repo._dedupe_existing_states
+        calls = 0
+
+        def miss_first_lookup(session, lookup_filters):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                # Force the INSERT path so the real uq_states_book_id_client_name
+                # partial unique index raises a genuine IntegrityError.
+                return None
+            return original_dedupe(session, lookup_filters)
+
+        repo._dedupe_existing_states = miss_first_lookup
+        try:
+            saved = self.db_service.save_state(
+                self.State(
+                    abs_id=book.abs_id,
+                    book_id=book.id,
+                    client_name="kosync",
+                    last_updated=250.0,
+                    percentage=0.65,
+                )
+            )
+        finally:
+            repo._dedupe_existing_states = original_dedupe
+
+        states = self.db_service.get_states_for_book(book.id)
+        self.assertGreaterEqual(calls, 2)
+        self.assertIsNotNone(saved)
+        self.assertEqual(len(states), 1)
+        self.assertEqual(saved.id, existing.id)
+        self.assertEqual(states[0].percentage, 0.65)
+
+    def test_save_state_recovery_never_reads_orm_state_after_rollback(self):
+        """The conflict-recovery branch must operate on the snapshot, never the
+        ORM state object (whose post-rollback lifecycle is unreliable)."""
+        book = self.db_service.save_book(self.Book(abs_id="armed-state-book", title="Armed State"))
+        existing = self.db_service.save_state(
+            self.State(
+                abs_id=book.abs_id,
+                book_id=book.id,
+                client_name="kosync",
+                last_updated=100.0,
+                percentage=0.10,
+            )
+        )
+
+        repo = self.db_service._books
+        original_dedupe = repo._dedupe_existing_states
+        original_snapshot = repo._snapshot_state_scalars
+        calls = 0
+        snapshot_taken = False
+        incoming_state = self.State(
+            abs_id=book.abs_id,
+            book_id=book.id,
+            client_name="kosync",
+            last_updated=250.0,
+            percentage=0.65,
+        )
+
+        def miss_first_lookup(session, lookup_filters):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                # Force the INSERT path so the real unique index conflicts.
+                return None
+            return original_dedupe(session, lookup_filters)
+
+        def snapshot_then_mark(state, update_attrs):
+            # Snapshot is captured from the live ORM object (allowed). After this
+            # point — i.e. in the post-rollback recovery branch — the ORM state
+            # object must never be read again. We don't subclass the mapped State
+            # model (that would register a stray entity in the global declarative
+            # registry and corrupt later metadata/migration tests); instead we
+            # spy on the helpers that take the ORM `state`, which the fixed
+            # recovery branch must avoid.
+            nonlocal snapshot_taken
+            snapshot_taken = True
+            return original_snapshot(state, update_attrs)
+
+        def guard_state_helper(name, original):
+            def wrapper(*args, **kwargs):
+                if snapshot_taken:
+                    raise AssertionError(f"recovery branch used ORM-state helper '{name}' after snapshot")
+                return original(*args, **kwargs)
+
+            return wrapper
+
+        original_hydrate = repo._hydrate_state_book_reference
+        original_state_lookup = repo._state_lookup_filters
+        original_apply_state = repo._apply_state_attrs
+
+        repo._dedupe_existing_states = miss_first_lookup
+        repo._snapshot_state_scalars = snapshot_then_mark
+        repo._hydrate_state_book_reference = guard_state_helper(
+            "_hydrate_state_book_reference", original_hydrate
+        )
+        repo._state_lookup_filters = guard_state_helper("_state_lookup_filters", original_state_lookup)
+        repo._apply_state_attrs = guard_state_helper("_apply_state_attrs", original_apply_state)
+        try:
+            saved = self.db_service.save_state(incoming_state)
+        finally:
+            repo._dedupe_existing_states = original_dedupe
+            repo._snapshot_state_scalars = original_snapshot
+            repo._hydrate_state_book_reference = original_hydrate
+            repo._state_lookup_filters = original_state_lookup
+            repo._apply_state_attrs = original_apply_state
+
+        states = self.db_service.get_states_for_book(book.id)
+        self.assertGreaterEqual(calls, 2)
+        self.assertIsNotNone(saved)
+        self.assertEqual(len(states), 1)
+        self.assertEqual(saved.id, existing.id)
+        self.assertEqual(states[0].percentage, 0.65)
+
+    def test_save_state_resolves_legacy_abs_id_only_input(self):
+        """Legacy callers that only pass abs_id still update the canonical book state."""
+        book = self.db_service.save_book(self.Book(abs_id="legacy-abs-state", title="Legacy State"))
+
+        first = self.db_service.save_state(
+            self.State(abs_id=book.abs_id, client_name="kosync", last_updated=100.0, percentage=0.10)
+        )
+        second = self.db_service.save_state(
+            self.State(abs_id=book.abs_id, client_name="kosync", last_updated=200.0, percentage=0.55)
+        )
+
+        states = self.db_service.get_states_for_book(book.id)
+        self.assertEqual(len(states), 1)
+        self.assertEqual(first.id, second.id)
+        self.assertEqual(states[0].book_id, book.id)
+        self.assertEqual(states[0].percentage, 0.55)
+
+    def test_save_state_skips_unresolvable_abs_id_only_input(self):
+        """Legacy abs_id-only saves skip cleanly when no book can be resolved."""
+        saved = self.db_service.save_state(
+            self.State(abs_id="missing-book", client_name="kosync", last_updated=100.0, percentage=0.10)
+        )
+
+        self.assertIsNone(saved)
+        matching = [state for state in self.db_service.get_all_states() if state.abs_id == "missing-book"]
+        self.assertEqual(matching, [])
 
     def test_get_books_by_status(self):
         """Test querying books by status."""
@@ -855,6 +1162,16 @@ class TestLegacyDatabaseMigration(unittest.TestCase):
         conn.commit()
         conn.close()
 
+    def _alembic_config(self, db_path: str):
+        from alembic.config import Config
+
+        alembic_dir = Path(__file__).parent.parent / "alembic"
+        alembic_ini = alembic_dir.parent / "alembic.ini"
+        alembic_cfg = Config(str(alembic_ini))
+        alembic_cfg.set_main_option("script_location", str(alembic_dir))
+        alembic_cfg.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
+        return alembic_cfg
+
     def test_legacy_db_does_not_crash_on_startup(self):
         """
         Scenario: legacy database with 'books' but no 'alembic_version'.
@@ -1075,6 +1392,186 @@ class TestLegacyDatabaseMigration(unittest.TestCase):
             self.assertIsNotNone(state[0], "states.book_id was not populated")
 
             conn.close()
+
+    def test_state_uniqueness_migration_dedupes_before_index(self):
+        """Duplicate states from the previous head are collapsed before adding uniqueness."""
+        import sqlite3
+
+        from alembic import command
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = str(Path(temp_dir) / "state_dedupe.db")
+            alembic_cfg = self._alembic_config(db_path)
+
+            command.upgrade(alembic_cfg, "v2w3x4y5z6a7")
+
+            conn = sqlite3.connect(db_path)
+            cursor = conn.execute("""
+                INSERT INTO books (abs_id, title, status)
+                VALUES ('dedupe-book', 'Dedupe Book', 'active')
+            """)
+            book_id = cursor.lastrowid
+            conn.executescript(f"""
+                INSERT INTO states (abs_id, book_id, client_name, last_updated, percentage)
+                VALUES
+                    ('dedupe-book', {book_id}, 'kosync', 100.0, 0.10),
+                    ('dedupe-book', {book_id}, 'kosync', 300.0, 0.30),
+                    ('dedupe-book', {book_id}, 'kosync', 200.0, 0.20),
+                    ('dedupe-book', {book_id}, 'abs', 50.0, 0.05);
+            """)
+            conn.commit()
+            conn.close()
+
+            command.upgrade(alembic_cfg, "head")
+
+            conn = sqlite3.connect(db_path)
+            rows = conn.execute("""
+                SELECT client_name, percentage
+                FROM states
+                WHERE book_id = ?
+                ORDER BY client_name
+            """, (book_id,)).fetchall()
+            index_names = {row[1] for row in conn.execute("PRAGMA index_list(states)").fetchall()}
+            state_columns = {row[1]: row for row in conn.execute("PRAGMA table_info(states)").fetchall()}
+            self.assertIn("uq_states_book_id_client_name", index_names)
+            self.assertEqual(state_columns["book_id"][3], 0)
+            self.assertEqual(rows, [("abs", 0.05), ("kosync", 0.30)])
+
+            with self.assertRaises(sqlite3.IntegrityError):
+                conn.execute("""
+                    INSERT INTO states (abs_id, book_id, client_name, percentage)
+                    VALUES ('dedupe-book', ?, 'kosync', 0.99)
+                """, (book_id,))
+                conn.commit()
+            conn.close()
+
+    def test_state_uniqueness_migration_treats_null_last_updated_as_oldest(self):
+        """A duplicate with NULL last_updated loses to any row with a real timestamp.
+
+        The dedupe SQL coalesces last_updated to -1, so a NULL-timestamped row
+        must be discarded in favour of a sibling that has an actual timestamp,
+        regardless of insertion order.
+        """
+        import sqlite3
+
+        from alembic import command
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = str(Path(temp_dir) / "state_null_ts.db")
+            alembic_cfg = self._alembic_config(db_path)
+
+            command.upgrade(alembic_cfg, "v2w3x4y5z6a7")
+
+            conn = sqlite3.connect(db_path)
+            cursor = conn.execute("""
+                INSERT INTO books (abs_id, title, status)
+                VALUES ('null-ts-book', 'Null Timestamp Book', 'active')
+            """)
+            book_id = cursor.lastrowid
+            # The NULL-timestamp row is inserted LAST (higher id) to prove the
+            # tiebreak is driven by last_updated, not by insertion order.
+            conn.executescript(f"""
+                INSERT INTO states (abs_id, book_id, client_name, last_updated, percentage)
+                VALUES
+                    ('null-ts-book', {book_id}, 'kosync', 100.0, 0.60),
+                    ('null-ts-book', {book_id}, 'kosync', NULL, 0.99);
+            """)
+            conn.commit()
+            conn.close()
+
+            command.upgrade(alembic_cfg, "head")
+
+            conn = sqlite3.connect(db_path)
+            rows = conn.execute("""
+                SELECT last_updated, percentage
+                FROM states
+                WHERE book_id = ? AND client_name = 'kosync'
+            """, (book_id,)).fetchall()
+            conn.close()
+
+            self.assertEqual(len(rows), 1, "Duplicate kosync rows were not collapsed")
+            self.assertEqual(rows[0], (100.0, 0.60),
+                             "NULL last_updated row should have lost to the timestamped row")
+
+    def test_state_uniqueness_migration_downgrade_drops_unique_index(self):
+        """Downgrading the head revision removes the unique index but keeps the rows."""
+        import sqlite3
+
+        from alembic import command
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            db_path = str(Path(temp_dir) / "state_downgrade.db")
+            alembic_cfg = self._alembic_config(db_path)
+
+            command.upgrade(alembic_cfg, "head")
+
+            conn = sqlite3.connect(db_path)
+            cursor = conn.execute("""
+                INSERT INTO books (abs_id, title, status)
+                VALUES ('downgrade-book', 'Downgrade Book', 'active')
+            """)
+            book_id = cursor.lastrowid
+            conn.execute("""
+                INSERT INTO states (abs_id, book_id, client_name, last_updated, percentage)
+                VALUES ('downgrade-book', ?, 'kosync', 100.0, 0.10)
+            """, (book_id,))
+            conn.commit()
+            indexes_before = {row[1] for row in conn.execute("PRAGMA index_list(states)").fetchall()}
+            conn.close()
+
+            self.assertIn("uq_states_book_id_client_name", indexes_before)
+
+            command.downgrade(alembic_cfg, "v2w3x4y5z6a7")
+
+            conn = sqlite3.connect(db_path)
+            indexes_after = {row[1] for row in conn.execute("PRAGMA index_list(states)").fetchall()}
+            surviving = conn.execute(
+                "SELECT percentage FROM states WHERE book_id = ?", (book_id,)
+            ).fetchone()
+            conn.close()
+
+            self.assertNotIn("uq_states_book_id_client_name", indexes_after,
+                             "Downgrade did not drop the unique index")
+            self.assertIsNotNone(surviving, "Downgrade should not delete state rows")
+            self.assertEqual(surviving[0], 0.10)
+
+    def test_state_rebuild_column_list_matches_state_model(self):
+        """The states table rebuild must copy every State column.
+
+        ``w3x4y5z6a7b8`` rebuilds the states table to relax book_id nullability
+        by copying a hardcoded column list. If a future migration adds a column
+        to the State model without updating that copy, the rebuild would
+        silently drop the new column's data. This guard fails loudly at that
+        point instead.
+        """
+        import importlib.util
+        import inspect as _inspect
+
+        from src.db.models import State
+
+        migration_path = (
+            Path(__file__).parent.parent
+            / "alembic"
+            / "versions"
+            / "w3x4y5z6a7b8_add_unique_state_book_client_index.py"
+        )
+        spec = importlib.util.spec_from_file_location("_w3x4_migration", migration_path)
+        migration = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(migration)
+
+        # Read the actual copy statement out of the migration source so the test
+        # tracks the real INSERT...SELECT, not a duplicated literal.
+        source = _inspect.getsource(migration._relax_states_book_id_nullability)
+        self.assertIn("INSERT INTO _states_nullable_new", source)
+
+        model_columns = {column.name for column in State.__table__.columns}
+        for column_name in model_columns:
+            self.assertIn(
+                column_name,
+                source,
+                f"State.{column_name} is missing from the states rebuild copy in "
+                f"w3x4y5z6a7b8; the migration would silently drop its data.",
+            )
 
     def test_fresh_db_still_initializes_correctly(self):
         """

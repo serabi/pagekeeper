@@ -265,33 +265,6 @@ function copyInputValue(inputId) {
 
 
 /* ─── Tool Actions ─── */
-function clearStaleSuggestions() {
-    PKModal.confirm({
-        title: 'Clear Stale Suggestions',
-        message: 'This will permanently delete all suggestions for books that are not currently matched in your bridge. Books you are already syncing will be preserved.',
-        confirmLabel: 'Clear',
-        confirmClass: 'btn btn-danger',
-        onConfirm: function() {
-            fetch('/api/suggestions/clear_stale', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' }
-            })
-                .then(function(r) { return r.json(); })
-                .then(function(data) {
-                    if (data.success) {
-                        PKModal.alert({ title: 'Success', message: 'Cleared ' + data.count + ' stale suggestions.' });
-                    } else {
-                        PKModal.alert({ title: 'Error', message: 'Failed to clear suggestions: ' + (data.error || 'Unknown error') });
-                    }
-                })
-                .catch(function(err) {
-                    console.error('Error clearing suggestions:', err);
-                    PKModal.alert({ title: 'Error', message: 'An error occurred while clearing suggestions.' });
-                });
-        }
-    });
-}
-
 function syncReadingDates(btn) {
     btn.disabled = true;
     btn.textContent = 'Syncing\u2026';
