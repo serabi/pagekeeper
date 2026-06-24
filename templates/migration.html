@@ -1,14 +1,63 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Migration - PageKeeper</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta charset="UTF-8">
+    <title>Migration - PageKeeper</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/png" href="/static/grimmory-app.png">
+    <link rel="apple-touch-icon" href="/static/grimmory-app.png">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/variables.css">
+    <link rel="stylesheet" href="/static/css/base.css">
+    <link rel="stylesheet" href="/static/css/layout.css">
+    <link rel="stylesheet" href="/static/css/components.css">
+    <link rel="stylesheet" href="/static/css/suggestions.css">
 </head>
 <body>
-  {% include 'partials/navbar.html' %}
-  <div class="container">
-    <h2>Audiobookshelf &rarr; Grimmory</h2>
-  </div>
+    {% include 'partials/navbar.html' %}
+    <div class="container suggestions-shell">
+        <div class="sg-page-header">
+            <div class="sg-header-copy">
+                <p class="sg-page-kicker">Library Migration</p>
+                <h2 class="sg-page-title">Audiobookshelf &rarr; Grimmory</h2>
+                <p class="sg-page-description">Replay your finished Audiobookshelf books into Grimmory.</p>
+            </div>
+        </div>
+
+        {% if not migration_configured %}
+        <div class="empty-state">
+            <h3>Not configured</h3>
+            <p>Configure Audiobookshelf and Grimmory in <a href="/settings">Settings</a> first.</p>
+        </div>
+        {% else %}
+        <div class="sg-toolbar">
+            <div class="sg-toolbar-main">
+                <input type="text" id="mig-search" class="search-box" placeholder="Filter by title or author...">
+                <label class="checkbox-label"><input type="checkbox" id="mig-sessions" checked> Carry listening sessions</label>
+                <label class="checkbox-label"><input type="checkbox" id="mig-bookmarks" checked> Carry bookmarks</label>
+                <label class="checkbox-label"><input type="checkbox" id="mig-dry-run"> Dry run</label>
+                <button type="button" class="btn btn-secondary" id="mig-preview-btn" onclick="migrationPreview(this)">Preview</button>
+            </div>
+        </div>
+
+        <div class="stats-strip" id="mig-stats" hidden>
+            <div class="stat-pill"><strong id="mig-will">0</strong> to migrate</div>
+            <div class="stat-pill"><strong id="mig-done">0</strong> already migrated</div>
+            <div class="stat-pill"><strong id="mig-unmatched">0</strong> unmatched</div>
+        </div>
+
+        <div id="mig-buckets"></div>
+
+        <div class="candidate-actions" id="mig-action-bar" hidden>
+            <button type="button" class="btn btn-secondary" onclick="migrationSelectAll(true)">Select all</button>
+            <button type="button" class="btn btn-secondary" onclick="migrationSelectAll(false)">Select none</button>
+            <button type="button" class="btn btn-primary" id="mig-migrate-btn" onclick="migrationRun(this)" disabled>Migrate selected (0)</button>
+        </div>
+
+        <div id="mig-results" class="help-text mt-2"></div>
+        {% endif %}
+    </div>
+    <script src="/static/js/confirm-modal.js"></script>
+    <script src="/static/js/migration.js"></script>
 </body>
 </html>
