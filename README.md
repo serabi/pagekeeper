@@ -86,6 +86,44 @@ docker compose up -d
 
 4. Open the dashboard at `http://localhost:4477` and configure your integrations in **Settings**.
 
+### Securing API secrets at rest
+
+PageKeeper encrypts API keys, tokens, and passwords (e.g. `HARDCOVER_TOKEN`,
+`BOOKFUSION_API_KEY`, `KOSYNC_KEY`) before storing them in the SQLite database.
+Encryption uses Fernet with a key derived from a master secret that is **never
+written to the database**.
+
+The master secret is discovered in this order:
+
+1. `PAGEKEEPER_SETTINGS_ENCRYPTION_KEY` — the recommended, dedicated secret.
+2. The persistent Flask secret (`FLASK_SECRET_KEY`, or the auto-generated
+   `/data/.flask_secret_key` file) as a fallback.
+
+To set a dedicated key, generate a strong value and pass it as an environment
+variable:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+```yaml
+environment:
+  - PAGEKEEPER_SETTINGS_ENCRYPTION_KEY=your-generated-secret
+```
+
+Existing plaintext secrets are migrated to encrypted form automatically on the
+next startup — no manual steps are needed, and the migration is idempotent.
+
+**Key loss is unrecoverable.** If you lose the master secret, encrypted secrets
+cannot be decrypted and must be re-entered in **Settings**. Back the key up
+alongside your `data/` directory.
+
+**Key rotation:** to rotate the master secret, move the old value to
+`PAGEKEEPER_SETTINGS_ENCRYPTION_KEY_PREVIOUS` and set the new value in
+`PAGEKEEPER_SETTINGS_ENCRYPTION_KEY`. PageKeeper keeps decrypting with the
+previous key while re-encrypting writes under the new key. Remove the previous
+key once all secrets have been re-saved.
+
 ### Updating
 
 ```bash
