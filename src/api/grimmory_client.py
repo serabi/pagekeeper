@@ -37,10 +37,23 @@ class GrimmoryClient:
             self._load_cache()
 
     def reload_from_env(self):
-        """Re-read configuration from os.environ so settings changes take effect without restart."""
+        """Re-read configuration from os.environ so settings changes take effect without restart.
+
+        Config (base_url/username/password/etc.) is read lazily via properties, but the
+        book cache is only populated in __init__ when the client starts configured. A client
+        constructed while unconfigured therefore never loads its cache, and a later Settings
+        save must re-run the cache load so the singleton becomes usable without a restart.
+        """
         self._token = None
         self._token_timestamp = 0
         self.session.headers.clear()
+
+        if self.is_configured():
+            self._load_cache()
+        else:
+            self._book_cache = {}
+            self._book_id_cache = {}
+            self._cache_timestamp = 0
 
     @property
     def base_url(self) -> str:
