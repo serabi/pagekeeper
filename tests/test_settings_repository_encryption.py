@@ -132,6 +132,27 @@ class TestWrongKeyFailsClosed:
         with pytest.raises(SettingsDecryptionError):
             db_service.get_setting("HARDCOVER_TOKEN")
 
+    def test_get_all_isolates_undecryptable_secret(self, encryption_key, db_service, monkeypatch):
+        # An undecryptable secret must not drop the other settings.
+        db_service.set_setting("HARDCOVER_TOKEN", "dummy-hardcover-token")
+        db_service.set_setting("ABS_KEY", "dummy-abs-key")
+        db_service.set_setting("ABS_SERVER", "https://abs.example")  # non-secret
+
+        # Corrupt only one secret's ciphertext, leaving the rest valid.
+        with db_service.get_session() as session:
+            row = session.query(Setting).filter(Setting.key == "HARDCOVER_TOKEN").one()
+            row.value = row.value + "tampered"
+
+        all_settings = db_service.get_all_settings()
+
+        assert "HARDCOVER_TOKEN" not in all_settings  # failed closed, omitted
+        assert all_settings["ABS_KEY"] == "dummy-abs-key"  # healthy secret still loads
+        assert all_settings["ABS_SERVER"] == "https://abs.example"  # non-secret unaffected
+
+        # Targeted reads still fail closed for the bad key.
+        with pytest.raises(SettingsDecryptionError):
+            db_service.get_setting("HARDCOVER_TOKEN")
+
 
 class TestKeyRotationThroughRepository:
     def test_previous_key_decrypts_after_rotation(self, db_service, monkeypatch):

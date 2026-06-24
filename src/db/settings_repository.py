@@ -8,13 +8,17 @@ encrypted on save and decrypted on read. Non-secret settings are stored
 and returned verbatim.
 """
 
+import logging
+
 from sqlalchemy.dialects.sqlite import insert
 
 from src.utils.secret_settings import is_secret_setting
-from src.utils.settings_crypto import get_settings_crypto
+from src.utils.settings_crypto import SettingsCryptoError, get_settings_crypto
 
 from .base_repository import BaseRepository
 from .models import Setting
+
+logger = logging.getLogger(__name__)
 
 
 class SettingsRepository(BaseRepository):
@@ -66,10 +70,22 @@ class SettingsRepository(BaseRepository):
             return setting
 
     def get_all_settings(self):
-        """Get all settings as a dictionary."""
+        """Get all settings as a dictionary.
+
+        Decryption is isolated per row: a single corrupt secret or wrong
+        encryption key fails closed for that key only (it is logged and
+        omitted) instead of aborting the whole read, so the remaining
+        secret and non-secret settings still load.
+        """
         with self.get_session() as session:
             settings = session.query(Setting).all()
-            return {s.key: self._decrypt_from_storage(s.key, s.value) for s in settings}
+            result = {}
+            for s in settings:
+                try:
+                    result[s.key] = self._decrypt_from_storage(s.key, s.value)
+                except SettingsCryptoError as e:
+                    logger.error("Skipping secret setting '%s': %s", s.key, e)
+            return result
 
     def delete_setting(self, key):
         """Delete a setting by key."""
