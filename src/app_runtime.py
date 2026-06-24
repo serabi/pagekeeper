@@ -221,6 +221,9 @@ def get_settings_master_secret() -> str:
     explicit = get_str("PAGEKEEPER_SETTINGS_ENCRYPTION_KEY", "").strip()
     if explicit:
         return explicit
+    flask_secret = get_str("FLASK_SECRET_KEY", "").strip()
+    if flask_secret:
+        return flask_secret
     return get_or_create_secret_key()
 
 
