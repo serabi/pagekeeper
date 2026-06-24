@@ -18,6 +18,7 @@ from src.api.grimmory_client import GrimmoryClient, GrimmoryClientGroup
 from src.api.hardcover_client import HardcoverClient
 from src.api.storyteller_api import StorytellerAPIClient
 from src.db.database_service import DatabaseService
+from src.services.abs_grimmory_migration_service import AbsGrimmoryMigrationService
 from src.services.abs_service import ABSService
 from src.services.alignment_service import AlignmentService
 from src.services.background_job_service import BackgroundJobService
@@ -25,6 +26,7 @@ from src.services.hardcover_service import HardcoverService
 from src.services.library_service import LibraryService
 from src.services.migration_service import MigrationService
 from src.services.reading_date_service import ReadingDateService
+from src.services.status_machine import StatusMachine
 from src.services.storyteller_submission_service import StorytellerSubmissionService
 from src.services.suggestion_service import SuggestionService
 from src.sync_clients.abs_ebook_sync_client import ABSEbookSyncClient
@@ -162,6 +164,16 @@ class Container(containers.DeclarativeContainer):
     abs_ebook_sync_client = providers.Singleton(ABSEbookSyncClient, abs_client, ebook_parser)
 
     hardcover_service = providers.Singleton(HardcoverService, hardcover_client, database_service, abs_client)
+
+    status_machine = providers.Singleton(StatusMachine, database_service)
+
+    abs_grimmory_migration_service = providers.Singleton(
+        AbsGrimmoryMigrationService,
+        database_service=database_service,
+        abs_client=abs_client,
+        grimmory_client_group=grimmory_client_group,
+        status_machine=status_machine,
+    )
 
     reading_date_service = providers.Singleton(ReadingDateService, database_service, hardcover_client, abs_client)
 

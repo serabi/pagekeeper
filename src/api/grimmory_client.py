@@ -411,6 +411,11 @@ class GrimmoryClient:
             "pdfProgress": detail.get("pdfProgress"),
             "cbxProgress": detail.get("cbxProgress"),
             "koreaderProgress": detail.get("koreaderProgress"),
+            # Identifiers for ABS->Grimmory matching (may be absent on older cache rows)
+            "isbn13": metadata.get("isbn13"),
+            "isbn10": metadata.get("isbn10"),
+            "asin": metadata.get("asin"),
+            "googleId": metadata.get("googleId"),
         }
 
         self._book_cache[filename.lower()] = book_info
@@ -659,18 +664,151 @@ class GrimmoryClient:
             logger.debug(f"Grimmory: Cannot update read status -- book not found: {ebook_filename}")
             return False
 
-        book_id = book["id"]
+        return self.update_read_status_by_id(book["id"], status)
+
+    def update_read_status_by_id(self, book_id, status):
+        """Update the read status for a known numeric Grimmory book id.
+
+        Args:
+            book_id: The numeric Grimmory book id.
+            status: One of 'UNREAD', 'READING', 'RE_READING', 'READ',
+                    'PARTIALLY_READ', 'PAUSED', 'WONT_READ', 'ABANDONED'.
+
+        Grimmory auto-sets dateFinished when status is set to READ.
+        """
         payload = {"bookIds": [book_id], "status": status}
         response = self._make_request("POST", "/api/v1/books/status", payload)
         if response and response.status_code in [200, 201, 204]:
-            logger.info(f"Grimmory: Set read status '{status}' for {sanitize_log_data(ebook_filename)}")
+            logger.info(f"Grimmory: Set read status '{status}' for book {book_id}")
             return True
-        else:
-            resp_status = response.status_code if response else "No response"
-            logger.warning(
-                f"Grimmory: Failed to set read status for {sanitize_log_data(ebook_filename)}: {resp_status}"
-            )
-            return False
+        resp_status = response.status_code if response else "No response"
+        logger.warning(f"Grimmory: Failed to set read status for book {book_id}: {resp_status}")
+        return False
+
+    def set_finished_date(self, book_id, book_type, date_finished):
+        """Set an explicit finish date on a Grimmory book via the progress endpoint.
+
+        Grimmory auto-dates to "now" on status=READ; this carries over the original
+        finish date (e.g. from Audiobookshelf). date_finished may be YYYY-MM-DD or
+        an ISO-8601 instant.
+        """
+        payload = {"bookId": book_id, "dateFinished": date_finished}
+        response = self._make_request("POST", "/api/v1/books/progress", payload)
+        if response and response.status_code in [200, 201, 204]:
+            logger.info(f"Grimmory: Set finish date {date_finished} for book {book_id}")
+            return True
+        resp_status = response.status_code if response else "No response"
+        logger.warning(f"Grimmory: Failed to set finish date for book {book_id}: {resp_status}")
+        return False
+
+    def add_reading_session(
+        self,
+        book_id,
+        book_type,
+        *,
+        start_time,
+        end_time,
+        duration_seconds,
+        start_progress=0.0,
+        end_progress=1.0,
+    ):
+        """Record one reading session. Grimmory always inserts, so call once per
+        source session to replay full history.
+
+        start_time/end_time are ISO-8601 instants. Required by Grimmory:
+        bookId, startTime, endTime, durationSeconds.
+        """
+        payload = {
+            "bookId": book_id,
+            "startTime": start_time,
+            "endTime": end_time,
+            "durationSeconds": int(duration_seconds),
+            "startProgress": start_progress,
+            "endProgress": end_progress,
+        }
+        if book_type:
+            payload["bookType"] = book_type
+        response = self._make_request("POST", "/api/v1/reading-sessions", payload)
+        if response and response.status_code in [200, 201, 202, 204]:
+            return True
+        resp_status = response.status_code if response else "No response"
+        logger.warning(f"Grimmory: Failed to record reading session for book {book_id}: {resp_status}")
+        return False
+
+    def add_bookmark(self, book_id, *, position_ms, track_index=0, title=None):
+        """Create an audiobook bookmark anchored by position (ms) + track index."""
+        payload = {"bookId": book_id, "positionMs": int(position_ms), "trackIndex": int(track_index)}
+        if title:
+            payload["title"] = title
+        response = self._make_request("POST", "/api/v1/bookmarks", payload)
+        if response and response.status_code in [200, 201, 204]:
+            return True
+        resp_status = response.status_code if response else "No response"
+        logger.warning(f"Grimmory: Failed to create bookmark for book {book_id}: {resp_status}")
+        return False
+
+    def match_book_by_identifiers(self, *, isbn=None, asin=None, title=None, author=None):
+        """Find a Grimmory book by identifier cascade: isbn -> asin -> title+author -> title.
+
+        Matches client-side against the local book list (Grimmory has no
+        search-by-identifier endpoint). Returns (book_info, matched_by) or (None, None).
+        """
+        books = self.get_all_books()
+        if not books:
+            return None, None
+
+        def _norm_isbn(v):
+            return re.sub(r"[^0-9Xx]", "", str(v)).upper() if v else ""
+
+        # 1. ISBN (isbn13 or isbn10)
+        if isbn:
+            target = _norm_isbn(isbn)
+            if target:
+                for b in books:
+                    for key in ("isbn13", "isbn10", "isbn"):
+                        if _norm_isbn(b.get(key)) == target:
+                            return b, "isbn"
+
+        # 2. ASIN
+        if asin:
+            target = str(asin).strip().lower()
+            for b in books:
+                if str(b.get("asin") or "").strip().lower() == target:
+                    return b, "asin"
+
+        # 3. Title + author (fuzzy), then 4. title-only fallback
+        if title:
+            threshold = float(os.environ.get("FUZZY_MATCH_THRESHOLD", 0.90))
+            title_norm = self._normalize_string(title)
+            author_norm = self._normalize_string(author) if author else ""
+
+            best = None
+            best_ratio = 0.0
+            title_only_best = None
+            title_only_ratio = 0.0
+            for b in books:
+                b_title_norm = self._normalize_string(b.get("title"))
+                if not b_title_norm:
+                    continue
+                t_ratio = SequenceMatcher(None, title_norm, b_title_norm).ratio()
+                if t_ratio < threshold:
+                    continue
+                if t_ratio > title_only_ratio:
+                    title_only_ratio = t_ratio
+                    title_only_best = b
+                if author_norm:
+                    b_author_norm = self._normalize_string(b.get("authors"))
+                    if author_norm in b_author_norm or b_author_norm in author_norm:
+                        if t_ratio > best_ratio:
+                            best_ratio = t_ratio
+                            best = b
+
+            if best:
+                return best, "title_author"
+            if title_only_best:
+                return title_only_best, "title"
+
+        return None, None
 
     def get_recent_activity(self, min_progress=0.01):
         if not self._book_cache:
@@ -856,3 +994,35 @@ class GrimmoryClientGroup:
             if pct is not None:
                 return pct, cfi
         return None, None
+
+    # ── ABS -> Grimmory migration passthroughs ──
+
+    def match_book_by_identifiers(self, *, isbn=None, asin=None, title=None, author=None):
+        """Match across all instances. Returns (book_info_with_instance_id, matched_by)."""
+        for c in self._active:
+            book, matched_by = c.match_book_by_identifiers(isbn=isbn, asin=asin, title=title, author=author)
+            if book:
+                return {**book, "_instance_id": c.instance_id}, matched_by
+        return None, None
+
+    def _client_for_instance(self, instance_id):
+        for c in self._active:
+            if c.instance_id == instance_id:
+                return c
+        return self._active[0] if self._active else None
+
+    def update_read_status_by_id(self, book_id, status, instance_id="default"):
+        c = self._client_for_instance(instance_id)
+        return c.update_read_status_by_id(book_id, status) if c else False
+
+    def set_finished_date(self, book_id, book_type, date_finished, instance_id="default"):
+        c = self._client_for_instance(instance_id)
+        return c.set_finished_date(book_id, book_type, date_finished) if c else False
+
+    def add_reading_session(self, book_id, book_type, *, instance_id="default", **kwargs):
+        c = self._client_for_instance(instance_id)
+        return c.add_reading_session(book_id, book_type, **kwargs) if c else False
+
+    def add_bookmark(self, book_id, *, instance_id="default", **kwargs):
+        c = self._client_for_instance(instance_id)
+        return c.add_bookmark(book_id, **kwargs) if c else False

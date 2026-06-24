@@ -464,6 +464,111 @@ class ABSClient:
             logger.error(f"Error fetching all ABS progress: {e}")
             return {}
 
+    def get_finished_books(self):
+        """Return items the user has FINISHED in ABS, enriched with identifiers.
+
+        Reads the mediaProgress source of truth (get_all_progress_raw), keeps
+        isFinished items, and fetches item details (threaded) for matching
+        metadata. Returns dicts with: id, title, author, isbn, asin,
+        finished_at_ms, started_at_ms, duration, currentTime, progress.
+        """
+        if not self.is_configured():
+            return []
+
+        progress_map = self.get_all_progress_raw()
+        finished = [(item_id, prog) for item_id, prog in progress_map.items() if prog.get("isFinished")]
+        if not finished:
+            return []
+
+        def _build(entry):
+            item_id, prog = entry
+            details = self.get_item_details(item_id)
+            meta = (details or {}).get("media", {}).get("metadata", {}) if details else {}
+            return {
+                "id": item_id,
+                "title": meta.get("title") or prog.get("metadata", {}).get("title") or "Unknown",
+                "author": meta.get("authorName") or prog.get("metadata", {}).get("authorName"),
+                "isbn": meta.get("isbn"),
+                "asin": meta.get("asin"),
+                "finished_at_ms": prog.get("finishedAt"),
+                "started_at_ms": prog.get("startedAt"),
+                "duration": prog.get("duration"),
+                "currentTime": prog.get("currentTime"),
+                "progress": prog.get("progress"),
+            }
+
+        with ThreadPoolExecutor(max_workers=min(len(finished) or 1, 8)) as pool:
+            return list(pool.map(_build, finished))
+
+    def get_listening_sessions(self, item_id=None):
+        """Return the user's listening sessions, optionally filtered to one item.
+
+        Paginates /api/me/listening-sessions until all pages are read. Each
+        session carries libraryItemId, timeListening, startTime, currentTime,
+        duration, startedAt/updatedAt, date, dayOfWeek, playMethod, deviceInfo.
+        """
+        if not self.is_configured():
+            return []
+        self._update_session_headers()
+
+        sessions = []
+        page = 0
+        per_page = 100
+        while True:
+            url = f"{self.base_url}/api/me/listening-sessions"
+            params = {"itemsPerPage": per_page, "page": page}
+            try:
+                r = self.session.get(url, params=params, timeout=self.timeout)
+            except Exception as e:
+                logger.error(f"Error fetching ABS listening sessions: {e}")
+                break
+            if r.status_code != 200:
+                if page == 0:
+                    logger.warning(f"Failed to fetch ABS listening sessions: {r.status_code}")
+                break
+            data = r.json()
+            batch = data.get("sessions", data if isinstance(data, list) else [])
+            if not batch:
+                break
+            sessions.extend(batch)
+            num_pages = data.get("numPages") if isinstance(data, dict) else None
+            if num_pages is not None:
+                if page >= num_pages - 1:
+                    break
+            elif len(batch) < per_page:
+                break
+            page += 1
+
+        if item_id is not None:
+            sessions = [s for s in sessions if s.get("libraryItemId") == item_id]
+        return sessions
+
+    def get_bookmarks(self):
+        """Return the user's audio bookmarks grouped by libraryItemId.
+
+        Bookmarks live on the User row (/api/me), each: {libraryItemId, title,
+        time (seconds), createdAt}. Returns dict[libraryItemId, list[bookmark]].
+        """
+        if not self.is_configured():
+            return {}
+        self._update_session_headers()
+        try:
+            r = self.session.get(f"{self.base_url}/api/me", timeout=self.timeout)
+            if r.status_code != 200:
+                logger.warning(f"Failed to fetch ABS bookmarks: {r.status_code}")
+                return {}
+            bookmarks = r.json().get("bookmarks", []) or []
+        except Exception as e:
+            logger.error(f"Error fetching ABS bookmarks: {e}")
+            return {}
+
+        grouped = {}
+        for bm in bookmarks:
+            lib_item_id = bm.get("libraryItemId")
+            if lib_item_id:
+                grouped.setdefault(lib_item_id, []).append(bm)
+        return grouped
+
     def get_in_progress(self, min_progress=0.01):
         """Fetch in-progress items, optimized to avoid redundant detail fetches if possible."""
         self._update_session_headers()

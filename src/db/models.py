@@ -608,6 +608,66 @@ class DetectedBook(Base):
         )
 
 
+class AbsGrimmoryMigration(Base):
+    """Audit row for the one-time ABS->Grimmory reading-history migration.
+
+    One row per (abs_id, grimmory_book_id, grimmory_instance_id). Existence of a
+    migrated/already_read row makes re-runs idempotent.
+    """
+
+    __tablename__ = "abs_grimmory_migrations"
+    __table_args__ = (
+        UniqueConstraint(
+            "abs_id", "grimmory_book_id", "grimmory_instance_id", name="uq_abs_grimmory_migration"
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    abs_id = Column(String(255), nullable=False, index=True)
+    book_title = Column(String(500), nullable=True)
+    grimmory_book_id = Column(String(64), nullable=True)
+    grimmory_instance_id = Column(String(50), default="default")
+    matched_by = Column(String(50), nullable=True)  # isbn|asin|title_author|title
+    finished_at = Column(String(10), nullable=True)  # YYYY-MM-DD carried from ABS
+    sessions_written = Column(Integer, default=0)
+    bookmarks_written = Column(Integer, default=0)
+    outcome = Column(String(20), index=True)  # migrated|already_read|skipped|failed
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=utc_now, index=True)
+
+    def __init__(
+        self,
+        abs_id: str,
+        book_title: str = None,
+        grimmory_book_id: str = None,
+        grimmory_instance_id: str = "default",
+        matched_by: str = None,
+        finished_at: str = None,
+        sessions_written: int = 0,
+        bookmarks_written: int = 0,
+        outcome: str = None,
+        error_message: str = None,
+        created_at=None,
+    ):
+        self.abs_id = abs_id
+        self.book_title = book_title
+        self.grimmory_book_id = grimmory_book_id
+        self.grimmory_instance_id = grimmory_instance_id
+        self.matched_by = matched_by
+        self.finished_at = finished_at
+        self.sessions_written = sessions_written
+        self.bookmarks_written = bookmarks_written
+        self.outcome = outcome
+        self.error_message = error_message
+        self.created_at = created_at or utc_now()
+
+    def __repr__(self):
+        return (
+            f"<AbsGrimmoryMigration(abs_id='{self.abs_id}', "
+            f"grimmory_book_id='{self.grimmory_book_id}', outcome='{self.outcome}')>"
+        )
+
+
 class Setting(Base):
     """
     Setting model storing application configuration.

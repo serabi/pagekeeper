@@ -286,3 +286,135 @@ def test_fetch_bulk_state():
     assert "book1.epub" in bulk
     assert "book2.pdf" in bulk
     assert bulk["book1.epub"]["id"] == 1
+
+
+# ── ABS -> Grimmory migration write/match methods ──
+
+
+def test_update_read_status_by_id(grimmory_client):
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    grimmory_client._make_request = MagicMock(return_value=mock_resp)
+
+    result = grimmory_client.update_read_status_by_id(77, "READ")
+
+    assert result is True
+    method, endpoint, payload = grimmory_client._make_request.call_args[0]
+    assert method == "POST"
+    assert endpoint == "/api/v1/books/status"
+    assert payload == {"bookIds": [77], "status": "READ"}
+
+
+def test_update_read_status_delegates_to_by_id(grimmory_client):
+    """The filename-based method resolves the id then delegates."""
+    grimmory_client._book_cache = {"test.epub": {"id": 88, "fileName": "test.epub", "bookType": "EPUB"}}
+    grimmory_client._book_id_cache = {88: grimmory_client._book_cache["test.epub"]}
+    grimmory_client._cache_timestamp = 9999999999
+    grimmory_client.update_read_status_by_id = MagicMock(return_value=True)
+
+    result = grimmory_client.update_read_status("test.epub", "READ")
+
+    assert result is True
+    grimmory_client.update_read_status_by_id.assert_called_once_with(88, "READ")
+
+
+def test_set_finished_date(grimmory_client):
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    grimmory_client._make_request = MagicMock(return_value=mock_resp)
+
+    result = grimmory_client.set_finished_date(12, "EPUB", "2024-03-09")
+
+    assert result is True
+    method, endpoint, payload = grimmory_client._make_request.call_args[0]
+    assert method == "POST"
+    assert endpoint == "/api/v1/books/progress"
+    assert payload["bookId"] == 12
+    assert payload["dateFinished"] == "2024-03-09"
+
+
+def test_add_reading_session(grimmory_client):
+    mock_resp = MagicMock()
+    mock_resp.status_code = 202
+    grimmory_client._make_request = MagicMock(return_value=mock_resp)
+
+    result = grimmory_client.add_reading_session(
+        5, "AUDIOBOOK", start_time="2024-01-01T10:00:00Z", end_time="2024-01-01T11:00:00Z", duration_seconds=3600
+    )
+
+    assert result is True
+    method, endpoint, payload = grimmory_client._make_request.call_args[0]
+    assert method == "POST"
+    assert endpoint == "/api/v1/reading-sessions"
+    assert payload["bookId"] == 5
+    assert payload["startTime"] == "2024-01-01T10:00:00Z"
+    assert payload["endTime"] == "2024-01-01T11:00:00Z"
+    assert payload["durationSeconds"] == 3600
+
+
+def test_add_bookmark_audiobook(grimmory_client):
+    mock_resp = MagicMock()
+    mock_resp.status_code = 201
+    grimmory_client._make_request = MagicMock(return_value=mock_resp)
+
+    result = grimmory_client.add_bookmark(9, position_ms=125000, track_index=2, title="Chapter 3")
+
+    assert result is True
+    method, endpoint, payload = grimmory_client._make_request.call_args[0]
+    assert method == "POST"
+    assert endpoint == "/api/v1/bookmarks"
+    assert payload["bookId"] == 9
+    assert payload["positionMs"] == 125000
+    assert payload["trackIndex"] == 2
+    assert payload["title"] == "Chapter 3"
+
+
+def test_match_book_by_identifiers_isbn_wins(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Other", "authors": "Someone", "isbn13": "111"},
+            {"id": 2, "title": "Target", "authors": "Author A", "isbn13": "9780000000001", "asin": "B00ASIN"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(
+        isbn="9780000000001", asin="B00ASIN", title="Target", author="Author A"
+    )
+
+    assert book["id"] == 2
+    assert matched_by == "isbn"
+
+
+def test_match_book_by_identifiers_asin_when_no_isbn(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[{"id": 3, "title": "T", "authors": "A", "asin": "B00XYZ"}]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(isbn=None, asin="B00XYZ", title="T", author="A")
+
+    assert book["id"] == 3
+    assert matched_by == "asin"
+
+
+def test_match_book_by_identifiers_title_author(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[{"id": 4, "title": "The Great Book", "authors": "Jane Doe"}]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(
+        isbn=None, asin=None, title="The Great Book", author="Jane Doe"
+    )
+
+    assert book["id"] == 4
+    assert matched_by in ("title_author", "title")
+
+
+def test_match_book_by_identifiers_no_match(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(return_value=[{"id": 5, "title": "Nope", "authors": "Nobody"}])
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(
+        isbn="999", asin="X", title="Totally Different", author="Other Person"
+    )
+
+    assert book is None
+    assert matched_by is None

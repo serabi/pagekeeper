@@ -102,6 +102,8 @@ class MockContainer:
         self.mock_reading_date_service = Mock()
         self.mock_reading_date_service.pull_reading_dates.return_value = {}
         self.mock_reading_date_service.push_dates_to_hardcover.return_value = (True, "Dates synced")
+        self.mock_abs_grimmory_migration_service = Mock()
+        self.mock_abs_grimmory_migration_service.is_configured.return_value = False
 
         # ── Sync Clients ──
         self.mock_hardcover_sync_client = Mock()
@@ -160,6 +162,9 @@ class MockContainer:
 
     def reading_date_service(self):
         return self.mock_reading_date_service
+
+    def abs_grimmory_migration_service(self):
+        return self.mock_abs_grimmory_migration_service
 
     def ebook_parser(self):
         return self.mock_ebook_parser

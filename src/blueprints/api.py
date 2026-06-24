@@ -326,6 +326,41 @@ def sync_reading_dates_api():
     return jsonify({"success": True, **stats})
 
 
+# ---------------- ABS -> Grimmory migration ----------------
+
+
+def _parse_migration_options(data):
+    data = data or {}
+    return {
+        "carry_listening_sessions": bool(data.get("carry_listening_sessions", True)),
+        "carry_bookmarks": bool(data.get("carry_bookmarks", True)),
+        "include_near_complete": bool(data.get("include_near_complete", False)),
+    }
+
+
+@api_bp.route("/api/abs-grimmory-migration/preview", methods=["POST"])
+def abs_grimmory_migration_preview():
+    """Read-only preview of what an ABS->Grimmory migration would do."""
+    svc = get_container().abs_grimmory_migration_service()
+    if not svc.is_configured():
+        return json_error("Audiobookshelf and Grimmory must both be configured", 400)
+    options = _parse_migration_options(request.get_json(silent=True))
+    return jsonify({"success": True, **svc.preview(options)})
+
+
+@api_bp.route("/api/abs-grimmory-migration/run", methods=["POST"])
+def abs_grimmory_migration_run():
+    """Execute (or dry-run) the ABS->Grimmory migration."""
+    svc = get_container().abs_grimmory_migration_service()
+    if not svc.is_configured():
+        return json_error("Audiobookshelf and Grimmory must both be configured", 400)
+    data = request.get_json(silent=True) or {}
+    options = _parse_migration_options(data)
+    result = svc.migrate(options, dry_run=bool(data.get("dry_run")))
+    logger.info(f"ABS->Grimmory migration run (dry_run={bool(data.get('dry_run'))}): {result.get('outcome_counts')}")
+    return jsonify({"success": True, **result})
+
+
 # ---------------- Storyteller ----------------
 
 
