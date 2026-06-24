@@ -200,6 +200,43 @@ class TestMasterSecretDiscovery:
         monkeypatch.delenv("PAGEKEEPER_SETTINGS_ENCRYPTION_KEY_PREVIOUS", raising=False)
         assert get_settings_previous_secret() == ""
 
+    def test_raises_when_no_key_and_data_dir_unwritable(self, monkeypatch, tmp_path):
+        """An unwritable data dir with no key env vars must fail closed.
+
+        Returning an ephemeral key here would let the startup migration
+        encrypt secrets with a key that vanishes on the next restart,
+        permanently stranding them.
+        """
+        from src.app_runtime import EphemeralSecretKeyError, get_settings_master_secret
+
+        monkeypatch.delenv("PAGEKEEPER_SETTINGS_ENCRYPTION_KEY", raising=False)
+        monkeypatch.delenv("FLASK_SECRET_KEY", raising=False)
+
+        unwritable = tmp_path / "readonly"
+        unwritable.mkdir()
+        unwritable.chmod(0o500)
+        monkeypatch.setenv("DATA_DIR", str(unwritable / "data"))
+
+        try:
+            with pytest.raises(EphemeralSecretKeyError):
+                get_settings_master_secret()
+        finally:
+            unwritable.chmod(0o700)
+
+    def test_flask_session_secret_still_falls_back_to_ephemeral(self, monkeypatch, tmp_path):
+        """The Flask session secret keeps the lenient ephemeral fallback."""
+        from src.app_runtime import get_or_create_secret_key
+
+        unwritable = tmp_path / "readonly"
+        unwritable.mkdir()
+        unwritable.chmod(0o500)
+        monkeypatch.setenv("DATA_DIR", str(unwritable / "data"))
+
+        try:
+            assert get_or_create_secret_key()  # no raise: ephemeral is acceptable here
+        finally:
+            unwritable.chmod(0o700)
+
 
 class TestEnvSyncAfterEncryption:
     """The settings save/load cycle must expose decrypted secrets to env."""

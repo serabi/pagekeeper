@@ -187,8 +187,23 @@ def start_sync_daemon_thread(sync_manager, sync_period_mins):
     return thread
 
 
-def get_or_create_secret_key() -> str:
-    """Return a persistent random secret key, falling back to ephemeral."""
+class EphemeralSecretKeyError(RuntimeError):
+    """Raised when a persistent secret key is required but cannot be persisted."""
+
+
+def get_or_create_secret_key(persist_only: bool = False) -> str:
+    """Return a persistent random secret key.
+
+    On read/write failure (missing or read-only ``DATA_DIR``) the default
+    behaviour falls back to a fresh ephemeral key — acceptable for the
+    Flask session secret, which only invalidates sessions on restart.
+
+    When *persist_only* is True the function raises
+    :class:`EphemeralSecretKeyError` instead of returning a non-persistent
+    key. Callers that use this value to encrypt data at rest must set this,
+    so they never derive an encryption key that vanishes on restart and
+    strands previously encrypted data.
+    """
     data_dir = Path(get_str("DATA_DIR", "/data"))
     key_file = data_dir / ".flask_secret_key"
     try:
@@ -201,7 +216,11 @@ def get_or_create_secret_key() -> str:
         key_file.write_text(key)
         key_file.chmod(0o600)
         return key
-    except Exception:
+    except Exception as exc:
+        if persist_only:
+            raise EphemeralSecretKeyError(
+                f"Could not persist a secret key under {data_dir} ({exc})."
+            ) from exc
         logger.warning("Could not persist Flask secret key — using ephemeral key")
         return secrets.token_hex(32)
 
@@ -217,6 +236,13 @@ def get_settings_master_secret() -> str:
        ``/data/.flask_secret_key`` file via :func:`get_or_create_secret_key`).
 
     The master secret is never written to the database.
+
+    Unlike the Flask session secret, this value encrypts data at rest, so
+    an ephemeral key is never acceptable: encrypting with a key that is
+    regenerated on the next restart would permanently strand stored
+    secrets. When falling back to :func:`get_or_create_secret_key` the
+    key must be persistable; if it cannot be, this raises
+    :class:`EphemeralSecretKeyError`.
     """
     explicit = get_str("PAGEKEEPER_SETTINGS_ENCRYPTION_KEY", "").strip()
     if explicit:
@@ -224,7 +250,17 @@ def get_settings_master_secret() -> str:
     flask_secret = get_str("FLASK_SECRET_KEY", "").strip()
     if flask_secret:
         return flask_secret
-    return get_or_create_secret_key()
+    try:
+        return get_or_create_secret_key(persist_only=True)
+    except EphemeralSecretKeyError as exc:
+        raise EphemeralSecretKeyError(
+            "Cannot derive a stable settings-encryption key: no "
+            "PAGEKEEPER_SETTINGS_ENCRYPTION_KEY or FLASK_SECRET_KEY is set "
+            "and the data directory is not writable. Set "
+            "PAGEKEEPER_SETTINGS_ENCRYPTION_KEY (recommended) or "
+            "FLASK_SECRET_KEY, or make DATA_DIR writable, before storing "
+            "secrets. " + str(exc)
+        ) from exc
 
 
 def get_settings_previous_secret() -> str:
