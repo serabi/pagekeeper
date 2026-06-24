@@ -859,7 +859,7 @@ function dismissDetected(sourceId, source, btn) {
     fetch('/api/detected/' + encodeURIComponent(sourceId) + '/dismiss?source=' + encodeURIComponent(source || 'abs'), { method: 'POST' })
         .then(function(r) {
             if (!r.ok) throw new Error('Failed to dismiss');
-            var card = document.querySelector('.detected-card[data-source-id="' + sourceId + '"]');
+            var card = document.querySelector('.detected-card[data-source-id="' + CSS.escape(sourceId) + '"]');
             if (card) {
                 card.classList.add('removing');
                 setTimeout(function() {

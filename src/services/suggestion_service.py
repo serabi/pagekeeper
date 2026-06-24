@@ -933,7 +933,7 @@ class SuggestionService:
 
     def rescan_library_suggestions(self) -> dict:
         """Rebuild suggestions from cached library metadata without live BookFusion calls."""
-        if os.environ.get("SUGGESTIONS_ENABLED", "false").lower() != "true":
+        if os.environ.get("SUGGESTIONS_ENABLED", "true").lower() != "true":
             return {"created": 0, "updated": 0, "deleted": 0, "total": 0, "bookfusion_catalog": False}
 
         mapped_ids = {b.abs_id for b in self.database_service.get_all_books()}
