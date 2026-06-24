@@ -35,7 +35,8 @@ class TestQueueSuggestion(unittest.TestCase):
     def test_skips_when_disabled(self):
         os.environ["SUGGESTIONS_ENABLED"] = "false"
         self.manager.queue_suggestion("book-123")
-        self.mock_db.suggestion_exists.assert_not_called()
+        self.mock_db.get_all_books.assert_not_called()
+        self.mock_db.save_detected_book.assert_not_called()
 
     def test_skips_mapped_book(self):
         mock_book = Mock()
