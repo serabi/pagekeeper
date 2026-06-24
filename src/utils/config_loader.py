@@ -222,6 +222,23 @@ class ConfigLoader:
             logger.error(f"Error bootstrapping config: {e}")
 
     @staticmethod
+    def migrate_secrets_encryption(db_service: DatabaseService):
+        """Encrypt any plaintext secret settings at rest.
+
+        Runs before ``load_settings`` so env sync always works on
+        decrypted values. Idempotent and non-breaking: already-encrypted
+        and empty secrets are left untouched, so existing installs and
+        fresh installs both converge to encrypted-at-rest storage without
+        manual steps.
+        """
+        try:
+            migrated = db_service.encrypt_plaintext_secrets()
+            if migrated:
+                logger.info("Encrypted %d plaintext secret setting(s) at rest", migrated)
+        except Exception as e:
+            logger.error("Error encrypting plaintext secrets: %s", e)
+
+    @staticmethod
     def load_settings(db_service: DatabaseService):
         """
         Load all settings from database and update os.environ.
