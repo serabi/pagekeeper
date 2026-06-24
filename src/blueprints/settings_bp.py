@@ -9,6 +9,7 @@ from flask import Blueprint, current_app, jsonify, redirect, render_template, re
 from src.blueprints.helpers import get_container, get_database_service
 from src.utils.config_loader import load_settings
 from src.utils.logging_utils import sanitize_log_data
+from src.utils.secret_settings import SECRET_SETTING_KEYS
 from src.version import APP_VERSION, get_update_status
 
 logger = logging.getLogger(__name__)
@@ -41,22 +42,6 @@ URL_SETTING_KEYS = {
     "HARDCOVER_WEB_URL_EXTERNAL",
     "KOSYNC_PUBLIC_URL",
 }
-
-SECRET_SETTING_KEYS = {
-    "ABS_KEY",
-    "STORYTELLER_PASSWORD",
-    "GRIMMORY_PASSWORD",
-    "GRIMMORY_2_PASSWORD",
-    "CWA_PASSWORD",
-    "KOSYNC_KEY",
-    "KOSYNC_SERVER_KEY",
-    "TELEGRAM_BOT_TOKEN",
-    "HARDCOVER_TOKEN",
-    "DEEPGRAM_API_KEY",
-    "BOOKFUSION_API_KEY",
-    "BOOKFUSION_UPLOAD_API_KEY",
-}
-
 
 def _is_secret_request_authorized() -> bool:
     """Authorize secret reveal requests via admin session or service token."""
