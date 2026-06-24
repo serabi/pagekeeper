@@ -29,6 +29,10 @@ class CacheCleanupService:
                     if isinstance(match, dict) and match.get("filename"):
                         valid_filenames.add(match["filename"])
 
+            detected_filenames = self.database_service.get_all_ebook_filenames()
+            if isinstance(detected_filenames, (list, set, tuple)):
+                valid_filenames.update(detected_filenames)
+
             deleted_count = 0
             reclaimed_bytes = 0
             for file_path in self.epub_cache_dir.iterdir():
