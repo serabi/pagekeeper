@@ -10,6 +10,7 @@ import pytest
 from src.db.database_service import DatabaseService
 from src.db.models import Setting
 from src.utils.settings_crypto import (
+    ENVELOPE_PREFIX,
     SettingsCrypto,
     SettingsDecryptionError,
     reset_settings_crypto,
@@ -69,14 +70,12 @@ class TestEncryptOnSaveDecryptOnRead:
 
     def test_resave_does_not_double_encrypt(self, encryption_key, db_service):
         db_service.set_setting("KOSYNC_KEY", "dummy-kosync-key")
-        first = _raw_value(db_service, "KOSYNC_KEY")
         # Round-trip the decrypted value back through set_setting.
         db_service.set_setting("KOSYNC_KEY", db_service.get_setting("KOSYNC_KEY"))
         second = _raw_value(db_service, "KOSYNC_KEY")
-        assert SettingsCrypto.is_encrypted(second)
+        # A single envelope prefix (not nested) and the value still decrypts.
+        assert second.count(ENVELOPE_PREFIX) == 1
         assert db_service.get_setting("KOSYNC_KEY") == "dummy-kosync-key"
-        # Both ciphertexts decrypt to the same plaintext.
-        assert first != second or first == second  # ciphertext may differ; value matches
 
 
 class TestMigration:
