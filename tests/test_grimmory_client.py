@@ -418,3 +418,85 @@ def test_match_book_by_identifiers_no_match(grimmory_client):
 
     assert book is None
     assert matched_by is None
+
+
+def _make_db_book(book_id, filename, title, authors):
+    book = MagicMock()
+    book.filename = filename
+    book.title = title
+    book.authors = authors
+    book.raw_metadata_dict = {"id": book_id, "fileName": filename, "title": title, "authors": authors}
+    return book
+
+
+def test_reload_from_env_loads_cache_when_started_unconfigured(mock_db):
+    """A client constructed while unconfigured becomes configured and loads its
+    cache after a Settings save calls reload_from_env (issues #62/#76)."""
+    mock_db.get_all_grimmory_books.return_value = [_make_db_book("123", "late_book.epub", "Late Book", "Author")]
+
+    # Start unconfigured: __init__ must not load the cache.
+    with patch.dict(os.environ, {"DATA_DIR": "/tmp/nonexistent-grimmory-data"}, clear=True):
+        client = GrimmoryClient(database_service=mock_db)
+        assert client._book_cache == {}
+
+        # Settings save populates env + DB, then reloads the singleton.
+        os.environ.update(
+            {"GRIMMORY_SERVER": "http://mock", "GRIMMORY_USER": "u", "GRIMMORY_PASSWORD": "p"}
+        )
+        client.reload_from_env()
+
+        assert client.is_configured()
+        assert "late_book.epub" in client._book_cache
+        assert client._book_id_cache["123"]["title"] == "Late Book"
+
+
+def test_reload_from_env_clears_token_and_headers(mock_db):
+    """reload_from_env invalidates any cached auth token and session headers."""
+    mock_db.get_all_grimmory_books.return_value = []
+
+    with patch.dict(
+        os.environ,
+        {
+            "GRIMMORY_SERVER": "http://mock",
+            "GRIMMORY_USER": "u",
+            "GRIMMORY_PASSWORD": "p",
+            "DATA_DIR": "/tmp/nonexistent-grimmory-data",
+        },
+        clear=True,
+    ):
+        client = GrimmoryClient(database_service=mock_db)
+        client._token = "stale-token"
+        client._token_timestamp = 12345
+        client.session.headers["Authorization"] = "Bearer stale-token"
+
+        client.reload_from_env()
+
+        assert client._token is None
+        assert client._token_timestamp == 0
+        assert "Authorization" not in client.session.headers
+
+
+def test_reload_from_env_clears_cache_when_unconfigured(mock_db):
+    """A client that loses its configuration drops its cache on reload."""
+    mock_db.get_all_grimmory_books.return_value = [_make_db_book("123", "book.epub", "Book", "Author")]
+
+    with patch.dict(
+        os.environ,
+        {
+            "GRIMMORY_SERVER": "http://mock",
+            "GRIMMORY_USER": "u",
+            "GRIMMORY_PASSWORD": "p",
+            "DATA_DIR": "/tmp/nonexistent-grimmory-data",
+        },
+        clear=True,
+    ):
+        client = GrimmoryClient(database_service=mock_db)
+        assert "book.epub" in client._book_cache
+
+        # Configuration removed via Settings save.
+        del os.environ["GRIMMORY_SERVER"]
+        client.reload_from_env()
+
+        assert not client.is_configured()
+        assert client._book_cache == {}
+        assert client._book_id_cache == {}

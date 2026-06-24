@@ -76,6 +76,9 @@ class SuggestionService:
         "bookfusion": -0.03,
     }
 
+    def _suggestions_disabled(self) -> bool:
+        return os.environ.get("SUGGESTIONS_ENABLED", "true").lower() != "true"
+
     def _normalize_title(self, title: str | None) -> str:
         if not title:
             return ""
@@ -424,6 +427,9 @@ class SuggestionService:
 
     def queue_suggestion(self, abs_id: str) -> None:
         """Queue detected-book discovery for an unmapped ABS item."""
+        if self._suggestions_disabled():
+            return
+
         # Already mapped?
         all_books = self.database_service.get_all_books()
         mapped_ids = {b.abs_id for b in all_books}
@@ -438,6 +444,9 @@ class SuggestionService:
 
     def queue_kosync_suggestion(self, doc_hash: str, filename: str | None = None, device: str | None = None) -> None:
         """Create or refresh a detected entry for a KoSync document."""
+        if self._suggestions_disabled():
+            return
+
         title = ""
         if filename:
             title = Path(filename).stem
@@ -508,7 +517,7 @@ class SuggestionService:
 
     def check_for_suggestions(self, abs_progress_map, active_books):
         """Check for unmapped books with progress and create detected entries."""
-        if os.environ.get("SUGGESTIONS_ENABLED", "true").lower() != "true":
+        if self._suggestions_disabled():
             return
 
         try:
@@ -933,7 +942,7 @@ class SuggestionService:
 
     def rescan_library_suggestions(self) -> dict:
         """Rebuild suggestions from cached library metadata without live BookFusion calls."""
-        if os.environ.get("SUGGESTIONS_ENABLED", "true").lower() != "true":
+        if self._suggestions_disabled():
             return {"created": 0, "updated": 0, "deleted": 0, "total": 0, "bookfusion_catalog": False}
 
         mapped_ids = {b.abs_id for b in self.database_service.get_all_books()}
