@@ -114,6 +114,11 @@ class AbsGrimmoryMigrationService:
             )
             if existing and existing.outcome in ("migrated", "already_read"):
                 entry["bucket"] = "already_migrated"
+                entry["migrated_outcome"] = existing.outcome
+                created = getattr(existing, "created_at", None)
+                entry["migrated_at"] = created.strftime("%Y-%m-%dT%H:%M:%SZ") if created else None
+                entry["migrated_sessions"] = getattr(existing, "sessions_written", 0) or 0
+                entry["migrated_bookmarks"] = getattr(existing, "bookmarks_written", 0) or 0
                 counts["already_migrated"] += 1
             else:
                 entry["bucket"] = "will_migrate"

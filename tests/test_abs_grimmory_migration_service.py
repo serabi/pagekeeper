@@ -232,3 +232,30 @@ def test_selected_abs_ids_none_migrates_all():
 
     outcomes = [r["outcome"] for r in result["results"]]
     assert "skipped_deselected" not in outcomes
+
+
+def test_already_migrated_carries_audit_history():
+    from datetime import datetime, UTC
+
+    existing = MagicMock()
+    existing.outcome = "migrated"
+    existing.created_at = datetime(2026, 6, 20, 14, 30, 0, tzinfo=UTC)
+    existing.matched_by = "isbn"
+    existing.sessions_written = 3
+    existing.bookmarks_written = 1
+
+    finished = [{"id": "abs-1", "title": "Done", "author": "A", "finished_at_ms": 1700000000000}]
+    svc, db, _abs, grimmory = _service(
+        finished=finished,
+        grimmory_match=({"id": 1, "title": "Done", "bookType": "EPUB"}, "isbn"),
+        existing_migration=existing,
+    )
+
+    data = svc.preview()
+
+    book = next(b for b in data["books"] if b["abs_id"] == "abs-1")
+    assert book["bucket"] == "already_migrated"
+    assert book["migrated_outcome"] == "migrated"
+    assert book["migrated_at"].startswith("2026-06-20")
+    assert book["migrated_sessions"] == 3
+    assert book["migrated_bookmarks"] == 1
