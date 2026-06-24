@@ -57,3 +57,28 @@ def test_run_executes_when_not_dry_run(client, mock_container):
     assert resp.get_json()["outcome_counts"]["migrated"] == 3
     _, kwargs = svc.migrate.call_args
     assert kwargs["dry_run"] is False
+
+
+def test_run_passes_selected_abs_ids(client, mock_container):
+    svc = mock_container.mock_abs_grimmory_migration_service
+    svc.is_configured.return_value = True
+    svc.migrate.return_value = {"success": True, "outcome_counts": {}, "results": []}
+
+    resp = client.post(
+        "/api/abs-grimmory-migration/run",
+        json={"dry_run": False, "selected_abs_ids": ["abs-1", "abs-2"]},
+    )
+
+    assert resp.status_code == 200
+    assert svc.migrate.call_args.kwargs["selected_abs_ids"] == ["abs-1", "abs-2"]
+
+
+def test_run_omits_selected_abs_ids_when_absent(client, mock_container):
+    svc = mock_container.mock_abs_grimmory_migration_service
+    svc.is_configured.return_value = True
+    svc.migrate.return_value = {"success": True, "outcome_counts": {}, "results": []}
+
+    resp = client.post("/api/abs-grimmory-migration/run", json={"dry_run": True})
+
+    assert resp.status_code == 200
+    assert svc.migrate.call_args.kwargs["selected_abs_ids"] is None
