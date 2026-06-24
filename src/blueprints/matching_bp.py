@@ -158,6 +158,13 @@ def suggestions():
     )
 
 
+@matching_bp.route("/migration")
+def migration():
+    """Dedicated page for the ABS -> Grimmory reading-history migration."""
+    svc = get_container().abs_grimmory_migration_service()
+    return render_template("migration.html", migration_configured=svc.is_configured())
+
+
 @matching_bp.route("/match", methods=["GET", "POST"])
 def match():
     container = get_container()

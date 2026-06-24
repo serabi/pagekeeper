@@ -82,3 +82,10 @@ def test_run_omits_selected_abs_ids_when_absent(client, mock_container):
 
     assert resp.status_code == 200
     assert svc.migrate.call_args.kwargs["selected_abs_ids"] is None
+
+
+def test_migration_page_renders(client, mock_container):
+    mock_container.mock_abs_grimmory_migration_service.is_configured.return_value = True
+    resp = client.get("/migration")
+    assert resp.status_code == 200
+    assert b"Audiobookshelf" in resp.data
