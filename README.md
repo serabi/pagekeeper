@@ -2,7 +2,7 @@
 
 <div align="center">
 
-<img src="static/icon.png" alt="PageKeeper" width="128">
+<img src="static/grimmory-app.png" alt="PageKeeper" width="128">
 
 **Track your reading history across every app and every book format!**
 
