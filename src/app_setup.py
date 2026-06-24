@@ -51,6 +51,7 @@ def setup_dependencies(app, test_container=None, logging_reconfigure=None):
 
     if database_service:
         ConfigLoader.bootstrap_config(database_service)
+        ConfigLoader.migrate_secrets_encryption(database_service)
         ConfigLoader.load_settings(database_service)
         logger.info("Settings loaded into environment variables")
         _migrate_abs_library_ids(database_service)
