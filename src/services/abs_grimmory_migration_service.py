@@ -66,6 +66,7 @@ class AbsGrimmoryMigrationService:
         'bucket' and (when matched) the resolved Grimmory book + matched_by."""
         include_near_complete = bool(options.get("include_near_complete"))
         mark_ebook_as_read = bool(options.get("mark_ebook_as_read"))
+        manual_matches = _normalized_manual_matches(options.get("manual_matches"))
         finished = self.abs_client.get_finished_books()
 
         entries = []
@@ -88,13 +89,24 @@ class AbsGrimmoryMigrationService:
                 "asin": book.get("asin"),
             }
 
-            gr_book, matched_by = self.grimmory.match_book_by_identifiers(
-                isbn=book.get("isbn"),
-                asin=book.get("asin"),
-                title=book.get("title"),
-                author=book.get("author"),
-                prefer_book_type="AUDIOBOOK",
-            )
+            manual_match = manual_matches.get(str(book["id"]))
+            if manual_match:
+                gr_book = self._resolve_manual_match(manual_match)
+                matched_by = "manual"
+                if not gr_book:
+                    entry["bucket"] = "unmatched"
+                    entry["manual_match_error"] = "Selected Grimmory match is no longer available"
+                    counts["unmatched"] += 1
+                    entries.append(entry)
+                    continue
+            else:
+                gr_book, matched_by = self.grimmory.match_book_by_identifiers(
+                    isbn=book.get("isbn"),
+                    asin=book.get("asin"),
+                    title=book.get("title"),
+                    author=book.get("author"),
+                    prefer_book_type="AUDIOBOOK",
+                )
 
             if not gr_book:
                 entry["bucket"] = "unmatched"
@@ -108,9 +120,12 @@ class AbsGrimmoryMigrationService:
             entry.update(
                 {
                     "matched_by": matched_by,
+                    "manual_match": bool(manual_match),
                     "grimmory_book_id": gr_book_id,
                     "grimmory_instance_id": instance_id,
                     "grimmory_title": gr_book.get("title"),
+                    "grimmory_authors": gr_book.get("authors"),
+                    "grimmory_file_name": gr_book.get("fileName"),
                     "grimmory_book_type": gr_book_type,
                     "grimmory_book": gr_book,
                 }
@@ -120,7 +135,10 @@ class AbsGrimmoryMigrationService:
             # the ebook; listening sessions / audiobook bookmarks would then land
             # on an ebook. Flag it in the preview so the skip is visible up front.
             if gr_book_type != "AUDIOBOOK":
-                entry["replay_note"] = "sessions/bookmarks skipped (matched record is not an audiobook)"
+                matched_type = gr_book_type or "non-audiobook"
+                entry["replay_note"] = (
+                    f"sessions/bookmarks skipped because this Grimmory match is {matched_type}, not an audiobook"
+                )
 
             if mark_ebook_as_read:
                 self._resolve_ebook_counterpart(entry, book)
@@ -153,6 +171,24 @@ class AbsGrimmoryMigrationService:
         _ = include_near_complete
         return entries, counts
 
+    def _resolve_manual_match(self, manual_match):
+        """Resolve a user-selected Grimmory match by id + instance."""
+        book_id = manual_match.get("grimmory_book_id")
+        instance_id = manual_match.get("grimmory_instance_id", "default")
+        if not book_id:
+            return None
+        try:
+            books = self.grimmory.get_all_books()
+        except Exception as e:
+            logger.warning(f"ABS->Grimmory: manual match lookup failed for {book_id}: {e}")
+            return None
+        for book in books or []:
+            same_book = str(book.get("id")) == str(book_id)
+            same_instance = str(book.get("_instance_id", "default")) == str(instance_id)
+            if same_book and same_instance:
+                return book
+        return None
+
     def _resolve_ebook_counterpart(self, entry, abs_book):
         """Find the non-audiobook Grimmory record for the matched audiobook.
 
@@ -163,6 +199,15 @@ class AbsGrimmoryMigrationService:
         records None when no counterpart exists so the result can note it without
         failing the book.
         """
+        if entry.get("grimmory_book_type") != "AUDIOBOOK":
+            entry["grimmory_ebook"] = entry["grimmory_book"]
+            entry["grimmory_ebook_id"] = entry["grimmory_book_id"]
+            entry["grimmory_ebook_instance_id"] = entry["grimmory_instance_id"]
+            entry["grimmory_ebook_title"] = entry.get("grimmory_title")
+            entry["grimmory_ebook_source"] = "matched_record"
+            entry["ebook_note"] = "ebook target is the matched Grimmory record"
+            return
+
         ebook, _ebook_matched_by = self.grimmory.find_format_counterpart(
             matched_book=entry["grimmory_book"],
             isbn=abs_book.get("isbn"),
@@ -172,11 +217,13 @@ class AbsGrimmoryMigrationService:
         )
         if not ebook:
             entry["grimmory_ebook_id"] = None
+            entry["ebook_note"] = "no separate ebook record found"
             return
         entry["grimmory_ebook"] = ebook
         entry["grimmory_ebook_id"] = str(ebook.get("id"))
         entry["grimmory_ebook_instance_id"] = ebook.get("_instance_id", "default")
         entry["grimmory_ebook_title"] = ebook.get("title")
+        entry["grimmory_ebook_source"] = "counterpart"
 
     def preview(self, options=None):
         options = options or {}
@@ -297,17 +344,24 @@ class AbsGrimmoryMigrationService:
         """Mark the matched ebook counterpart READ + finish date.
 
         No sessions or bookmarks (audiobook-only). On a missing counterpart, note
-        it informationally without failing the book; on a write failure, append
-        "ebook read" to errors so the outcome becomes migrated_partial.
+        it informationally without failing the book. On a write failure append a
+        distinct label so the outcome becomes migrated_partial and the recovery
+        path can tell which write to retry: "ebook read" when the status write
+        fails, "ebook finish date" when the date write fails after the status
+        write succeeded.
         """
         ebook_id = entry.get("grimmory_ebook_id")
         if not ebook_id:
-            entry["ebook_note"] = "no ebook record found"
+            entry["ebook_note"] = "no separate ebook record found"
             return
 
         ebook = entry.get("grimmory_ebook") or {}
         ebook_instance = entry.get("grimmory_ebook_instance_id", "default")
         ebook_type = (ebook.get("bookType") or "").upper()
+
+        if str(ebook_id) == str(entry.get("grimmory_book_id")) and ebook_instance == entry.get("grimmory_instance_id"):
+            entry["ebook_note"] = "ebook target was already marked through the matched record"
+            return
 
         if not self.grimmory.update_read_status_by_id(ebook_id, "READ", instance_id=ebook_instance):
             errors.append("ebook read")
@@ -317,7 +371,7 @@ class AbsGrimmoryMigrationService:
         if finished_at and not self.grimmory.set_finished_date(
             ebook_id, ebook_type, finished_at, instance_id=ebook_instance
         ):
-            errors.append("ebook read")
+            errors.append("ebook finish date")
             return
 
         entry["ebook_note"] = "ebook marked read"
@@ -450,6 +504,25 @@ def _grimmory_already_read(gr_book):
         if isinstance(value, str) and value.strip().upper() == "READ":
             return True
     return False
+
+
+def _normalized_manual_matches(raw_matches):
+    """Return sanitized manual ABS -> Grimmory match overrides."""
+    if not isinstance(raw_matches, dict):
+        return {}
+    matches = {}
+    for abs_id, match in raw_matches.items():
+        if not isinstance(match, dict):
+            continue
+        book_id = match.get("grimmory_book_id")
+        if book_id is None:
+            continue
+        instance_id = match.get("grimmory_instance_id") or "default"
+        matches[str(abs_id)] = {
+            "grimmory_book_id": str(book_id),
+            "grimmory_instance_id": str(instance_id),
+        }
+    return matches
 
 
 def _public(entry):

@@ -104,6 +104,48 @@ def test_run_passes_selected_abs_ids(client, mock_container):
     assert svc.migrate.call_args.kwargs["selected_abs_ids"] == ["abs-1", "abs-2"]
 
 
+def test_run_passes_manual_matches(client, mock_container):
+    svc = mock_container.mock_abs_grimmory_migration_service
+    svc.is_configured.return_value = True
+    svc.migrate.return_value = {"success": True, "outcome_counts": {}, "results": []}
+
+    resp = client.post(
+        "/api/abs-grimmory-migration/run",
+        json={
+            "dry_run": True,
+            "manual_matches": {
+                "abs-1": {
+                    "grimmory_book_id": 9,
+                    "grimmory_instance_id": "2",
+                }
+            },
+        },
+    )
+
+    assert resp.status_code == 200
+    options = svc.migrate.call_args.args[0]
+    assert options["manual_matches"] == {
+        "abs-1": {
+            "grimmory_book_id": "9",
+            "grimmory_instance_id": "2",
+        }
+    }
+
+
+def test_run_rejects_invalid_manual_matches(client, mock_container):
+    svc = mock_container.mock_abs_grimmory_migration_service
+    svc.is_configured.return_value = True
+
+    resp = client.post(
+        "/api/abs-grimmory-migration/run",
+        json={"manual_matches": ["bad"]},
+    )
+
+    assert resp.status_code == 400
+    assert b"manual_matches" in resp.data
+    svc.migrate.assert_not_called()
+
+
 def test_run_omits_selected_abs_ids_when_absent(client, mock_container):
     svc = mock_container.mock_abs_grimmory_migration_service
     svc.is_configured.return_value = True

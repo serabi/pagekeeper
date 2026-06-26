@@ -119,6 +119,8 @@ def test_grimmory_search_returns_results(flask_app, mock_container):
     assert len(data) == 1
     assert data[0]["title"] == "Dune"
     assert data[0]["source"] == "Grimmory"
+    assert data[0]["instanceId"] == "default"
+    assert data[0]["bookType"] == ""
 
 
 # ── Storyteller search: client raises ─────────────────────────────

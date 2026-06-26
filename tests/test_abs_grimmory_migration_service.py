@@ -214,7 +214,7 @@ def test_non_audiobook_primary_skips_session_and_bookmark_replay():
     assert outcome["outcome"] == "migrated"
     assert outcome["sessions_written"] == 0
     assert outcome["bookmarks_written"] == 0
-    assert outcome["replay_note"] == "sessions/bookmarks skipped (matched record is not an audiobook)"
+    assert outcome["replay_note"] == "sessions/bookmarks skipped because this Grimmory match is EPUB, not an audiobook"
     grimmory.update_read_status_by_id.assert_called_once_with("5", "READ", instance_id="default")
     grimmory.set_finished_date.assert_called_once()
 
@@ -229,7 +229,7 @@ def test_preview_flags_non_audiobook_primary_replay_note():
 
     book = preview["books"][0]
     assert book["grimmory_book_type"] == "EPUB"
-    assert book["replay_note"] == "sessions/bookmarks skipped (matched record is not an audiobook)"
+    assert book["replay_note"] == "sessions/bookmarks skipped because this Grimmory match is EPUB, not an audiobook"
 
 
 def test_audiobook_primary_has_no_replay_note():
@@ -243,6 +243,22 @@ def test_audiobook_primary_has_no_replay_note():
     book = preview["books"][0]
     assert book["grimmory_book_type"] == "AUDIOBOOK"
     assert "replay_note" not in book
+
+
+def test_mark_ebook_on_non_audiobook_primary_uses_matched_record():
+    svc, db, abs_client, grimmory = _service(
+        finished=[{"id": "a", "title": "X", "isbn": "111", "finished_at_ms": 1700000000000}],
+        grimmory_match=({"id": 5, "title": "X", "bookType": "EPUB"}, "title"),
+    )
+
+    result = svc.migrate(options={"mark_ebook_as_read": True})
+
+    read_ids = [c.args[0] for c in grimmory.update_read_status_by_id.call_args_list]
+    assert read_ids == ["5"]
+    outcome = result["results"][0]
+    assert outcome["grimmory_ebook_id"] == "5"
+    assert outcome["grimmory_ebook_source"] == "matched_record"
+    assert outcome["ebook_note"] == "ebook target was already marked through the matched record"
 
 
 def test_local_book_updated_via_status_machine():
@@ -486,7 +502,7 @@ def test_mark_ebook_on_no_counterpart_notes_and_succeeds():
 
     outcome = result["results"][0]
     assert outcome["outcome"] == "migrated"
-    assert outcome["ebook_note"] == "no ebook record found"
+    assert outcome["ebook_note"] == "no separate ebook record found"
     # Only the audiobook id was marked read.
     read_ids = [c.args[0] for c in grimmory.update_read_status_by_id.call_args_list]
     assert read_ids == ["5"]

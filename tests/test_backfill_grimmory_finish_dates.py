@@ -132,6 +132,24 @@ def test_backfills_ebook_counterpart_when_recorded():
     assert summary["failed"] == 0
 
 
+def test_backfills_ebook_counterpart_for_finish_date_label():
+    # Newer rows distinguish an ebook date failure as "ebook finish date"; it must
+    # still trigger counterpart resolution and a re-applied ebook date.
+    db = MagicMock()
+    db.get_all_abs_grimmory_migrations.return_value = [_row(error_message="ebook finish date")]
+    grimmory = MagicMock()
+    grimmory.set_finished_date.return_value = True
+    resolve_ebook = MagicMock(return_value=("3989", "default"))
+
+    summary = backfill_finish_dates(db, grimmory, dry_run=False, resolve_ebook=resolve_ebook)
+
+    resolve_ebook.assert_called_once()
+    targets = {call.args[0] for call in grimmory.set_finished_date.call_args_list}
+    assert targets == {"5345", "3989"}
+    assert summary["backfilled"] == 1
+    assert summary["failed"] == 0
+
+
 def test_ebook_write_failure_leaves_row_untouched():
     db = MagicMock()
     db.get_all_abs_grimmory_migrations.return_value = [_row(error_message="finish date; ebook read")]
