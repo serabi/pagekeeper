@@ -349,6 +349,7 @@ def _parse_migration_options(data):
         "carry_listening_sessions": _coerce_bool(data.get("carry_listening_sessions"), True),
         "carry_bookmarks": _coerce_bool(data.get("carry_bookmarks"), True),
         "include_near_complete": _coerce_bool(data.get("include_near_complete"), False),
+        "mark_ebook_as_read": _coerce_bool(data.get("mark_ebook_as_read"), False),
     }
 
 

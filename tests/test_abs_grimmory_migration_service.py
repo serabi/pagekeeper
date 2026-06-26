@@ -193,6 +193,58 @@ def test_bookmark_time_to_position_ms():
     assert kwargs["title"] == "Ch1"
 
 
+def test_non_audiobook_primary_skips_session_and_bookmark_replay():
+    # ABS audiobook matched an ebook (no per-book audiobook exists in Grimmory).
+    # Sessions/bookmarks are audiobook-only, so they must not replay onto it; the
+    # book still marks READ + finish date and migrates cleanly.
+    svc, db, abs_client, grimmory = _service(
+        finished=[{"id": "a", "title": "X", "isbn": "111", "finished_at_ms": 1700000000000}],
+        grimmory_match=({"id": 5, "title": "X", "bookType": "EPUB"}, "title"),
+    )
+    abs_client.get_listening_sessions.return_value = [
+        {"libraryItemId": "a", "timeListening": 1800, "startedAt": 1699000000000},
+    ]
+    abs_client.get_bookmarks.return_value = {"a": [{"time": 12.5, "title": "Ch1"}]}
+
+    result = svc.migrate()
+
+    grimmory.add_reading_session.assert_not_called()
+    grimmory.add_bookmark.assert_not_called()
+    outcome = result["results"][0]
+    assert outcome["outcome"] == "migrated"
+    assert outcome["sessions_written"] == 0
+    assert outcome["bookmarks_written"] == 0
+    assert outcome["replay_note"] == "sessions/bookmarks skipped (matched record is not an audiobook)"
+    grimmory.update_read_status_by_id.assert_called_once_with("5", "READ", instance_id="default")
+    grimmory.set_finished_date.assert_called_once()
+
+
+def test_preview_flags_non_audiobook_primary_replay_note():
+    svc, db, abs_client, grimmory = _service(
+        finished=[{"id": "a", "title": "X", "isbn": "111", "finished_at_ms": 1700000000000}],
+        grimmory_match=({"id": 5, "title": "X", "bookType": "EPUB"}, "title"),
+    )
+
+    preview = svc.preview()
+
+    book = preview["books"][0]
+    assert book["grimmory_book_type"] == "EPUB"
+    assert book["replay_note"] == "sessions/bookmarks skipped (matched record is not an audiobook)"
+
+
+def test_audiobook_primary_has_no_replay_note():
+    svc, db, abs_client, grimmory = _service(
+        finished=[{"id": "a", "title": "X", "isbn": "111", "finished_at_ms": 1700000000000}],
+        grimmory_match=({"id": 5, "title": "X", "bookType": "AUDIOBOOK"}, "title"),
+    )
+
+    preview = svc.preview()
+
+    book = preview["books"][0]
+    assert book["grimmory_book_type"] == "AUDIOBOOK"
+    assert "replay_note" not in book
+
+
 def test_local_book_updated_via_status_machine():
     svc, db, abs_client, grimmory = _service(
         finished=[{"id": "a", "title": "X", "isbn": "111", "finished_at_ms": 1700000000000}],
@@ -290,7 +342,7 @@ def test_selected_abs_ids_skips_deselected():
         {"id": "abs-2", "title": "Drop", "author": "B", "finished_at_ms": 1700000000000},
     ]
 
-    def match(isbn=None, asin=None, title=None, author=None):
+    def match(isbn=None, asin=None, title=None, author=None, prefer_book_type=None, exclude_book_id=None):
         if title == "Keep":
             return ({"id": 1, "title": "Keep", "bookType": "EPUB"}, "title")
         return ({"id": 2, "title": "Drop", "bookType": "EPUB"}, "title")
@@ -345,3 +397,139 @@ def test_already_migrated_carries_audit_history():
     assert book["migrated_at"].startswith("2026-06-20")
     assert book["migrated_sessions"] == 3
     assert book["migrated_bookmarks"] == 1
+
+
+def test_service_requests_audiobook_preference():
+    svc, db, abs_client, grimmory = _service(
+        finished=[{"id": "a", "title": "X", "isbn": "111", "finished_at_ms": 1700000000000}],
+        grimmory_match=({"id": 5, "title": "X", "bookType": "AUDIOBOOK"}, "isbn"),
+    )
+
+    svc.preview()
+
+    _, kwargs = grimmory.match_book_by_identifiers.call_args
+    assert kwargs["prefer_book_type"] == "AUDIOBOOK"
+
+
+def _wire_counterpart(grimmory, audiobook, all_books):
+    """Set up a realistic two-step lookup on the mocked Grimmory client.
+
+    ``match_book_by_identifiers`` returns the audiobook match, while
+    ``find_format_counterpart`` delegates to the *real* GrimmoryClient resolver
+    over ``all_books`` (a ``get_all_books``-shaped list). This exercises the
+    actual candidate-collapse / book-type-exclusion behavior instead of fully
+    mocking the matcher, so a real-data regression is caught.
+    """
+    from src.api.grimmory_client import GrimmoryClient
+
+    grimmory.match_book_by_identifiers.return_value = audiobook
+
+    real = GrimmoryClient.__new__(GrimmoryClient)
+    real.get_all_books = MagicMock(return_value=all_books)
+
+    def counterpart(*, matched_book, isbn=None, asin=None, title=None, author=None, exclude_book_type="AUDIOBOOK"):
+        book, matched_by = real.find_format_counterpart(
+            matched_book=matched_book,
+            isbn=isbn,
+            asin=asin,
+            title=title,
+            author=author,
+            exclude_book_type=exclude_book_type,
+        )
+        if book is None:
+            return None, None
+        return {**book, "_instance_id": book.get("_instance_id", "default")}, matched_by
+
+    grimmory.find_format_counterpart.side_effect = counterpart
+
+
+def test_mark_ebook_on_with_counterpart_marks_read_and_date():
+    svc, db, abs_client, grimmory = _service(
+        finished=[{"id": "a", "title": "X", "isbn": "111", "finished_at_ms": 1700000000000}],
+    )
+    # Audiobook title "01 X" differs from the ebook "X", and a collapsed
+    # duplicate filename leaves a second ebook row sharing the title -- the real
+    # cascade that previously broke. Author is null, as in live ABS data.
+    _wire_counterpart(
+        grimmory,
+        ({"id": 5, "title": "01 X", "bookType": "AUDIOBOOK"}, "title"),
+        [
+            {"id": 5, "title": "01 X", "authors": "", "bookType": "AUDIOBOOK"},
+            {"id": 9, "title": "X", "authors": "", "bookType": "EPUB"},
+        ],
+    )
+
+    result = svc.migrate(options={"mark_ebook_as_read": True})
+
+    read_ids = [c.args[0] for c in grimmory.update_read_status_by_id.call_args_list]
+    assert "5" in read_ids and "9" in read_ids
+    date_ids = [c.args[0] for c in grimmory.set_finished_date.call_args_list]
+    assert "9" in date_ids
+    # No sessions or bookmarks target the ebook id.
+    assert all(c.args[0] != "9" for c in grimmory.add_reading_session.call_args_list)
+    assert all(c.args[0] != "9" for c in grimmory.add_bookmark.call_args_list)
+    assert result["results"][0]["outcome"] == "migrated"
+
+
+def test_mark_ebook_on_no_counterpart_notes_and_succeeds():
+    svc, db, abs_client, grimmory = _service(
+        finished=[{"id": "a", "title": "X", "isbn": "111", "finished_at_ms": 1700000000000}],
+    )
+    # Only the audiobook record exists; no non-audiobook counterpart.
+    _wire_counterpart(
+        grimmory,
+        ({"id": 5, "title": "X", "bookType": "AUDIOBOOK"}, "title"),
+        [{"id": 5, "title": "X", "authors": "", "bookType": "AUDIOBOOK"}],
+    )
+
+    result = svc.migrate(options={"mark_ebook_as_read": True})
+
+    outcome = result["results"][0]
+    assert outcome["outcome"] == "migrated"
+    assert outcome["ebook_note"] == "no ebook record found"
+    # Only the audiobook id was marked read.
+    read_ids = [c.args[0] for c in grimmory.update_read_status_by_id.call_args_list]
+    assert read_ids == ["5"]
+
+
+def test_mark_ebook_off_does_no_ebook_lookup():
+    svc, db, abs_client, grimmory = _service(
+        finished=[{"id": "a", "title": "X", "isbn": "111", "finished_at_ms": 1700000000000}],
+        grimmory_match=({"id": 5, "title": "X", "bookType": "AUDIOBOOK"}, "isbn"),
+    )
+
+    svc.migrate()
+
+    # Without the toggle, the matcher is called once per book (audiobook only),
+    # never with exclude_book_id.
+    assert all(
+        c.kwargs.get("exclude_book_id") is None
+        for c in grimmory.match_book_by_identifiers.call_args_list
+    )
+    read_ids = [c.args[0] for c in grimmory.update_read_status_by_id.call_args_list]
+    assert read_ids == ["5"]
+
+
+def test_mark_ebook_on_mark_failure_is_partial():
+    svc, db, abs_client, grimmory = _service(
+        finished=[{"id": "a", "title": "X", "isbn": "111", "finished_at_ms": 1700000000000}],
+    )
+    _wire_counterpart(
+        grimmory,
+        ({"id": 5, "title": "X", "bookType": "AUDIOBOOK"}, "title"),
+        [
+            {"id": 5, "title": "X", "authors": "", "bookType": "AUDIOBOOK"},
+            {"id": 9, "title": "X", "authors": "", "bookType": "EPUB"},
+        ],
+    )
+
+    def read_status(book_id, status, instance_id="default"):
+        return book_id != "9"
+
+    grimmory.update_read_status_by_id.side_effect = read_status
+
+    result = svc.migrate(options={"mark_ebook_as_read": True})
+
+    outcome = result["results"][0]
+    assert outcome["outcome"] == "migrated_partial"
+    assert "ebook read" in (outcome["error"] or "")

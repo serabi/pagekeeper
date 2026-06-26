@@ -482,6 +482,325 @@ def test_group_match_returns_none_when_no_instance_matches():
     assert matched_by is None
 
 
+def test_match_prefer_audiobook_isbn_tie(grimmory_client):
+    # EPUB listed first to prove ordering is overridden by the preference.
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Dual", "authors": "A", "isbn13": "9780000000001", "bookType": "EPUB"},
+            {"id": 2, "title": "Dual", "authors": "A", "isbn13": "9780000000001", "bookType": "AUDIOBOOK"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(
+        isbn="9780000000001", prefer_book_type="AUDIOBOOK"
+    )
+
+    assert book["id"] == 2
+    assert matched_by == "isbn"
+
+
+def test_match_prefer_audiobook_asin_tie(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Dual", "authors": "A", "asin": "B00DUAL", "bookType": "EPUB"},
+            {"id": 2, "title": "Dual", "authors": "A", "asin": "B00DUAL", "bookType": "AUDIOBOOK"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(asin="B00DUAL", prefer_book_type="AUDIOBOOK")
+
+    assert book["id"] == 2
+    assert matched_by == "asin"
+
+
+def test_match_prefer_audiobook_title_author_tie(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Same Title", "authors": "Jane Doe", "bookType": "EPUB"},
+            {"id": 2, "title": "Same Title", "authors": "Jane Doe", "bookType": "AUDIOBOOK"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(
+        title="Same Title", author="Jane Doe", prefer_book_type="AUDIOBOOK"
+    )
+
+    assert book["id"] == 2
+    assert matched_by == "title_author"
+
+
+def test_match_prefer_audiobook_falls_back_when_absent(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[{"id": 1, "title": "Dual", "authors": "A", "isbn13": "9780000000001", "bookType": "EPUB"}]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(
+        isbn="9780000000001", prefer_book_type="AUDIOBOOK"
+    )
+
+    assert book["id"] == 1
+    assert matched_by == "isbn"
+
+
+def test_match_default_keeps_first_hit_without_preference(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Dual", "authors": "A", "isbn13": "9780000000001", "bookType": "EPUB"},
+            {"id": 2, "title": "Dual", "authors": "A", "isbn13": "9780000000001", "bookType": "AUDIOBOOK"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(isbn="9780000000001")
+
+    assert book["id"] == 1
+    assert matched_by == "isbn"
+
+
+def test_match_prefer_audiobook_lower_ratio_title_wins(grimmory_client):
+    # Real dual-format data: the audiobook title carries a track prefix ("02 ")
+    # scoring below the exact-match ebook. With AUDIOBOOK preferred, the
+    # lower-ratio audiobook must still win over the higher-ratio ebook.
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Paladin's Strength", "authors": "", "bookType": "EPUB"},
+            {"id": 2, "title": "02 Paladin's Strength", "authors": "", "bookType": "AUDIOBOOK"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(
+        title="Paladin's Strength", prefer_book_type="AUDIOBOOK"
+    )
+
+    assert book["id"] == 2
+    assert matched_by == "title"
+
+
+def test_match_title_no_preference_keeps_best_ratio(grimmory_client):
+    # Without a preference, the exact-ratio ebook still wins over the prefixed
+    # audiobook -- the near-ratio override only applies when a type is preferred.
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Paladin's Strength", "authors": "", "bookType": "EPUB"},
+            {"id": 2, "title": "02 Paladin's Strength", "authors": "", "bookType": "AUDIOBOOK"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(title="Paladin's Strength")
+
+    assert book["id"] == 1
+    assert matched_by == "title"
+
+
+def test_match_prefer_audiobook_title_falls_back_when_absent(grimmory_client):
+    # No audiobook candidate at all: fall back to the best-ratio ebook.
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Solo Title", "authors": "", "bookType": "EPUB"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(
+        title="Solo Title", prefer_book_type="AUDIOBOOK"
+    )
+
+    assert book["id"] == 1
+    assert matched_by == "title"
+
+
+def test_match_exclude_book_id_skips_audiobook(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Dual", "authors": "A", "isbn13": "9780000000001", "bookType": "AUDIOBOOK"},
+            {"id": 2, "title": "Dual", "authors": "A", "isbn13": "9780000000001", "bookType": "EPUB"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(isbn="9780000000001", exclude_book_id=1)
+
+    assert book["id"] == 2
+    assert matched_by == "isbn"
+
+
+def test_match_exclude_book_id_no_other_record(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Solo", "authors": "A", "isbn13": "9780000000001", "bookType": "AUDIOBOOK"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(isbn="9780000000001", exclude_book_id=1)
+
+    assert book is None
+    assert matched_by is None
+
+
+def test_group_match_prefers_audiobook_across_instances():
+    from src.api.grimmory_client import GrimmoryClientGroup
+
+    # Both instances return an equal-strength isbn match; only one is the audiobook.
+    ebook = _group_member("a", ({"id": 10, "title": "T", "bookType": "EPUB"}, "isbn"))
+    audio = _group_member("b", ({"id": 20, "title": "T", "bookType": "AUDIOBOOK"}, "isbn"))
+    group = GrimmoryClientGroup([ebook, audio])
+
+    book, matched_by = group.match_book_by_identifiers(isbn="123", title="T", prefer_book_type="AUDIOBOOK")
+
+    assert book["id"] == 20
+    assert book["_instance_id"] == "b"
+    assert matched_by == "isbn"
+
+
+def test_find_format_counterpart_title_only(grimmory_client):
+    # ABS finished books arrive author-less; the only working tier is title.
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "01 Nettle & Bone", "authors": "", "bookType": "AUDIOBOOK"},
+            {"id": 2, "title": "Nettle & Bone", "authors": "", "bookType": "EPUB"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.find_format_counterpart(
+        matched_book={"id": 1, "bookType": "AUDIOBOOK"}, title="Nettle & Bone"
+    )
+
+    assert book["id"] == 2
+    assert matched_by == "title"
+
+
+def test_find_format_counterpart_excludes_audiobook(grimmory_client):
+    # A second, lower-ratio audiobook must never be returned as the counterpart,
+    # even when its title is the closest match after the matched audiobook.
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Paladin's Strength", "authors": "", "bookType": "AUDIOBOOK"},
+            {"id": 2, "title": "Paladin's Strength", "authors": "", "bookType": "AUDIOBOOK"},
+            {"id": 3, "title": "Paladin's Strength", "authors": "", "bookType": "EPUB"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.find_format_counterpart(
+        matched_book={"id": 1, "bookType": "AUDIOBOOK"}, title="Paladin's Strength"
+    )
+
+    assert book["id"] == 3
+    assert book["bookType"] == "EPUB"
+
+
+def test_find_format_counterpart_collapsed_filename_other_format_survives(grimmory_client):
+    # When same-filename ebook duplicates collapse in the cache, the surviving
+    # ebook is a genuinely distinct bookType from the audiobook, so excluding the
+    # audiobook id still leaves it to be found.
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 100, "title": "Carl's Doomsday Scenario", "authors": "", "bookType": "AUDIOBOOK"},
+            {"id": 808, "title": "Carl's Doomsday Scenario", "authors": "", "bookType": "EPUB"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.find_format_counterpart(
+        matched_book={"id": 100, "bookType": "AUDIOBOOK"}, title="Carl's Doomsday Scenario"
+    )
+
+    assert book["id"] == 808
+    assert matched_by == "title"
+
+
+def test_find_format_counterpart_isbn_tier(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Dual", "isbn13": "9780000000001", "bookType": "AUDIOBOOK"},
+            {"id": 2, "title": "Dual", "isbn13": "9780000000001", "bookType": "EPUB"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.find_format_counterpart(
+        matched_book={"id": 1, "bookType": "AUDIOBOOK"}, isbn="9780000000001", title="Dual"
+    )
+
+    assert book["id"] == 2
+    assert matched_by == "isbn"
+
+
+def test_find_format_counterpart_title_author_tier(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Dual", "authors": "Jane Doe", "bookType": "AUDIOBOOK"},
+            {"id": 2, "title": "Dual", "authors": "Jane Doe", "bookType": "EPUB"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.find_format_counterpart(
+        matched_book={"id": 1, "bookType": "AUDIOBOOK"}, title="Dual", author="Jane Doe"
+    )
+
+    assert book["id"] == 2
+    assert matched_by == "title_author"
+
+
+def test_find_format_counterpart_no_non_audiobook_record(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Solo", "authors": "", "bookType": "AUDIOBOOK"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.find_format_counterpart(
+        matched_book={"id": 1, "bookType": "AUDIOBOOK"}, title="Solo"
+    )
+
+    assert book is None
+    assert matched_by is None
+
+
+def test_find_format_counterpart_no_matched_book(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[{"id": 2, "title": "Solo", "bookType": "EPUB"}]
+    )
+
+    book, matched_by = grimmory_client.find_format_counterpart(matched_book=None, title="Solo")
+
+    assert book is None
+    assert matched_by is None
+
+
+def _group_counterpart_member(instance_id, counterpart_return):
+    member = MagicMock()
+    member.instance_id = instance_id
+    member.is_configured.return_value = True
+    member.find_format_counterpart.return_value = counterpart_return
+    return member
+
+
+def test_group_find_format_counterpart_keeps_strongest(grimmory_client):
+    from src.api.grimmory_client import GrimmoryClientGroup
+
+    weak = _group_counterpart_member("a", ({"id": 10, "title": "T", "bookType": "EPUB"}, "title"))
+    strong = _group_counterpart_member("b", ({"id": 20, "title": "T", "bookType": "EPUB"}, "isbn"))
+    group = GrimmoryClientGroup([weak, strong])
+
+    book, matched_by = group.find_format_counterpart(
+        matched_book={"id": 1, "bookType": "AUDIOBOOK"}, isbn="123", title="T"
+    )
+
+    assert book["id"] == 20
+    assert book["_instance_id"] == "b"
+    assert matched_by == "isbn"
+
+
+def test_group_find_format_counterpart_none_when_no_instance_matches():
+    from src.api.grimmory_client import GrimmoryClientGroup
+
+    a = _group_counterpart_member("a", (None, None))
+    b = _group_counterpart_member("b", (None, None))
+    group = GrimmoryClientGroup([a, b])
+
+    book, matched_by = group.find_format_counterpart(
+        matched_book={"id": 1, "bookType": "AUDIOBOOK"}, title="Nope"
+    )
+
+    assert book is None
+    assert matched_by is None
+
+
 def _make_db_book(book_id, filename, title, authors):
     book = MagicMock()
     book.filename = filename

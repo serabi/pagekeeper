@@ -760,75 +760,204 @@ class GrimmoryClient:
         logger.warning(f"Grimmory: Failed to create bookmark for book {book_id}: {resp_status}")
         return False
 
-    def match_book_by_identifiers(self, *, isbn=None, asin=None, title=None, author=None):
+    @staticmethod
+    def _norm_isbn(v):
+        return re.sub(r"[^0-9Xx]", "", str(v)).upper() if v else ""
+
+    @staticmethod
+    def _fuzzy_threshold():
+        try:
+            raw_threshold = float(os.environ.get("FUZZY_MATCH_THRESHOLD", 80))
+        except (TypeError, ValueError):
+            raw_threshold = 80.0
+        return raw_threshold / 100 if raw_threshold > 1 else raw_threshold
+
+    def _isbn_matches(self, books, isbn):
+        target = self._norm_isbn(isbn)
+        if not target:
+            return []
+        matches = []
+        for b in books:
+            for key in ("isbn13", "isbn10", "isbn"):
+                if self._norm_isbn(b.get(key)) == target:
+                    matches.append(b)
+                    break
+        return matches
+
+    def _asin_matches(self, books, asin):
+        target = str(asin).strip().lower()
+        return [b for b in books if str(b.get("asin") or "").strip().lower() == target]
+
+    def _title_scored_candidates(self, books, title, author):
+        """Score ``books`` by fuzzy title (and title+author) match.
+
+        Returns ``(title_author_candidates, title_candidates)`` where each is a
+        list of ``(book, ratio)`` for books at-or-above ``FUZZY_MATCH_THRESHOLD``,
+        sorted by ratio descending. ``title_author_candidates`` is the subset whose
+        author also overlaps ``author``.
+        """
+        threshold = self._fuzzy_threshold()
+        title_norm = self._normalize_string(title)
+        author_norm = self._normalize_string(author) if author else ""
+
+        title_scored = []
+        title_author_scored = []
+        for b in books:
+            b_title_norm = self._normalize_string(b.get("title"))
+            if not b_title_norm:
+                continue
+            t_ratio = SequenceMatcher(None, title_norm, b_title_norm).ratio()
+            if t_ratio < threshold:
+                continue
+            title_scored.append((b, t_ratio))
+            if author_norm:
+                raw_authors = b.get("authors")
+                b_author_norm = self._normalize_string(
+                    raw_authors if isinstance(raw_authors, str) else ""
+                )
+                if b_author_norm and (
+                    author_norm in b_author_norm or b_author_norm in author_norm
+                ):
+                    title_author_scored.append((b, t_ratio))
+
+        title_scored.sort(key=lambda x: x[1], reverse=True)
+        title_author_scored.sort(key=lambda x: x[1], reverse=True)
+        return title_author_scored, title_scored
+
+    def match_book_by_identifiers(
+        self, *, isbn=None, asin=None, title=None, author=None, prefer_book_type=None, exclude_book_id=None
+    ):
         """Find a Grimmory book by identifier cascade: isbn -> asin -> title+author -> title.
 
         Matches client-side against the local book list (Grimmory has no
         search-by-identifier endpoint). Returns (book_info, matched_by) or (None, None).
+
+        ``prefer_book_type`` (e.g. "AUDIOBOOK") disambiguates same-identifier
+        multi-format records: within each tier, when several books match equally,
+        the one whose ``bookType`` matches is returned instead of the first hit.
+        ``None`` (the default) preserves neutral first-hit behavior for every
+        other caller.
+
+        ``exclude_book_id`` skips any candidate whose ``id`` equals it in every
+        tier, used to find a title's *other* format record (e.g. the ebook
+        counterpart of an already-matched audiobook).
         """
         books = self.get_all_books()
         if not books:
             return None, None
 
-        def _norm_isbn(v):
-            return re.sub(r"[^0-9Xx]", "", str(v)).upper() if v else ""
+        def _excluded(b):
+            return exclude_book_id is not None and str(b.get("id")) == str(exclude_book_id)
+
+        def _pick(candidates):
+            if prefer_book_type:
+                for b in candidates:
+                    if (b.get("bookType") or "").upper() == prefer_book_type.upper():
+                        return b
+            return candidates[0]
+
+        def _pick_scored(scored):
+            """Select from ratio-scored ``(book, ratio)`` candidates.
+
+            With ``prefer_book_type`` set, a record of that type can win even at a
+            slightly lower ratio than a non-preferred record: real dual-format
+            data gives the preferred format a differently-prefixed title (e.g. the
+            audiobook "02 Paladin's Strength" at 0.94 vs the ebook "Paladin's
+            Strength" at 1.0). Pick the highest-ratio preferred-type record when
+            any exists; otherwise fall back to the top-ratio tie group's first hit.
+            """
+            if prefer_book_type:
+                preferred = [
+                    (b, r)
+                    for b, r in scored
+                    if (b.get("bookType") or "").upper() == prefer_book_type.upper()
+                ]
+                if preferred:
+                    return preferred[0][0]
+            best_ratio = scored[0][1]
+            return _pick([b for b, r in scored if r == best_ratio])
+
+        considered = [b for b in books if not _excluded(b)]
 
         # 1. ISBN (isbn13 or isbn10)
         if isbn:
-            target = _norm_isbn(isbn)
-            if target:
-                for b in books:
-                    for key in ("isbn13", "isbn10", "isbn"):
-                        if _norm_isbn(b.get(key)) == target:
-                            return b, "isbn"
+            matches = self._isbn_matches(considered, isbn)
+            if matches:
+                return _pick(matches), "isbn"
 
         # 2. ASIN
         if asin:
-            target = str(asin).strip().lower()
-            for b in books:
-                if str(b.get("asin") or "").strip().lower() == target:
-                    return b, "asin"
+            matches = self._asin_matches(considered, asin)
+            if matches:
+                return _pick(matches), "asin"
 
-        # 3. Title + author (fuzzy), then 4. title-only fallback
+        # 3. Title + author (fuzzy), then 4. title-only fallback. Without a
+        # preference this keeps the single best-ratio tie group's first hit
+        # (historical neutral behavior); with ``prefer_book_type`` a near-ratio
+        # record of that type wins (dual-format titles prefix the formats apart).
         if title:
-            try:
-                raw_threshold = float(os.environ.get("FUZZY_MATCH_THRESHOLD", 80))
-            except (TypeError, ValueError):
-                raw_threshold = 80.0
-            threshold = raw_threshold / 100 if raw_threshold > 1 else raw_threshold
-            title_norm = self._normalize_string(title)
-            author_norm = self._normalize_string(author) if author else ""
+            title_author_scored, title_scored = self._title_scored_candidates(
+                considered, title, author
+            )
+            if title_author_scored:
+                return _pick_scored(title_author_scored), "title_author"
+            if title_scored:
+                return _pick_scored(title_scored), "title"
 
-            best = None
-            best_ratio = 0.0
-            title_only_best = None
-            title_only_ratio = 0.0
-            for b in books:
-                b_title_norm = self._normalize_string(b.get("title"))
-                if not b_title_norm:
-                    continue
-                t_ratio = SequenceMatcher(None, title_norm, b_title_norm).ratio()
-                if t_ratio < threshold:
-                    continue
-                if t_ratio > title_only_ratio:
-                    title_only_ratio = t_ratio
-                    title_only_best = b
-                if author_norm:
-                    raw_authors = b.get("authors")
-                    b_author_norm = self._normalize_string(
-                        raw_authors if isinstance(raw_authors, str) else ""
-                    )
-                    if b_author_norm and (
-                        author_norm in b_author_norm or b_author_norm in author_norm
-                    ):
-                        if t_ratio > best_ratio:
-                            best_ratio = t_ratio
-                            best = b
+        return None, None
 
-            if best:
-                return best, "title_author"
-            if title_only_best:
-                return title_only_best, "title"
+    def find_format_counterpart(
+        self, *, matched_book, isbn=None, asin=None, title=None, author=None, exclude_book_type="AUDIOBOOK"
+    ):
+        """Find the best non-``exclude_book_type`` record for an already-matched book.
+
+        Given the audiobook record ``match_book_by_identifiers`` resolved, locate
+        the matching *other* format (the ebook). Unlike re-running the generic
+        cascade with ``exclude_book_id``, this:
+
+        - excludes records whose ``bookType`` equals ``exclude_book_type`` outright,
+          so a lower-ratio audiobook title never wins, and
+        - ranks *all* title candidates at-or-above threshold (not only the single
+          best-ratio tie group), so a counterpart whose title differs slightly from
+          the audiobook still surfaces.
+
+        Returns ``(book, matched_by)`` for the strongest surviving candidate, else
+        ``(None, None)``.
+        """
+        if not matched_book:
+            return None, None
+        books = self.get_all_books()
+        if not books:
+            return None, None
+
+        matched_id = str(matched_book.get("id"))
+        exclude_type = (exclude_book_type or "").upper()
+        candidates = [
+            b
+            for b in books
+            if str(b.get("id")) != matched_id and (b.get("bookType") or "").upper() != exclude_type
+        ]
+        if not candidates:
+            return None, None
+
+        # ISBN / ASIN tiers: strongest, return the first surviving match.
+        if isbn:
+            matches = self._isbn_matches(candidates, isbn)
+            if matches:
+                return matches[0], "isbn"
+        if asin:
+            matches = self._asin_matches(candidates, asin)
+            if matches:
+                return matches[0], "asin"
+
+        if title:
+            title_author_scored, title_scored = self._title_scored_candidates(
+                candidates, title, author
+            )
+            if title_author_scored:
+                return title_author_scored[0][0], "title_author"
+            if title_scored:
+                return title_scored[0][0], "title"
 
         return None, None
 
@@ -1021,19 +1150,76 @@ class GrimmoryClientGroup:
 
     _MATCH_STRENGTH = {"isbn": 3, "asin": 2, "title_author": 1, "title": 0}
 
-    def match_book_by_identifiers(self, *, isbn=None, asin=None, title=None, author=None):
+    def match_book_by_identifiers(
+        self, *, isbn=None, asin=None, title=None, author=None, prefer_book_type=None, exclude_book_id=None
+    ):
         """Match across all instances, returning the strongest match.
 
         Each client falls back isbn -> asin -> title+author -> title, so a weak
         title-only hit on an early instance must not shadow a stronger ISBN/ASIN
         match on a later one. Collect every instance's match and keep the best by
         match-type strength. Returns (book_info_with_instance_id, matched_by).
+
+        ``prefer_book_type`` / ``exclude_book_id`` pass through to each member.
+        When ``prefer_book_type`` is set and two instances tie on strength, the
+        preferred-type match replaces a non-preferred current best (audiobook and
+        ebook split across servers).
         """
         best_book = None
         best_matched_by = None
         best_strength = -1
         for c in self._active:
-            book, matched_by = c.match_book_by_identifiers(isbn=isbn, asin=asin, title=title, author=author)
+            book, matched_by = c.match_book_by_identifiers(
+                isbn=isbn,
+                asin=asin,
+                title=title,
+                author=author,
+                prefer_book_type=prefer_book_type,
+                exclude_book_id=exclude_book_id,
+            )
+            if not book:
+                continue
+            strength = self._MATCH_STRENGTH.get(matched_by, -1)
+            is_preferred = bool(prefer_book_type) and (book.get("bookType") or "").upper() == prefer_book_type.upper()
+            best_is_preferred = (
+                bool(prefer_book_type)
+                and best_book is not None
+                and (best_book.get("bookType") or "").upper() == prefer_book_type.upper()
+            )
+            if strength > best_strength or (
+                strength == best_strength and is_preferred and not best_is_preferred
+            ):
+                best_strength = strength
+                best_book = {**book, "_instance_id": c.instance_id}
+                best_matched_by = matched_by
+                if strength == self._MATCH_STRENGTH["isbn"] and (not prefer_book_type or is_preferred):
+                    break
+        if best_book:
+            return best_book, best_matched_by
+        return None, None
+
+    def find_format_counterpart(
+        self, *, matched_book, isbn=None, asin=None, title=None, author=None, exclude_book_type="AUDIOBOOK"
+    ):
+        """Find the best non-``exclude_book_type`` record across all instances.
+
+        Asks each member for its counterpart, tags the result with ``_instance_id``,
+        and keeps the strongest by ``_MATCH_STRENGTH`` -- mirroring the
+        cross-instance reconciliation in ``match_book_by_identifiers``. Returns
+        ``(book_info_with_instance_id, matched_by)`` or ``(None, None)``.
+        """
+        best_book = None
+        best_matched_by = None
+        best_strength = -1
+        for c in self._active:
+            book, matched_by = c.find_format_counterpart(
+                matched_book=matched_book,
+                isbn=isbn,
+                asin=asin,
+                title=title,
+                author=author,
+                exclude_book_type=exclude_book_type,
+            )
             if not book:
                 continue
             strength = self._MATCH_STRENGTH.get(matched_by, -1)

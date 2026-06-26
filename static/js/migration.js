@@ -2,6 +2,7 @@ function migrationOptions() {
   return {
     carry_listening_sessions: document.getElementById("mig-sessions").checked,
     carry_bookmarks: document.getElementById("mig-bookmarks").checked,
+    mark_ebook_as_read: document.getElementById("mig-ebook-read").checked,
   };
 }
 
@@ -54,6 +55,12 @@ function migrationRenderBuckets(books) {
         (b.finished_at
           ? " &middot; finished " + migrationEscape(b.finished_at)
           : "") +
+        (b.grimmory_ebook_title
+          ? " &middot; ebook: " + migrationEscape(b.grimmory_ebook_title)
+          : b.grimmory_ebook_id === null
+            ? " &middot; no ebook record found"
+            : "") +
+        (b.replay_note ? " &middot; " + migrationEscape(b.replay_note) : "") +
         "</span></label></li>";
     });
     html += "</ul>";

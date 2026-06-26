@@ -13,6 +13,27 @@ from src.utils.logging_utils import sanitize_log_data
 logger = logging.getLogger(__name__)
 
 
+def _abs_author(meta):
+    """Best-effort author name from an ABS media.metadata object.
+
+    Live ABS finished items often have ``authorName`` null, leaving the
+    title+author match tier dead. Fall back through the flat ``author`` field
+    and the expanded ``authors[].name`` list so the name is recovered when
+    present. Returns a string or ``None``.
+    """
+    if not meta:
+        return None
+    direct = meta.get("authorName") or meta.get("authorNameLF") or meta.get("author")
+    if direct:
+        return direct
+    authors = meta.get("authors")
+    if isinstance(authors, list):
+        names = [a.get("name") for a in authors if isinstance(a, dict) and a.get("name")]
+        if names:
+            return ", ".join(names)
+    return None
+
+
 class ABSClient:
     def __init__(self):
         # Configuration is now dynamic via properties (no caching)
@@ -487,7 +508,7 @@ class ABSClient:
             return {
                 "id": item_id,
                 "title": meta.get("title") or prog.get("metadata", {}).get("title") or "Unknown",
-                "author": meta.get("authorName") or prog.get("metadata", {}).get("authorName"),
+                "author": _abs_author(meta) or prog.get("metadata", {}).get("authorName"),
                 "isbn": meta.get("isbn"),
                 "asin": meta.get("asin"),
                 "finished_at_ms": prog.get("finishedAt"),

@@ -65,6 +65,7 @@ class AbsGrimmoryMigrationService:
         """Return (entries, summary_counts). Each entry is a per-book dict with a
         'bucket' and (when matched) the resolved Grimmory book + matched_by."""
         include_near_complete = bool(options.get("include_near_complete"))
+        mark_ebook_as_read = bool(options.get("mark_ebook_as_read"))
         finished = self.abs_client.get_finished_books()
 
         entries = []
@@ -88,7 +89,11 @@ class AbsGrimmoryMigrationService:
             }
 
             gr_book, matched_by = self.grimmory.match_book_by_identifiers(
-                isbn=book.get("isbn"), asin=book.get("asin"), title=book.get("title"), author=book.get("author")
+                isbn=book.get("isbn"),
+                asin=book.get("asin"),
+                title=book.get("title"),
+                author=book.get("author"),
+                prefer_book_type="AUDIOBOOK",
             )
 
             if not gr_book:
@@ -99,15 +104,26 @@ class AbsGrimmoryMigrationService:
 
             instance_id = gr_book.get("_instance_id", "default")
             gr_book_id = str(gr_book.get("id"))
+            gr_book_type = (gr_book.get("bookType") or "").upper()
             entry.update(
                 {
                     "matched_by": matched_by,
                     "grimmory_book_id": gr_book_id,
                     "grimmory_instance_id": instance_id,
                     "grimmory_title": gr_book.get("title"),
+                    "grimmory_book_type": gr_book_type,
                     "grimmory_book": gr_book,
                 }
             )
+
+            # When no per-book audiobook exists in Grimmory the match resolves to
+            # the ebook; listening sessions / audiobook bookmarks would then land
+            # on an ebook. Flag it in the preview so the skip is visible up front.
+            if gr_book_type != "AUDIOBOOK":
+                entry["replay_note"] = "sessions/bookmarks skipped (matched record is not an audiobook)"
+
+            if mark_ebook_as_read:
+                self._resolve_ebook_counterpart(entry, book)
 
             existing = self.database_service.get_abs_grimmory_migration(
                 book["id"], gr_book_id, instance_id
@@ -137,16 +153,38 @@ class AbsGrimmoryMigrationService:
         _ = include_near_complete
         return entries, counts
 
+    def _resolve_ebook_counterpart(self, entry, abs_book):
+        """Find the non-audiobook Grimmory record for the matched audiobook.
+
+        Passes the already-matched audiobook record into the dedicated counterpart
+        resolver, which excludes audiobook-type records and ranks the rest, so a
+        slightly differing ebook title (or a collapsed duplicate filename) still
+        surfaces. Stashes the result on the entry for the preview and _migrate_one;
+        records None when no counterpart exists so the result can note it without
+        failing the book.
+        """
+        ebook, _ebook_matched_by = self.grimmory.find_format_counterpart(
+            matched_book=entry["grimmory_book"],
+            isbn=abs_book.get("isbn"),
+            asin=abs_book.get("asin"),
+            title=abs_book.get("title"),
+            author=abs_book.get("author"),
+        )
+        if not ebook:
+            entry["grimmory_ebook_id"] = None
+            return
+        entry["grimmory_ebook"] = ebook
+        entry["grimmory_ebook_id"] = str(ebook.get("id"))
+        entry["grimmory_ebook_instance_id"] = ebook.get("_instance_id", "default")
+        entry["grimmory_ebook_title"] = ebook.get("title")
+
     def preview(self, options=None):
         options = options or {}
         if not self.is_configured():
             return {"configured": False, "counts": {}, "books": []}
 
         entries, counts = self._classify(options)
-        books = [
-            {k: v for k, v in e.items() if k != "grimmory_book"}
-            for e in entries
-        ]
+        books = [_public(e) for e in entries]
         return {"configured": True, "counts": counts, "books": books}
 
     # ── Migration ──
@@ -158,6 +196,7 @@ class AbsGrimmoryMigrationService:
 
         carry_sessions = options.get("carry_listening_sessions", True)
         carry_bookmarks = options.get("carry_bookmarks", True)
+        mark_ebook_as_read = options.get("mark_ebook_as_read", False)
         selected = set(selected_abs_ids) if selected_abs_ids is not None else None
 
         entries, counts = self._classify(options)
@@ -176,7 +215,7 @@ class AbsGrimmoryMigrationService:
                 results.append({**_public(entry), "outcome": "would_migrate"})
                 continue
 
-            result = self._migrate_one(entry, carry_sessions, carry_bookmarks)
+            result = self._migrate_one(entry, carry_sessions, carry_bookmarks, mark_ebook_as_read)
             results.append(result)
             self._throttle()
 
@@ -186,7 +225,7 @@ class AbsGrimmoryMigrationService:
 
         return {"configured": True, "dry_run": dry_run, "counts": counts, "outcome_counts": outcome_counts, "results": results}
 
-    def _migrate_one(self, entry, carry_sessions, carry_bookmarks):
+    def _migrate_one(self, entry, carry_sessions, carry_bookmarks, mark_ebook_as_read=False):
         abs_id = entry["abs_id"]
         gr_book = entry["grimmory_book"]
         gr_book_id = entry["grimmory_book_id"]
@@ -205,8 +244,16 @@ class AbsGrimmoryMigrationService:
             if not self.grimmory.set_finished_date(gr_book_id, book_type, entry["finished_at"], instance_id=instance_id):
                 errors.append("finish date")
 
+        # Listening sessions and audiobook bookmarks are audiobook-only
+        # constructs. When the matched record is not an audiobook (the ABS
+        # audiobook has no per-book audiobook in Grimmory, so the match resolved
+        # to the ebook), replaying them onto the ebook is meaningless -- skip both
+        # rather than recording it as a failure. _classify already set the
+        # informational replay_note on the entry for the preview.
+        primary_is_audiobook = book_type == "AUDIOBOOK"
+
         # 3. Listening-session history replay
-        if carry_sessions:
+        if carry_sessions and primary_is_audiobook:
             try:
                 sessions_written, sessions_failed = self._replay_sessions(abs_id, gr_book_id, book_type, instance_id)
                 if sessions_failed:
@@ -216,7 +263,7 @@ class AbsGrimmoryMigrationService:
                 errors.append("sessions")
 
         # 4. Bookmarks
-        if carry_bookmarks:
+        if carry_bookmarks and primary_is_audiobook:
             try:
                 bookmarks_written, bookmarks_failed = self._copy_bookmarks(abs_id, gr_book_id, instance_id)
                 if bookmarks_failed:
@@ -225,7 +272,12 @@ class AbsGrimmoryMigrationService:
                 logger.warning(f"ABS->Grimmory: bookmark copy failed for {abs_id}: {e}")
                 errors.append("bookmarks")
 
-        # 5. Update local pagekeeper Book (status + finish date + journal)
+        # 5. Optionally mark the matching ebook record READ (status + finish date
+        #    only -- sessions/bookmarks are audiobook-only constructs).
+        if mark_ebook_as_read:
+            self._mark_ebook(entry, errors)
+
+        # 6. Update local pagekeeper Book (status + finish date + journal)
         try:
             self._update_local_book(abs_id, entry.get("finished_at"))
         except Exception as e:
@@ -240,6 +292,35 @@ class AbsGrimmoryMigrationService:
             bookmarks_written=bookmarks_written,
             error="; ".join(errors) if errors else None,
         )
+
+    def _mark_ebook(self, entry, errors):
+        """Mark the matched ebook counterpart READ + finish date.
+
+        No sessions or bookmarks (audiobook-only). On a missing counterpart, note
+        it informationally without failing the book; on a write failure, append
+        "ebook read" to errors so the outcome becomes migrated_partial.
+        """
+        ebook_id = entry.get("grimmory_ebook_id")
+        if not ebook_id:
+            entry["ebook_note"] = "no ebook record found"
+            return
+
+        ebook = entry.get("grimmory_ebook") or {}
+        ebook_instance = entry.get("grimmory_ebook_instance_id", "default")
+        ebook_type = (ebook.get("bookType") or "").upper()
+
+        if not self.grimmory.update_read_status_by_id(ebook_id, "READ", instance_id=ebook_instance):
+            errors.append("ebook read")
+            return
+
+        finished_at = entry.get("finished_at")
+        if finished_at and not self.grimmory.set_finished_date(
+            ebook_id, ebook_type, finished_at, instance_id=ebook_instance
+        ):
+            errors.append("ebook read")
+            return
+
+        entry["ebook_note"] = "ebook marked read"
 
     def _replay_sessions(self, abs_id, gr_book_id, book_type, instance_id):
         sessions = self.abs_client.get_listening_sessions(item_id=abs_id)
@@ -372,5 +453,5 @@ def _grimmory_already_read(gr_book):
 
 
 def _public(entry):
-    """Strip the non-serializable grimmory_book object from an entry."""
-    return {k: v for k, v in entry.items() if k != "grimmory_book"}
+    """Strip the non-serializable grimmory book objects from an entry."""
+    return {k: v for k, v in entry.items() if k not in ("grimmory_book", "grimmory_ebook")}
