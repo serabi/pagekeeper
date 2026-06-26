@@ -210,6 +210,24 @@ def test_local_book_updated_via_status_machine():
     assert kwargs["dates"] == {"finished_at": "2023-11-14"}
 
 
+def test_already_completed_book_writes_finish_date_directly():
+    svc, db, abs_client, grimmory = _service(
+        finished=[{"id": "a", "title": "X", "isbn": "111", "finished_at_ms": 1700000000000}],
+        grimmory_match=({"id": 5, "title": "X", "bookType": "EPUB"}, "isbn"),
+    )
+    local_book = MagicMock()
+    local_book.status = "completed"
+    db.get_book_by_abs_id.return_value = local_book
+    sm = MagicMock()
+    svc.status_machine = sm
+
+    svc.migrate()
+
+    # status machine would short-circuit and drop the date, so bypass it
+    sm.transition.assert_not_called()
+    db.update_book_reading_fields.assert_called_once_with(local_book.id, finished_at="2023-11-14")
+
+
 def test_multi_instance_dispatch():
     svc, db, abs_client, grimmory = _service(
         finished=[{"id": "a", "title": "X", "isbn": "111", "finished_at_ms": 1700000000000}],

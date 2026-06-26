@@ -295,7 +295,11 @@ class AbsGrimmoryMigrationService:
         book = self.database_service.get_book_by_abs_id(abs_id)
         if not book:
             return
-        if self.status_machine:
+        # The status machine short-circuits when old_status == new_status and
+        # never applies `dates`, so for an already-completed book we must write
+        # the finish date directly or the ABS date is silently dropped.
+        already_completed = book.status == "completed"
+        if self.status_machine and not already_completed:
             self.status_machine.transition(
                 book,
                 "completed",
