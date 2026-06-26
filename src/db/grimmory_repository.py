@@ -93,7 +93,6 @@ class GrimmoryRepository(BaseRepository):
                 "bookmarks_written",
                 "outcome",
                 "error_message",
-                "created_at",
             ),
         )
 
