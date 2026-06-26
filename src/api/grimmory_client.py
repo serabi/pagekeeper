@@ -890,34 +890,62 @@ class GrimmoryClient:
             best_ratio = scored[0][1]
             return _pick([b for b, r in scored if r == best_ratio])
 
+        def _has_preferred(books, scored=False):
+            if not prefer_book_type:
+                return False
+            records = (b for b, _r in books) if scored else books
+            return any(
+                (b.get("bookType") or "").upper() == prefer_book_type.upper()
+                for b in records
+            )
+
         considered = [b for b in books if not _excluded(b)]
 
-        # 1. ISBN (isbn13 or isbn10)
+        # Build the cascade lazily as ``(matched_by, resolver, has_preferred)`` per
+        # non-empty tier: isbn -> asin -> title+author -> title.
+        tiers = []
         if isbn:
             matches = self._isbn_matches(considered, isbn)
             if matches:
-                return _pick(matches), "isbn"
-
-        # 2. ASIN
+                tiers.append(("isbn", lambda m=matches: _pick(m), _has_preferred(matches)))
         if asin:
             matches = self._asin_matches(considered, asin)
             if matches:
-                return _pick(matches), "asin"
-
-        # 3. Title + author (fuzzy), then 4. title-only fallback. Without a
-        # preference this keeps the single best-ratio tie group's first hit
-        # (historical neutral behavior); with ``prefer_book_type`` a near-ratio
-        # record of that type wins (dual-format titles prefix the formats apart).
+                tiers.append(("asin", lambda m=matches: _pick(m), _has_preferred(matches)))
         if title:
             title_author_scored, title_scored = self._title_scored_candidates(
                 considered, title, author
             )
             if title_author_scored:
-                return _pick_scored(title_author_scored), "title_author"
+                tiers.append((
+                    "title_author",
+                    lambda s=title_author_scored: _pick_scored(s),
+                    _has_preferred(title_author_scored, scored=True),
+                ))
             if title_scored:
-                return _pick_scored(title_scored), "title"
+                tiers.append((
+                    "title",
+                    lambda s=title_scored: _pick_scored(s),
+                    _has_preferred(title_scored, scored=True),
+                ))
 
-        return None, None
+        if not tiers:
+            return None, None
+
+        # With a preference, a correct-format match from a weaker tier outranks a
+        # wrong-format match from a stronger one: return the strongest tier that
+        # actually contains a ``prefer_book_type`` record. ``_pick``/``_pick_scored``
+        # then select that record within the tier.
+        if prefer_book_type:
+            for matched_by, resolve, has_preferred in tiers:
+                if has_preferred:
+                    return resolve(), matched_by
+
+        # No preference, or no tier held a preferred-type record: keep the neutral
+        # first-non-empty-tier behavior (preserves the ebook fallback when no
+        # audiobook exists anywhere).
+        matched_by, resolve, _ = tiers[0]
+        return resolve(), matched_by
 
     def find_format_counterpart(
         self, *, matched_book, isbn=None, asin=None, title=None, author=None, exclude_book_type="AUDIOBOOK"
@@ -1174,13 +1202,14 @@ class GrimmoryClientGroup:
         match-type strength. Returns (book_info_with_instance_id, matched_by).
 
         ``prefer_book_type`` / ``exclude_book_id`` pass through to each member.
-        When ``prefer_book_type`` is set and two instances tie on strength, the
-        preferred-type match replaces a non-preferred current best (audiobook and
-        ebook split across servers).
+        When ``prefer_book_type`` is set a preferred-type match outranks any
+        non-preferred match regardless of tier strength, so the audiobook wins even
+        when it surfaces from a weaker tier on a different server than the ebook.
+        Among equally-preferred matches, tier strength still decides.
         """
         best_book = None
         best_matched_by = None
-        best_strength = -1
+        best_key = (-1, -1)
         for c in self._active:
             book, matched_by = c.match_book_by_identifiers(
                 isbn=isbn,
@@ -1194,15 +1223,12 @@ class GrimmoryClientGroup:
                 continue
             strength = self._MATCH_STRENGTH.get(matched_by, -1)
             is_preferred = bool(prefer_book_type) and (book.get("bookType") or "").upper() == prefer_book_type.upper()
-            best_is_preferred = (
-                bool(prefer_book_type)
-                and best_book is not None
-                and (best_book.get("bookType") or "").upper() == prefer_book_type.upper()
-            )
-            if strength > best_strength or (
-                strength == best_strength and is_preferred and not best_is_preferred
-            ):
-                best_strength = strength
+            # Rank by (preferred-type, tier strength): a correct-format match beats
+            # a stronger-tier wrong-format one. Without a preference every
+            # is_preferred is False, so this reduces to pure strength comparison.
+            key = (1 if is_preferred else 0, strength)
+            if key > best_key:
+                best_key = key
                 best_book = {**book, "_instance_id": c.instance_id}
                 best_matched_by = matched_by
                 if strength == self._MATCH_STRENGTH["isbn"] and (not prefer_book_type or is_preferred):

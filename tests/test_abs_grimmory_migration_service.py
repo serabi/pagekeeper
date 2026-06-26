@@ -533,3 +533,179 @@ def test_mark_ebook_on_mark_failure_is_partial():
     outcome = result["results"][0]
     assert outcome["outcome"] == "migrated_partial"
     assert "ebook read" in (outcome["error"] or "")
+
+
+def test_mark_ebook_on_date_failure_labels_finish_date():
+    svc, db, abs_client, grimmory = _service(
+        finished=[{"id": "a", "title": "X", "isbn": "111", "finished_at_ms": 1700000000000}],
+    )
+    _wire_counterpart(
+        grimmory,
+        ({"id": 5, "title": "X", "bookType": "AUDIOBOOK"}, "title"),
+        [
+            {"id": 5, "title": "X", "authors": "", "bookType": "AUDIOBOOK"},
+            {"id": 9, "title": "X", "authors": "", "bookType": "EPUB"},
+        ],
+    )
+
+    # The ebook read status write succeeds but its finish date write fails; the
+    # failure must be labelled "ebook finish date", not "ebook read", so the
+    # outcome stays diagnosable and the backfill retries the right write.
+    def set_date(book_id, book_type, date_finished, instance_id="default"):
+        return book_id != "9"
+
+    grimmory.set_finished_date.side_effect = set_date
+
+    result = svc.migrate(options={"mark_ebook_as_read": True})
+
+    outcome = result["results"][0]
+    assert outcome["outcome"] == "migrated_partial"
+    assert "ebook finish date" in (outcome["error"] or "")
+    # The ebook was still marked read; only its date write failed.
+    read_ids = [c.args[0] for c in grimmory.update_read_status_by_id.call_args_list]
+    assert "9" in read_ids
+
+
+def test_manual_match_override_migrates_selected_grimmory_book():
+    svc, db, abs_client, grimmory = _service(
+        finished=[{"id": "abs-1", "title": "Wrong Auto", "author": "A", "finished_at_ms": 1700000000000}],
+        grimmory_match=(None, None),
+    )
+    grimmory.get_all_books.return_value = [
+        {"id": 9, "title": "Manual Pick", "authors": "B", "bookType": "AUDIOBOOK", "_instance_id": "2"},
+    ]
+
+    result = svc.migrate(
+        options={
+            "manual_matches": {
+                "abs-1": {
+                    "grimmory_book_id": "9",
+                    "grimmory_instance_id": "2",
+                }
+            }
+        }
+    )
+
+    grimmory.match_book_by_identifiers.assert_not_called()
+    grimmory.update_read_status_by_id.assert_called_once_with("9", "READ", instance_id="2")
+    outcome = result["results"][0]
+    assert outcome["outcome"] == "migrated"
+    assert outcome["matched_by"] == "manual"
+    assert outcome["manual_match"] is True
+    assert outcome["grimmory_title"] == "Manual Pick"
+
+
+def test_manual_match_missing_returns_unmatched():
+    svc, db, abs_client, grimmory = _service(
+        finished=[{"id": "abs-1", "title": "Gone", "author": "A"}],
+        grimmory_match=(None, None),
+    )
+    grimmory.get_all_books.return_value = []
+
+    result = svc.preview(
+        options={
+            "manual_matches": {
+                "abs-1": {
+                    "grimmory_book_id": "9",
+                    "grimmory_instance_id": "2",
+                }
+            }
+        }
+    )
+
+    assert result["counts"]["unmatched"] == 1
+    assert result["books"][0]["manual_match_error"] == "Selected Grimmory match is no longer available"
+
+
+def _rerun_service():
+    """Build a service whose Grimmory match and audit lookup both vary per run.
+
+    The one-shot ``_service`` fixture returns a single fixed match and a single
+    ``existing_migration``; the two-run scenario needs both to change between
+    Run 1 (ebook, no audit row) and Run 2 (audiobook, audit row only for the
+    ebook id), so the mocks are wired directly here.
+    """
+    db = MagicMock()
+    db.get_book_by_abs_id.return_value = None
+    db.save_abs_grimmory_migration.return_value = None
+
+    abs_client = MagicMock()
+    abs_client.is_configured.return_value = True
+    abs_client.get_finished_books.return_value = [
+        {"id": "abs-1", "title": "Dual", "isbn": "111", "asin": "B00DUAL", "finished_at_ms": 1700000000000},
+    ]
+    abs_client.get_listening_sessions.return_value = [
+        {"libraryItemId": "abs-1", "timeListening": 1800, "startedAt": 1699000000000},
+    ]
+    abs_client.get_bookmarks.return_value = {"abs-1": [{"time": 12.5, "title": "Ch1"}]}
+
+    grimmory = MagicMock()
+    grimmory.is_configured.return_value = True
+    grimmory.update_read_status_by_id.return_value = True
+    grimmory.set_finished_date.return_value = True
+    grimmory.add_reading_session.return_value = True
+    grimmory.add_bookmark.return_value = True
+
+    svc = AbsGrimmoryMigrationService(db, abs_client, grimmory)
+    return svc, db, abs_client, grimmory
+
+
+def test_rerun_lands_history_on_audiobook_after_ebook_first_match():
+    svc, db, abs_client, grimmory = _rerun_service()
+
+    saved_rows = []
+    db.save_abs_grimmory_migration.side_effect = lambda row: saved_rows.append(row)
+
+    # ── Run 1: only the ebook exists in Grimmory; it matches by isbn, no audit row.
+    grimmory.match_book_by_identifiers.return_value = (
+        {"id": 5, "title": "Dual", "bookType": "EPUB"},
+        "isbn",
+    )
+    db.get_abs_grimmory_migration.return_value = None
+
+    run1 = svc.migrate()
+
+    assert run1["results"][0]["outcome"] in ("migrated", "migrated_partial")
+    assert len(saved_rows) == 1
+    assert str(saved_rows[0].grimmory_book_id) == "5"
+    # Ebook primary: audiobook-only sessions/bookmarks are skipped.
+    grimmory.add_reading_session.assert_not_called()
+    grimmory.add_bookmark.assert_not_called()
+
+    # ── Between runs: the audit table now holds a row keyed on the ebook id only.
+    #    Mirror the real key: return the saved row for (abs, ebook id, instance),
+    #    None for any other grimmory_book_id (e.g. the audiobook).
+    run1_row = MagicMock()
+    run1_row.outcome = "migrated"
+
+    def audit_lookup(abs_id, grimmory_book_id, instance_id):
+        if str(grimmory_book_id) == "5":
+            return run1_row
+        return None
+
+    db.get_abs_grimmory_migration.side_effect = audit_lookup
+
+    # ── Run 2: the audiobook now exists (new id) and the cascade returns it.
+    grimmory.match_book_by_identifiers.return_value = (
+        {"id": 7, "title": "Dual", "bookType": "AUDIOBOOK"},
+        "asin",
+    )
+
+    preview2 = svc.preview()
+    book2 = preview2["books"][0]
+    # The ebook row must not block the audiobook: it is fresh work.
+    assert book2["bucket"] == "will_migrate"
+    assert book2["grimmory_book_id"] == "7"
+
+    run2 = svc.migrate()
+
+    assert run2["results"][0]["outcome"] in ("migrated", "migrated_partial")
+    # Sessions + bookmarks now replay onto the audiobook id.
+    session_ids = [c.args[0] for c in grimmory.add_reading_session.call_args_list]
+    bookmark_ids = [c.args[0] for c in grimmory.add_bookmark.call_args_list]
+    assert session_ids == ["7"]
+    assert bookmark_ids == ["7"]
+    # A new audit row was saved for the audiobook id; the ebook row is untouched.
+    run2_rows = [r for r in saved_rows if r not in saved_rows[:1]]
+    assert any(str(r.grimmory_book_id) == "7" for r in run2_rows)
+    assert all(str(r.grimmory_book_id) != "5" for r in run2_rows)

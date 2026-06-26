@@ -496,6 +496,27 @@ def test_group_match_returns_none_when_no_instance_matches():
     assert matched_by is None
 
 
+def test_group_match_prefers_preferred_type_from_weaker_tier_across_instances():
+    # Re-run split across servers: instance A holds the ebook (matched by isbn,
+    # the strongest tier) while instance B holds the audiobook (matched only by
+    # title, the weakest tier). With AUDIOBOOK preferred, the audiobook must win
+    # even though its tier is weaker -- a correct-format match outranks a
+    # wrong-format match from a stronger tier.
+    from src.api.grimmory_client import GrimmoryClientGroup
+
+    ebook = _group_member("a", ({"id": 1, "title": "Dual", "bookType": "EPUB"}, "isbn"))
+    audiobook = _group_member("b", ({"id": 2, "title": "Dual", "bookType": "AUDIOBOOK"}, "title"))
+    group = GrimmoryClientGroup([ebook, audiobook])
+
+    book, matched_by = group.match_book_by_identifiers(
+        isbn="9780000000001", title="Dual", prefer_book_type="AUDIOBOOK"
+    )
+
+    assert book["id"] == 2
+    assert book["_instance_id"] == "b"
+    assert matched_by == "title"
+
+
 def test_match_prefer_audiobook_isbn_tie(grimmory_client):
     # EPUB listed first to prove ordering is overridden by the preference.
     grimmory_client.get_all_books = MagicMock(
@@ -618,6 +639,45 @@ def test_match_prefer_audiobook_title_falls_back_when_absent(grimmory_client):
     )
 
     assert book["id"] == 1
+    assert matched_by == "title"
+
+
+def test_match_prefer_audiobook_crosses_tiers_when_isbn_on_ebook(grimmory_client):
+    # Re-run scenario: the ebook carries the ISBN, the audiobook carries only an
+    # ASIN. A within-tier preference would return the ebook from the ISBN tier and
+    # never reach the ASIN tier where the audiobook lives. The preference must span
+    # the cascade so the audiobook wins.
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Dual", "authors": "A", "isbn13": "9780000000001", "bookType": "EPUB"},
+            {"id": 2, "title": "Dual", "authors": "A", "asin": "B00DUAL", "bookType": "AUDIOBOOK"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(
+        isbn="9780000000001", asin="B00DUAL", title="Dual", prefer_book_type="AUDIOBOOK"
+    )
+
+    assert book["id"] == 2
+    assert matched_by == "asin"
+
+
+def test_match_prefer_audiobook_crosses_to_title_tier(grimmory_client):
+    # The ebook owns the ISBN; the audiobook has no isbn/asin and only shares the
+    # title. The cascade must skip past the ISBN tier (ebook-only) to the title
+    # tier where the audiobook surfaces.
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Shared Title", "authors": "A", "isbn13": "9780000000001", "bookType": "EPUB"},
+            {"id": 2, "title": "Shared Title", "authors": "A", "bookType": "AUDIOBOOK"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(
+        isbn="9780000000001", title="Shared Title", prefer_book_type="AUDIOBOOK"
+    )
+
+    assert book["id"] == 2
     assert matched_by == "title"
 
 
