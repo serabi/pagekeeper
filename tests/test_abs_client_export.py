@@ -84,6 +84,18 @@ def test_get_bookmarks_grouped_by_item(abs_client):
     assert grouped["a"][0]["time"] == 10
 
 
+def test_get_bookmarks_returns_none_on_error(abs_client):
+    abs_client.session = MagicMock()
+    abs_client.session.get.return_value = _resp(500, {})
+    assert abs_client.get_bookmarks() is None
+
+
+def test_get_bookmarks_empty_when_no_bookmarks(abs_client):
+    abs_client.session = MagicMock()
+    abs_client.session.get.return_value = _resp(200, {"bookmarks": []})
+    assert abs_client.get_bookmarks() == {}
+
+
 def test_get_finished_books_not_configured_returns_empty():
     with patch.dict(os.environ, {"ABS_ENABLED": "false"}, clear=False):
         client = ABSClient()

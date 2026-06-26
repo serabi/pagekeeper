@@ -547,7 +547,10 @@ class ABSClient:
         """Return the user's audio bookmarks grouped by libraryItemId.
 
         Bookmarks live on the User row (/api/me), each: {libraryItemId, title,
-        time (seconds), createdAt}. Returns dict[libraryItemId, list[bookmark]].
+        time (seconds), createdAt}. Returns dict[libraryItemId, list[bookmark]]
+        on success (empty dict when the user has no bookmarks), or None when the
+        ABS fetch fails (non-200 or exception) so callers can distinguish a
+        transient failure from a genuinely empty result.
         """
         if not self.is_configured():
             return {}
@@ -556,11 +559,11 @@ class ABSClient:
             r = self.session.get(f"{self.base_url}/api/me", timeout=self.timeout)
             if r.status_code != 200:
                 logger.warning(f"Failed to fetch ABS bookmarks: {r.status_code}")
-                return {}
+                return None
             bookmarks = r.json().get("bookmarks", []) or []
         except Exception as e:
             logger.error(f"Error fetching ABS bookmarks: {e}")
-            return {}
+            return None
 
         grouped = {}
         for bm in bookmarks:

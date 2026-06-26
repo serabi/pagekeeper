@@ -267,6 +267,9 @@ class AbsGrimmoryMigrationService:
 
     def _copy_bookmarks(self, abs_id, gr_book_id, instance_id):
         grouped = self.abs_client.get_bookmarks()
+        if grouped is None:
+            logger.warning(f"ABS->Grimmory: bookmark fetch failed for {abs_id}; treating as failure")
+            return 0, 1
         bookmarks = grouped.get(abs_id, [])
         written = 0
         failed = 0

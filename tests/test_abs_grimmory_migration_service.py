@@ -138,6 +138,21 @@ def test_bookmark_failure_does_not_block_read_status():
     assert result["results"][0]["outcome"] == "migrated_partial"
 
 
+def test_bookmark_fetch_failure_records_partial():
+    svc, db, abs_client, grimmory = _service(
+        finished=[{"id": "a", "title": "X", "isbn": "111", "finished_at_ms": 1700000000000}],
+        grimmory_match=({"id": 5, "title": "X", "bookType": "AUDIOBOOK"}, "isbn"),
+    )
+    abs_client.get_bookmarks.return_value = None
+    result = svc.migrate()
+    # READ status still succeeded; the failed bookmark fetch surfaces as partial
+    grimmory.update_read_status_by_id.assert_called_once()
+    grimmory.add_bookmark.assert_not_called()
+    outcome = result["results"][0]
+    assert outcome["outcome"] == "migrated_partial"
+    assert "bookmarks" in (outcome["error"] or "")
+
+
 def test_session_replay_one_call_per_session():
     svc, db, abs_client, grimmory = _service(
         finished=[{"id": "a", "title": "X", "isbn": "111", "finished_at_ms": 1700000000000}],
@@ -235,7 +250,7 @@ def test_selected_abs_ids_none_migrates_all():
 
 
 def test_already_migrated_carries_audit_history():
-    from datetime import datetime, UTC
+    from datetime import UTC, datetime
 
     existing = MagicMock()
     existing.outcome = "migrated"
