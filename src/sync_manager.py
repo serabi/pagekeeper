@@ -46,6 +46,7 @@ logger = logging.getLogger(__name__)
 class SyncManager:
     def __init__(
         self,
+        container=None,
         abs_client=None,
         grimmory_client=None,
         hardcover_client=None,
@@ -66,6 +67,7 @@ class SyncManager:
 
         logger.info("=== Sync Manager Starting ===")
         # Use dependency injection
+        self.container = container
         self.abs_client = abs_client
         self.grimmory_client = grimmory_client
         self.hardcover_client = hardcover_client
@@ -440,8 +442,15 @@ class SyncManager:
         if not (self.grimmory_client and self.grimmory_client.is_configured()):
             return
 
+        # Exclude books with a deferred clear in flight — promoting them here would
+        # resurrect stale Grimmory progress before _process_deferred_clears runs.
+        with self._pending_clears_lock:
+            pending = set(self._pending_clears)
+
         candidates = [
-            b for b in self.database_service.get_books_by_status("not_started") if getattr(b, "ebook_filename", None)
+            b
+            for b in self.database_service.get_books_by_status("not_started")
+            if getattr(b, "ebook_filename", None) and b.id not in pending
         ]
         if not candidates:
             return
@@ -453,16 +462,7 @@ class SyncManager:
             except Exception as e:
                 logger.debug(f"Discovery: progress fetch failed for '{book.ebook_filename}': {e}")
                 continue
-            if not pct or pct <= 0.01:
-                continue
-            result = status_machine.transition(book, "active", source="completion_sync")
-            if result.get("success"):
-                logger.info(
-                    f"Discovery: promoted not_started book '{sanitize_log_data(book.title)}' "
-                    f"to active ({pct:.1%} Grimmory progress)"
-                )
-            else:
-                logger.warning(f"Discovery: failed to promote '{sanitize_log_data(book.title)}': {result.get('error')}")
+            status_machine.promote_not_started(book, pct, container=self.container, source_label="Discovery")
 
     def _prepare_sync_books(self, target_book_id):
         """Fetch active books, pre-fetch bulk states, and trigger suggestions."""

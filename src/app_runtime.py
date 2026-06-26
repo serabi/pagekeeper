@@ -312,6 +312,7 @@ def initialize_abs_listener(app, container, database_service, sync_manager):
             abs_api_token=get_str("ABS_KEY", ""),
             database_service=database_service,
             sync_manager=sync_manager,
+            container=container,
         )
         threading.Thread(target=abs_listener.start, daemon=True).start()
         app.config["abs_listener"] = abs_listener

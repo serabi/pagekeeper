@@ -121,6 +121,50 @@ class TestSuggestionLogic(unittest.TestCase):
 
         self.assertEqual(book.status, "not_started")
 
+    def test_promotion_forwards_container_to_transition(self):
+        """Discovery promotion must pass the DI container so completion_sync side effects
+        (real started_at pull, Grimmory push) can run instead of stamping date.today()."""
+        from unittest.mock import patch
+
+        book = MagicMock()
+        book.id = 9
+        book.title = "Container Forwarded"
+        book.status = "not_started"
+        book.ebook_filename = "forwarded.epub"
+
+        sentinel_container = object()
+        self.manager.container = sentinel_container
+        self.mock_db.get_books_by_status.side_effect = lambda status: [book] if status == "not_started" else []
+        self.mock_grimmory.is_configured.return_value = True
+        self.mock_grimmory.get_progress.return_value = (0.30, None)
+
+        with patch("src.sync_manager.StatusMachine.transition", return_value={"success": True}) as mock_transition:
+            self.manager._promote_discovered_ebooks()
+
+        mock_transition.assert_called_once()
+        self.assertIs(mock_transition.call_args.kwargs.get("container"), sentinel_container)
+
+    def test_pending_clear_books_not_promoted(self):
+        """A not_started book awaiting a deferred clear must not be re-promoted from stale
+        Grimmory progress, which would undo the clear."""
+        book = MagicMock()
+        book.id = 10
+        book.title = "Pending Clear"
+        book.status = "not_started"
+        book.ebook_filename = "pending.epub"
+
+        self.mock_db.get_books_by_status.side_effect = lambda status: [book] if status == "not_started" else []
+        self.mock_grimmory.is_configured.return_value = True
+        self.mock_grimmory.get_progress.return_value = (0.30, None)
+
+        with self.manager._pending_clears_lock:
+            self.manager._pending_clears.add(book.id)
+
+        self.manager._promote_discovered_ebooks()
+
+        self.assertEqual(book.status, "not_started")
+        self.mock_grimmory.get_progress.assert_not_called()
+
     def test_suggestion_ignored_when_hidden(self):
         """Test that suggestions are NOT created if they were previously hidden."""
         # Setup

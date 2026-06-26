@@ -174,6 +174,30 @@ class TestABSSocketListenerDebounce(unittest.TestCase):
         self.assertEqual(book.status, "active")
         self.assertIn("fresh-id", self.listener._pending)
 
+    def test_promotion_forwards_container_to_transition(self):
+        """The listener must forward its DI container into the status transition so
+        completion_sync side effects (real started_at, Grimmory push) actually run."""
+        sentinel_container = object()
+        with patch("src.services.abs_socket_listener.socketio.Client"):
+            listener = ABSSocketListener(
+                abs_server_url="http://abs.local:13378",
+                abs_api_token="tok",
+                database_service=self.mock_db,
+                sync_manager=self.mock_sync,
+                container=sentinel_container,
+            )
+
+        book = self._make_not_started_book("container-id")
+        self.mock_db.get_book_by_abs_id.return_value = book
+
+        with patch.object(
+            listener._status_machine, "transition", return_value={"success": True}
+        ) as mock_transition:
+            listener._handle_progress_event({"id": "p", "data": {"libraryItemId": "container-id", "progress": 0.10}})
+
+        mock_transition.assert_called_once()
+        self.assertIs(mock_transition.call_args.kwargs.get("container"), sentinel_container)
+
     def test_not_started_below_threshold_only_flags_activity(self):
         """A not_started book below 1% is not promoted, just flagged."""
         book = self._make_not_started_book("fresh-id-2")

@@ -15,15 +15,11 @@ from concurrent.futures import ThreadPoolExecutor
 import requests
 import socketio
 
-from src.services.status_machine import StatusMachine
+from src.services.status_machine import PROGRESS_ACTIVATION_THRESHOLD, StatusMachine
 from src.services.write_tracker import is_own_write as _tracker_is_own_write
 from src.services.write_tracker import record_write
 
 logger = logging.getLogger(__name__)
-
-# A not_started book is promoted to active only once reported progress clears this
-# fraction, mirroring the >1% "genuinely reading" bar used elsewhere in the pipeline.
-_PROGRESS_ACTIVATION_THRESHOLD = 0.01
 
 # ---------------------------------------------------------------------------
 # Write-suppression tracker — delegates to the shared write_tracker module.
@@ -50,6 +46,7 @@ class ABSSocketListener:
         abs_api_token: str,
         database_service,
         sync_manager,
+        container=None,
     ):
         """
         Initialize the ABSSocketListener with server credentials, services, and internal runtime state.
@@ -59,12 +56,15 @@ class ABSSocketListener:
             abs_api_token (str): API token used to authenticate requests; may be exchanged for a socket-compatible token.
             database_service: Database access service used to look up books and their status.
             sync_manager: Manager responsible for performing downstream sync cycles for given ABS item IDs.
+            container: DI container, forwarded to status transitions so completion_sync side
+                effects (real started_at pull, Grimmory push) fire on promotion.
         """
         self._server_url = abs_server_url.rstrip("/").replace("/api", "")
         self._api_token = abs_api_token
         self._socket_token: str | None = None
         self._db = database_service
         self._sync_manager = sync_manager
+        self._container = container
         self._status_machine = StatusMachine(database_service)
 
         self._debounce_window = int(os.environ.get("ABS_SOCKET_DEBOUNCE_SECONDS", "30"))
@@ -245,15 +245,10 @@ class ABSSocketListener:
         # would deadlock at 0%. Promote it to active when ABS reports real progress.
         if book.status == "not_started":
             pct = self._extract_progress_fraction(inner if isinstance(inner, dict) else {}, data)
-            if pct is not None and pct > _PROGRESS_ACTIVATION_THRESHOLD:
-                result = self._status_machine.transition(book, "active", source="completion_sync")
-                if result.get("success"):
-                    logger.info(
-                        f"ABS Socket.IO: Promoted not_started book '{book.title}' to active "
-                        f"({pct:.1%} progress reported)"
-                    )
-                else:
-                    logger.warning(f"ABS Socket.IO: Failed to promote '{book.title}': {result.get('error')}")
+            if pct is not None and pct > PROGRESS_ACTIVATION_THRESHOLD:
+                self._status_machine.promote_not_started(
+                    book, pct, container=self._container, source_label="ABS Socket.IO"
+                )
                 with self._lock:
                     self._pending[library_item_id] = time.time()
                     self._fired.discard(library_item_id)
