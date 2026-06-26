@@ -67,3 +67,4 @@ CLAUDE.md
 .agent-prompts/
 .agent-reports/
 .worktrees/
+.playwright-mcp/

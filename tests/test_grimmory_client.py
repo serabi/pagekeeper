@@ -60,6 +60,37 @@ def test_init_loads_from_db(mock_db):
         assert client._book_id_cache["123"]["title"] == "Test Book"
 
 
+def test_mixed_case_filename_normalizes_on_load(mock_db):
+    """A legacy mixed-case DB row keys the cache lowercased and resolves on lookup."""
+    mock_book = MagicMock()
+    mock_book.filename = "Mixed_Case.epub"
+    mock_book.title = "Mixed Case Book"
+    mock_book.authors = "Author"
+    mock_book.raw_metadata_dict = {
+        "id": "777",
+        "fileName": "Mixed_Case.epub",
+        "title": "Mixed Case Book",
+        "authors": "Author",
+    }
+    mock_db.get_all_grimmory_books.return_value = [mock_book]
+
+    with patch.dict(
+        os.environ,
+        {"GRIMMORY_SERVER": "http://mock", "GRIMMORY_USER": "u", "GRIMMORY_PASSWORD": "p", "DATA_DIR": "/tmp/data"},
+    ):
+        client = GrimmoryClient(database_service=mock_db)
+
+    # Cache key is lowercased, so a lowercased lookup resolves.
+    assert "mixed_case.epub" in client._book_cache
+    assert "Mixed_Case.epub" not in client._book_cache
+    assert client.find_book_by_filename("Mixed_Case.epub", allow_refresh=False)["id"] == "777"
+
+    # The legacy mixed-case row is rewritten lowercase and the old row deleted.
+    saved = mock_db.save_grimmory_book.call_args.args[0]
+    assert saved.filename == "mixed_case.epub"
+    mock_db.delete_grimmory_book.assert_called_once_with("Mixed_Case.epub", server_id=client.instance_id)
+
+
 def test_migration_from_legacy_json(mock_db):
     # Setup: DB is empty, Legacy JSON exists
     mock_db.get_all_grimmory_books.side_effect = [[], []]  # First call empty, second call empty
@@ -308,9 +339,7 @@ def test_reload_from_env_loads_cache_when_started_unconfigured(mock_db):
         assert client._book_cache == {}
 
         # Settings save populates env + DB, then reloads the singleton.
-        os.environ.update(
-            {"GRIMMORY_SERVER": "http://mock", "GRIMMORY_USER": "u", "GRIMMORY_PASSWORD": "p"}
-        )
+        os.environ.update({"GRIMMORY_SERVER": "http://mock", "GRIMMORY_USER": "u", "GRIMMORY_PASSWORD": "p"})
         client.reload_from_env()
 
         assert client.is_configured()
