@@ -415,7 +415,7 @@ def abs_grimmory_migration_run():
         if not all(isinstance(s, str) for s in selected):
             return json_error("'selected_abs_ids' must be a list of strings", 400)
         selected_abs_ids = selected
-    dry_run = bool(data.get("dry_run"))
+    dry_run = _coerce_bool(data.get("dry_run"), False)
     try:
         result = svc.migrate(options, dry_run=dry_run, selected_abs_ids=selected_abs_ids)
     except Exception:

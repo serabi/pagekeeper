@@ -90,6 +90,22 @@ def test_run_executes_when_not_dry_run(client, mock_container):
     assert kwargs["dry_run"] is False
 
 
+def test_run_coerces_string_dry_run_false(client, mock_container):
+    svc = mock_container.mock_abs_grimmory_migration_service
+    svc.is_configured.return_value = True
+    svc.migrate.return_value = {
+        "configured": True,
+        "dry_run": False,
+        "outcome_counts": {"migrated": 1},
+        "results": [],
+    }
+
+    resp = client.post("/api/abs-grimmory-migration/run", json={"dry_run": "false"})
+
+    assert resp.status_code == 200
+    assert svc.migrate.call_args.kwargs["dry_run"] is False
+
+
 def test_run_passes_selected_abs_ids(client, mock_container):
     svc = mock_container.mock_abs_grimmory_migration_service
     svc.is_configured.return_value = True

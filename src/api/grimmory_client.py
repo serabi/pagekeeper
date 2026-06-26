@@ -799,6 +799,8 @@ class GrimmoryClient:
 
     def _asin_matches(self, books, asin):
         target = str(asin).strip().lower()
+        if not target:
+            return []
         return [b for b in books if str(b.get("asin") or "").strip().lower() == target]
 
     def _title_scored_candidates(self, books, title, author):
@@ -940,6 +942,8 @@ class GrimmoryClient:
             for matched_by, resolve, has_preferred in tiers:
                 if has_preferred:
                     return resolve(), matched_by
+                if matched_by in ("isbn", "asin"):
+                    break
 
         # No preference, or no tier held a preferred-type record: keep the neutral
         # first-non-empty-tier behavior (preserves the ebook fallback when no
@@ -972,11 +976,18 @@ class GrimmoryClient:
             return None, None
 
         matched_id = str(matched_book.get("id"))
+        matched_instance = str(matched_book.get("_instance_id", getattr(self, "instance_id", "default")))
         exclude_type = (exclude_book_type or "").upper()
         candidates = [
             b
             for b in books
-            if str(b.get("id")) != matched_id and (b.get("bookType") or "").upper() != exclude_type
+            if (
+                (
+                    str(b.get("id")) != matched_id
+                    or str(b.get("_instance_id", getattr(self, "instance_id", "default"))) != matched_instance
+                )
+                and (b.get("bookType") or "").upper() != exclude_type
+            )
         ]
         if not candidates:
             return None, None
@@ -1202,10 +1213,9 @@ class GrimmoryClientGroup:
         match-type strength. Returns (book_info_with_instance_id, matched_by).
 
         ``prefer_book_type`` / ``exclude_book_id`` pass through to each member.
-        When ``prefer_book_type`` is set a preferred-type match outranks any
-        non-preferred match regardless of tier strength, so the audiobook wins even
-        when it surfaces from a weaker tier on a different server than the ebook.
-        Among equally-preferred matches, tier strength still decides.
+        When ``prefer_book_type`` is set it only breaks ties within the same match
+        strength, so exact ISBN/ASIN matches still outrank fuzzy title matches
+        across instances.
         """
         best_book = None
         best_matched_by = None
@@ -1223,10 +1233,7 @@ class GrimmoryClientGroup:
                 continue
             strength = self._MATCH_STRENGTH.get(matched_by, -1)
             is_preferred = bool(prefer_book_type) and (book.get("bookType") or "").upper() == prefer_book_type.upper()
-            # Rank by (preferred-type, tier strength): a correct-format match beats
-            # a stronger-tier wrong-format one. Without a preference every
-            # is_preferred is False, so this reduces to pure strength comparison.
-            key = (1 if is_preferred else 0, strength)
+            key = (strength, 1 if is_preferred else 0)
             if key > best_key:
                 best_key = key
                 best_book = {**book, "_instance_id": c.instance_id}

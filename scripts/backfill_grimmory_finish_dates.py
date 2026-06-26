@@ -69,8 +69,9 @@ def backfill_finish_dates(database_service, grimmory, dry_run=False, resolve_ebo
     update logic stays testable without ABS or Grimmory matching internals.
 
     Returns a summary dict with backfilled / failed / skipped counts. On success
-    the audit row is re-saved as ``migrated`` with a cleared error; on failure the
-    row is left untouched.
+    the finish-date errors are removed from the audit row; the row only flips to
+    ``migrated`` when no unrelated errors remain. On failure the row is left
+    untouched.
     """
     rows = database_service.get_all_abs_grimmory_migrations()
     summary = {"backfilled": 0, "failed": 0, "skipped": 0}
@@ -107,6 +108,7 @@ def backfill_finish_dates(database_service, grimmory, dry_run=False, resolve_ebo
                 summary["failed"] += 1
                 continue
 
+        residual_error = _residual_error_message(row)
         updated = AbsGrimmoryMigration(
             abs_id=row.abs_id,
             book_title=row.book_title,
@@ -116,14 +118,22 @@ def backfill_finish_dates(database_service, grimmory, dry_run=False, resolve_ebo
             finished_at=row.finished_at,
             sessions_written=row.sessions_written,
             bookmarks_written=row.bookmarks_written,
-            outcome="migrated",
-            error_message=None,
+            outcome="migrated_partial" if residual_error else "migrated",
+            error_message=residual_error,
         )
         database_service.save_abs_grimmory_migration(updated)
         logger.info(f"Backfilled finish date for {label}")
         summary["backfilled"] += 1
 
     return summary
+
+
+def _residual_error_message(row):
+    """Return non-finish-date errors that should survive a successful backfill."""
+    cleared = {"finish date", "ebook finish date", "ebook read"}
+    parts = [p.strip() for p in (row.error_message or "").split(";") if p.strip()]
+    residual = [p for p in parts if p not in cleared]
+    return "; ".join(residual) if residual else None
 
 
 def _backfill_ebook(row, grimmory, resolve_ebook, label):

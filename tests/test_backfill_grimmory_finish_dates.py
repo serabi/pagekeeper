@@ -113,6 +113,21 @@ def test_failed_write_leaves_row_untouched():
     assert summary["backfilled"] == 0
 
 
+def test_backfill_preserves_unrelated_residual_errors():
+    db = MagicMock()
+    db.get_all_abs_grimmory_migrations.return_value = [_row(error_message="finish date; local")]
+    grimmory = MagicMock()
+    grimmory.set_finished_date.return_value = True
+
+    summary = backfill_finish_dates(db, grimmory, dry_run=False)
+
+    saved = db.save_abs_grimmory_migration.call_args[0][0]
+    assert saved.outcome == "migrated_partial"
+    assert saved.error_message == "local"
+    assert summary["backfilled"] == 1
+    assert summary["failed"] == 0
+
+
 def test_backfills_ebook_counterpart_when_recorded():
     db = MagicMock()
     db.get_all_abs_grimmory_migrations.return_value = [_row(error_message="finish date; ebook read")]
