@@ -441,9 +441,7 @@ class SyncManager:
             return
 
         candidates = [
-            b
-            for b in self.database_service.get_books_by_status("not_started")
-            if getattr(b, "ebook_filename", None)
+            b for b in self.database_service.get_books_by_status("not_started") if getattr(b, "ebook_filename", None)
         ]
         if not candidates:
             return
@@ -464,9 +462,7 @@ class SyncManager:
                     f"to active ({pct:.1%} Grimmory progress)"
                 )
             else:
-                logger.warning(
-                    f"Discovery: failed to promote '{sanitize_log_data(book.title)}': {result.get('error')}"
-                )
+                logger.warning(f"Discovery: failed to promote '{sanitize_log_data(book.title)}': {result.get('error')}")
 
     def _prepare_sync_books(self, target_book_id):
         """Fetch active books, pre-fetch bulk states, and trigger suggestions."""
@@ -806,4 +802,3 @@ class SyncManager:
     def clear_progress(self, abs_id):
         """Clear progress data for a specific book and reset all sync clients to 0%."""
         return self.progress_reset_service.clear_progress(abs_id)
-

@@ -153,6 +153,48 @@ class TestABSSocketListenerDebounce(unittest.TestCase):
         self.assertEqual(len(self.listener._pending), 0)
         self.mock_db.get_book_by_abs_id.assert_not_called()
 
+    def _make_not_started_book(self, abs_id: str):
+        book = MagicMock()
+        book.id = 99
+        book.abs_id = abs_id
+        book.title = "Fresh Book"
+        book.status = "not_started"
+        book.activity_flag = False
+        book.started_at = None
+        book.ebook_filename = None
+        return book
+
+    def test_promotes_not_started_on_meaningful_progress(self):
+        """A not_started book with >1% reported progress is promoted to active."""
+        book = self._make_not_started_book("fresh-id")
+        self.mock_db.get_book_by_abs_id.return_value = book
+
+        self.listener._handle_progress_event({"id": "p", "data": {"libraryItemId": "fresh-id", "progress": 0.10}})
+
+        self.assertEqual(book.status, "active")
+        self.assertIn("fresh-id", self.listener._pending)
+
+    def test_not_started_below_threshold_only_flags_activity(self):
+        """A not_started book below 1% is not promoted, just flagged."""
+        book = self._make_not_started_book("fresh-id-2")
+        self.mock_db.get_book_by_abs_id.return_value = book
+
+        self.listener._handle_progress_event({"id": "p", "data": {"libraryItemId": "fresh-id-2", "progress": 0.001}})
+
+        self.assertEqual(book.status, "not_started")
+        self.assertTrue(book.activity_flag)
+        self.assertNotIn("fresh-id-2", self.listener._pending)
+
+    def test_not_started_without_progress_only_flags_activity(self):
+        """A not_started book with no extractable progress is flagged, not promoted."""
+        book = self._make_not_started_book("fresh-id-3")
+        self.mock_db.get_book_by_abs_id.return_value = book
+
+        self.listener._handle_progress_event({"id": "p", "data": {"libraryItemId": "fresh-id-3"}})
+
+        self.assertEqual(book.status, "not_started")
+        self.assertTrue(book.activity_flag)
+
     def test_url_stripping(self):
         """Server URL should strip trailing /api for socket connection."""
         with patch("src.services.abs_socket_listener.socketio.Client"):

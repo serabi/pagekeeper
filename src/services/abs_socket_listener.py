@@ -253,9 +253,7 @@ class ABSSocketListener:
                         f"({pct:.1%} progress reported)"
                     )
                 else:
-                    logger.warning(
-                        f"ABS Socket.IO: Failed to promote '{book.title}': {result.get('error')}"
-                    )
+                    logger.warning(f"ABS Socket.IO: Failed to promote '{book.title}': {result.get('error')}")
                 with self._lock:
                     self._pending[library_item_id] = time.time()
                     self._fired.discard(library_item_id)
