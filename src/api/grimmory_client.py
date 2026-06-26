@@ -133,7 +133,17 @@ class GrimmoryClient:
                     if not book_info:
                         book_info = {"fileName": db_book.filename, "title": db_book.title, "authors": db_book.authors}
 
-                    self._book_cache[db_book.filename] = book_info
+                    lower_name = db_book.filename.lower()
+
+                    # Normalize any legacy mixed-case row in place: re-save under the
+                    # lowercased key and drop the old row so the unique (server, filename)
+                    # row matches the lowercased keys used everywhere else.
+                    if db_book.filename != lower_name:
+                        self._normalize_grimmory_db_row(db_book, lower_name, book_info)
+
+                    # Key by lowercased filename to match _process_book_detail and the
+                    # lowercased lookups in find_book_by_filename.
+                    self._book_cache[lower_name] = book_info
 
                     bid = book_info.get("id")
                     if bid:
@@ -145,6 +155,22 @@ class GrimmoryClient:
             except Exception as e:
                 logger.error(f"Failed to load Grimmory cache from DB: {e}")
                 self._book_cache = {}
+
+    def _normalize_grimmory_db_row(self, db_book, lower_name, book_info):
+        """Rewrite a legacy mixed-case grimmory_books row to a lowercased filename."""
+        try:
+            normalized = GrimmoryBook(
+                filename=lower_name,
+                title=db_book.title,
+                authors=db_book.authors,
+                raw_metadata=json.dumps(book_info),
+                server_id=self.instance_id,
+            )
+            self.db.save_grimmory_book(normalized)
+            self.db.delete_grimmory_book(db_book.filename, server_id=self.instance_id)
+            logger.info(f"Grimmory: Normalized legacy cache row '{db_book.filename}' -> '{lower_name}'")
+        except Exception as e:
+            logger.warning(f"Grimmory: Failed to normalize cache row '{db_book.filename}': {e}")
 
     def _get_fresh_token(self):
         if self._token and (time.time() - self._token_timestamp) < self._token_max_age:
@@ -352,7 +378,7 @@ class GrimmoryClient:
                     live_filename = str(raw_live_filename).strip() if raw_live_filename else ""
                     cached_real_filename = book_info.get("fileName", fname)
 
-                    if live_filename and live_filename != str(cached_real_filename).strip():
+                    if live_filename and live_filename.lower() != str(cached_real_filename).strip().lower():
                         is_stale = True
                         logger.debug(
                             f"   Pruning {fname}: Filename mismatch. Live: {repr(raw_live_filename)} vs Cache: {repr(cached_real_filename)}"
