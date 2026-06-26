@@ -323,10 +323,23 @@ class AbsGrimmoryMigrationService:
             outcome=outcome,
             error_message=error,
         )
+        persisted = True
         try:
             self.database_service.save_abs_grimmory_migration(row)
         except Exception as e:
+            persisted = False
             logger.error(f"ABS->Grimmory: failed to persist audit row for {entry['abs_id']}: {e}")
+
+        # The audit row is the only idempotency guard _classify reads. If it did
+        # not persist, a re-run reclassifies this book as will_migrate and
+        # replays sessions/bookmarks (POST endpoints that create new rows),
+        # duplicating history. Report the unpersisted state instead of a clean
+        # success so callers do not treat it as fully migrated.
+        if not persisted:
+            audit_error = "audit row not persisted"
+            error = f"{error}; {audit_error}" if error else audit_error
+            outcome = "audit_failed"
+
         return {
             **_public(entry),
             "outcome": outcome,

@@ -228,6 +228,20 @@ def test_already_completed_book_writes_finish_date_directly():
     db.update_book_reading_fields.assert_called_once_with(local_book.id, finished_at="2023-11-14")
 
 
+def test_audit_persist_failure_reports_audit_failed_outcome():
+    svc, db, abs_client, grimmory = _service(
+        finished=[{"id": "a", "title": "X", "isbn": "111", "finished_at_ms": 1700000000000}],
+        grimmory_match=({"id": 5, "title": "X", "bookType": "EPUB"}, "isbn"),
+    )
+    db.save_abs_grimmory_migration.side_effect = RuntimeError("db down")
+
+    result = svc.migrate()
+
+    outcome = result["results"][0]
+    assert outcome["outcome"] == "audit_failed"
+    assert "audit row not persisted" in (outcome["error"] or "")
+
+
 def test_multi_instance_dispatch():
     svc, db, abs_client, grimmory = _service(
         finished=[{"id": "a", "title": "X", "isbn": "111", "finished_at_ms": 1700000000000}],
