@@ -811,7 +811,9 @@ class GrimmoryClient:
                     title_only_best = b
                 if author_norm:
                     b_author_norm = self._normalize_string(b.get("authors"))
-                    if author_norm in b_author_norm or b_author_norm in author_norm:
+                    if b_author_norm and (
+                        author_norm in b_author_norm or b_author_norm in author_norm
+                    ):
                         if t_ratio > best_ratio:
                             best_ratio = t_ratio
                             best = b
@@ -1022,7 +1024,11 @@ class GrimmoryClientGroup:
         for c in self._active:
             if c.instance_id == instance_id:
                 return c
-        return self._active[0] if self._active else None
+        logger.warning(
+            "No active Grimmory instance %r; skipping write to avoid wrong-server routing",
+            instance_id,
+        )
+        return None
 
     def update_read_status_by_id(self, book_id, status, instance_id="default"):
         c = self._client_for_instance(instance_id)

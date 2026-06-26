@@ -527,7 +527,7 @@ class ABSClient:
                     logger.warning(f"Failed to fetch ABS listening sessions: {r.status_code}")
                 break
             data = r.json()
-            batch = data.get("sessions", data if isinstance(data, list) else [])
+            batch = data if isinstance(data, list) else data.get("sessions", [])
             if not batch:
                 break
             sessions.extend(batch)
