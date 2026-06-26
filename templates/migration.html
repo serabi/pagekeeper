@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Migration - PageKeeper</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" type="image/png" href="/static/grimmory-app.png">
+    <link rel="apple-touch-icon" href="/static/grimmory-app.png">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/variables.css">
+    <link rel="stylesheet" href="/static/css/base.css">
+    <link rel="stylesheet" href="/static/css/layout.css">
+    <link rel="stylesheet" href="/static/css/components.css">
+    <link rel="stylesheet" href="/static/css/suggestions.css">
+    <link rel="stylesheet" href="/static/css/migration.css">
+</head>
+<body>
+    {% include 'partials/navbar.html' %}
+    <div class="container suggestions-shell">
+        <div class="sg-page-header">
+            <div class="sg-header-copy">
+                <p class="sg-page-kicker">Library Migration</p>
+                <h2 class="sg-page-title">Audiobookshelf &rarr; Grimmory</h2>
+                <p class="sg-page-description">Replay your finished Audiobookshelf books into Grimmory.</p>
+            </div>
+        </div>
+
+        {% if not migration_configured %}
+        <div class="empty-state">
+            <h3>Not configured</h3>
+            <p>Configure Audiobookshelf and Grimmory in <a href="/settings">Settings</a> first.</p>
+        </div>
+        {% else %}
+        <div class="mig-toolbar">
+            <div class="mig-toolbar-row">
+                <input type="text" id="mig-search" class="search-box mig-search" placeholder="Filter by title or author...">
+                <button type="button" class="btn btn-secondary" id="mig-preview-btn" onclick="migrationPreview(this)">Preview</button>
+            </div>
+            <div class="mig-option-grid">
+                <label class="mig-toggle"><input type="checkbox" id="mig-sessions" checked> <span>Carry listening sessions</span></label>
+                <label class="mig-toggle"><input type="checkbox" id="mig-bookmarks" checked> <span>Carry bookmarks</span></label>
+                <label class="mig-toggle"><input type="checkbox" id="mig-ebook-read"> <span>Mark ebook as read also</span></label>
+                <label class="mig-toggle"><input type="checkbox" id="mig-dry-run" checked> <span>Dry run</span></label>
+            </div>
+        </div>
+
+        <div class="stats-strip" id="mig-stats" hidden>
+            <div class="stat-pill"><strong id="mig-will">0</strong> to migrate</div>
+            <div class="stat-pill"><strong id="mig-done">0</strong> already migrated</div>
+            <div class="stat-pill"><strong id="mig-unmatched">0</strong> unmatched</div>
+        </div>
+
+        <div id="mig-buckets"></div>
+
+        <div class="candidate-actions" id="mig-action-bar" hidden>
+            <button type="button" class="btn btn-secondary" onclick="migrationSelectAll(true)">Select all</button>
+            <button type="button" class="btn btn-secondary" onclick="migrationSelectAll(false)">Select none</button>
+            <button type="button" class="btn btn-primary" id="mig-migrate-btn" onclick="migrationRun(this)" disabled>Migrate selected (0)</button>
+        </div>
+
+        <div id="mig-results" class="help-text mt-2"></div>
+
+        <div class="mig-modal" id="mig-match-modal" hidden>
+            <div class="mig-modal-backdrop" onclick="migrationCloseMatchModal()"></div>
+            <div class="mig-modal-panel" role="dialog" aria-modal="true" aria-labelledby="mig-match-title">
+                <div class="mig-modal-header">
+                    <div>
+                        <p class="mig-modal-kicker">Manual Match</p>
+                        <h3 id="mig-match-title">Choose Grimmory book</h3>
+                    </div>
+                    <button type="button" class="mig-icon-btn" onclick="migrationCloseMatchModal()" aria-label="Close">&times;</button>
+                </div>
+                <div class="mig-modal-search">
+                    <input type="text" id="mig-match-search" class="search-box" placeholder="Search Grimmory...">
+                    <button type="button" class="btn btn-secondary" onclick="migrationSearchMatches()">Search</button>
+                </div>
+                <div id="mig-match-results" class="mig-match-results"></div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    {% include 'partials/confirm_modal.html' %}
+    <script src="/static/js/confirm-modal.js"></script>
+    <script src="/static/js/migration.js"></script>
+</body>
+</html>

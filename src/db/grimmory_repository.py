@@ -5,7 +5,7 @@ import logging
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from .base_repository import BaseRepository
-from .models import GrimmoryBook
+from .models import AbsGrimmoryMigration, GrimmoryBook
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +72,40 @@ class GrimmoryRepository(BaseRepository):
                 session.refresh(grimmory_book)
                 session.expunge(grimmory_book)
                 return grimmory_book
+
+    # ── ABS -> Grimmory migration audit ──
+
+    def save_abs_grimmory_migration(self, migration):
+        """Insert or update an AbsGrimmoryMigration audit row by its unique key."""
+        return self._upsert(
+            AbsGrimmoryMigration,
+            (
+                AbsGrimmoryMigration.abs_id == migration.abs_id,
+                AbsGrimmoryMigration.grimmory_book_id == migration.grimmory_book_id,
+                AbsGrimmoryMigration.grimmory_instance_id == migration.grimmory_instance_id,
+            ),
+            migration,
+            (
+                "book_title",
+                "matched_by",
+                "finished_at",
+                "sessions_written",
+                "bookmarks_written",
+                "outcome",
+                "error_message",
+            ),
+        )
+
+    def get_abs_grimmory_migration(self, abs_id, grimmory_book_id, grimmory_instance_id="default"):
+        return self._get_one(
+            AbsGrimmoryMigration,
+            AbsGrimmoryMigration.abs_id == abs_id,
+            AbsGrimmoryMigration.grimmory_book_id == grimmory_book_id,
+            AbsGrimmoryMigration.grimmory_instance_id == grimmory_instance_id,
+        )
+
+    def get_all_abs_grimmory_migrations(self):
+        return self._get_all(AbsGrimmoryMigration, order_by=AbsGrimmoryMigration.created_at.desc())
 
     def delete_grimmory_book(self, filename, server_id="default"):
         try:

@@ -8,6 +8,7 @@ import logging
 from flask import Blueprint, current_app, jsonify, request
 
 from src.blueprints.helpers import (
+    _grimmory_label,
     find_in_grimmory,
     get_book_or_404,
     get_container,
@@ -326,6 +327,104 @@ def sync_reading_dates_api():
     return jsonify({"success": True, **stats})
 
 
+# ---------------- ABS -> Grimmory migration ----------------
+
+
+def _coerce_bool(value, default):
+    """Interpret JSON option values as booleans.
+
+    JSON booleans pass through; string flags like "false"/"0"/"no" are treated
+    as False rather than being truthy non-empty strings. Missing values use the
+    per-option default.
+    """
+    if value is None:
+        return default
+    if isinstance(value, str):
+        return value.strip().lower() not in ("false", "0", "no", "off", "")
+    return bool(value)
+
+
+def _parse_migration_options(data):
+    data = data if isinstance(data, dict) else {}
+    return {
+        "carry_listening_sessions": _coerce_bool(data.get("carry_listening_sessions"), True),
+        "carry_bookmarks": _coerce_bool(data.get("carry_bookmarks"), True),
+        "include_near_complete": _coerce_bool(data.get("include_near_complete"), False),
+        "mark_ebook_as_read": _coerce_bool(data.get("mark_ebook_as_read"), False),
+        "manual_matches": _parse_migration_manual_matches(data),
+    }
+
+
+def _parse_migration_manual_matches(data):
+    raw = data.get("manual_matches") if isinstance(data, dict) else None
+    if raw is None:
+        return {}
+    if not isinstance(raw, dict):
+        raise ValueError("'manual_matches' must be an object keyed by Audiobookshelf id")
+
+    matches = {}
+    for abs_id, match in raw.items():
+        if not isinstance(abs_id, str) or not isinstance(match, dict):
+            raise ValueError("'manual_matches' entries must be objects keyed by Audiobookshelf id")
+        book_id = match.get("grimmory_book_id")
+        instance_id = match.get("grimmory_instance_id", "default")
+        if not isinstance(book_id, (str, int)) or not str(book_id).strip():
+            raise ValueError("'manual_matches' entries require 'grimmory_book_id'")
+        if not isinstance(instance_id, str) or not instance_id.strip():
+            raise ValueError("'manual_matches' entries require 'grimmory_instance_id'")
+        matches[abs_id] = {
+            "grimmory_book_id": str(book_id).strip(),
+            "grimmory_instance_id": instance_id.strip(),
+        }
+    return matches
+
+
+@api_bp.route("/api/abs-grimmory-migration/preview", methods=["POST"])
+def abs_grimmory_migration_preview():
+    """Read-only preview of what an ABS->Grimmory migration would do."""
+    svc = get_container().abs_grimmory_migration_service()
+    if not svc.is_configured():
+        return json_error("Audiobookshelf and Grimmory must both be configured", 400)
+    try:
+        options = _parse_migration_options(request.get_json(silent=True))
+    except ValueError as e:
+        return json_error(str(e), 400)
+    try:
+        return jsonify({"success": True, **svc.preview(options)})
+    except Exception:
+        logger.exception("ABS->Grimmory migration preview failed")
+        return json_error("Failed to preview migration", 500)
+
+
+@api_bp.route("/api/abs-grimmory-migration/run", methods=["POST"])
+def abs_grimmory_migration_run():
+    """Execute (or dry-run) the ABS->Grimmory migration."""
+    svc = get_container().abs_grimmory_migration_service()
+    if not svc.is_configured():
+        return json_error("Audiobookshelf and Grimmory must both be configured", 400)
+    data = request.get_json(silent=True) or {}
+    try:
+        options = _parse_migration_options(data)
+    except ValueError as e:
+        return json_error(str(e), 400)
+    selected = data.get("selected_abs_ids")
+    if selected is not None and not isinstance(selected, list):
+        return json_error("'selected_abs_ids' must be a list of strings", 400)
+    selected_abs_ids = None
+    if isinstance(selected, list):
+        if not all(isinstance(s, str) for s in selected):
+            return json_error("'selected_abs_ids' must be a list of strings", 400)
+        selected_abs_ids = selected
+    dry_run = _coerce_bool(data.get("dry_run"), False)
+    try:
+        result = svc.migrate(options, dry_run=dry_run, selected_abs_ids=selected_abs_ids)
+    except Exception:
+        logger.exception("ABS->Grimmory migration run failed")
+        return json_error("Failed to run migration", 500)
+    logger.info(f"ABS->Grimmory migration run (dry_run={dry_run}): {result.get('outcome_counts')}")
+    return jsonify({"success": True, **result})
+
+
 # ---------------- Storyteller ----------------
 
 
@@ -401,17 +500,19 @@ def api_grimmory_search():
         return jsonify([])
 
     try:
-        label = current_app.config.get("GRIMMORY_LABEL", "Grimmory")
         results = []
         books = client.search_books(query)
         for b in books or []:
+            instance_id = b.get("_instance_id", "default")
             results.append(
                 {
                     "id": b.get("id"),
+                    "instanceId": instance_id,
                     "title": b.get("title", ""),
                     "authors": b.get("authors", ""),
                     "fileName": b.get("fileName", ""),
-                    "source": label,
+                    "bookType": b.get("bookType", ""),
+                    "source": _grimmory_label(instance_id),
                 }
             )
         return jsonify(results)

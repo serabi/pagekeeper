@@ -450,6 +450,11 @@ class GrimmoryClient:
             "pdfProgress": detail.get("pdfProgress"),
             "cbxProgress": detail.get("cbxProgress"),
             "koreaderProgress": detail.get("koreaderProgress"),
+            # Identifiers for ABS->Grimmory matching (may be absent on older cache rows)
+            "isbn13": metadata.get("isbn13"),
+            "isbn10": metadata.get("isbn10"),
+            "asin": metadata.get("asin"),
+            "googleId": metadata.get("googleId"),
         }
 
         self._book_cache[filename.lower()] = book_info
@@ -693,18 +698,341 @@ class GrimmoryClient:
             logger.debug(f"Grimmory: Cannot update read status -- book not found: {ebook_filename}")
             return False
 
-        book_id = book["id"]
+        return self.update_read_status_by_id(book["id"], status)
+
+    def update_read_status_by_id(self, book_id, status):
+        """Update the read status for a known numeric Grimmory book id.
+
+        Args:
+            book_id: The numeric Grimmory book id.
+            status: One of 'UNREAD', 'READING', 'RE_READING', 'READ',
+                    'PARTIALLY_READ', 'PAUSED', 'WONT_READ', 'ABANDONED'.
+
+        Grimmory auto-sets dateFinished when status is set to READ.
+        """
         payload = {"bookIds": [book_id], "status": status}
         response = self._make_request("POST", "/api/v1/books/status", payload)
         if response and response.status_code in [200, 201, 204]:
-            logger.info(f"Grimmory: Set read status '{status}' for {sanitize_log_data(ebook_filename)}")
+            logger.info(f"Grimmory: Set read status '{status}' for book {book_id}")
             return True
-        else:
-            resp_status = response.status_code if response else "No response"
-            logger.warning(
-                f"Grimmory: Failed to set read status for {sanitize_log_data(ebook_filename)}: {resp_status}"
+        resp_status = response.status_code if response else "No response"
+        logger.warning(f"Grimmory: Failed to set read status for book {book_id}: {resp_status}")
+        return False
+
+    @staticmethod
+    def _to_instant(date_finished):
+        """Normalize a finish date to a full ISO-8601 instant for Grimmory.
+
+        Grimmory's API binds dateFinished to a java.time.Instant, which cannot be
+        deserialized from a bare YYYY-MM-DD. Expand a date-only value to midnight
+        UTC; pass an already-instant value (anything with a time component) through.
+        """
+        if isinstance(date_finished, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_finished):
+            return f"{date_finished}T00:00:00Z"
+        return date_finished
+
+    def set_finished_date(self, book_id, book_type, date_finished):
+        """Set an explicit finish date on a Grimmory book via the progress endpoint.
+
+        Grimmory auto-dates to "now" on status=READ; this carries over the original
+        finish date (e.g. from Audiobookshelf). date_finished may be YYYY-MM-DD or
+        an ISO-8601 instant; a bare date is expanded to a full instant before POST.
+        """
+        date_finished = self._to_instant(date_finished)
+        payload = {"bookId": book_id, "dateFinished": date_finished}
+        response = self._make_request("POST", "/api/v1/books/progress", payload)
+        if response and response.status_code in [200, 201, 204]:
+            logger.info(f"Grimmory: Set finish date {date_finished} for book {book_id}")
+            return True
+        resp_status = response.status_code if response else "No response"
+        logger.warning(f"Grimmory: Failed to set finish date for book {book_id}: {resp_status}")
+        return False
+
+    def add_reading_session(
+        self,
+        book_id,
+        book_type,
+        *,
+        start_time,
+        end_time,
+        duration_seconds,
+        start_progress=0.0,
+        end_progress=1.0,
+    ):
+        """Record one reading session. Grimmory always inserts, so call once per
+        source session to replay full history.
+
+        start_time/end_time are ISO-8601 instants. Required by Grimmory:
+        bookId, startTime, endTime, durationSeconds.
+        """
+        payload = {
+            "bookId": book_id,
+            "startTime": start_time,
+            "endTime": end_time,
+            "durationSeconds": int(duration_seconds),
+            "startProgress": start_progress,
+            "endProgress": end_progress,
+        }
+        if book_type:
+            payload["bookType"] = book_type
+        response = self._make_request("POST", "/api/v1/reading-sessions", payload)
+        if response and response.status_code in [200, 201, 202, 204]:
+            return True
+        resp_status = response.status_code if response else "No response"
+        logger.warning(f"Grimmory: Failed to record reading session for book {book_id}: {resp_status}")
+        return False
+
+    def add_bookmark(self, book_id, *, position_ms, track_index=0, title=None):
+        """Create an audiobook bookmark anchored by position (ms) + track index."""
+        payload = {"bookId": book_id, "positionMs": int(position_ms), "trackIndex": int(track_index)}
+        if title:
+            payload["title"] = title
+        response = self._make_request("POST", "/api/v1/bookmarks", payload)
+        if response and response.status_code in [200, 201, 204]:
+            return True
+        resp_status = response.status_code if response else "No response"
+        logger.warning(f"Grimmory: Failed to create bookmark for book {book_id}: {resp_status}")
+        return False
+
+    @staticmethod
+    def _norm_isbn(v):
+        return re.sub(r"[^0-9Xx]", "", str(v)).upper() if v else ""
+
+    @staticmethod
+    def _fuzzy_threshold():
+        try:
+            raw_threshold = float(os.environ.get("FUZZY_MATCH_THRESHOLD", 80))
+        except (TypeError, ValueError):
+            raw_threshold = 80.0
+        return raw_threshold / 100 if raw_threshold > 1 else raw_threshold
+
+    def _isbn_matches(self, books, isbn):
+        target = self._norm_isbn(isbn)
+        if not target:
+            return []
+        matches = []
+        for b in books:
+            for key in ("isbn13", "isbn10", "isbn"):
+                if self._norm_isbn(b.get(key)) == target:
+                    matches.append(b)
+                    break
+        return matches
+
+    def _asin_matches(self, books, asin):
+        target = str(asin).strip().lower()
+        if not target:
+            return []
+        return [b for b in books if str(b.get("asin") or "").strip().lower() == target]
+
+    def _title_scored_candidates(self, books, title, author):
+        """Score ``books`` by fuzzy title (and title+author) match.
+
+        Returns ``(title_author_candidates, title_candidates)`` where each is a
+        list of ``(book, ratio)`` for books at-or-above ``FUZZY_MATCH_THRESHOLD``,
+        sorted by ratio descending. ``title_author_candidates`` is the subset whose
+        author also overlaps ``author``.
+        """
+        threshold = self._fuzzy_threshold()
+        title_norm = self._normalize_string(title)
+        author_norm = self._normalize_string(author) if author else ""
+
+        title_scored = []
+        title_author_scored = []
+        for b in books:
+            b_title_norm = self._normalize_string(b.get("title"))
+            if not b_title_norm:
+                continue
+            t_ratio = SequenceMatcher(None, title_norm, b_title_norm).ratio()
+            if t_ratio < threshold:
+                continue
+            title_scored.append((b, t_ratio))
+            if author_norm:
+                raw_authors = b.get("authors")
+                b_author_norm = self._normalize_string(
+                    raw_authors if isinstance(raw_authors, str) else ""
+                )
+                if b_author_norm and (
+                    author_norm in b_author_norm or b_author_norm in author_norm
+                ):
+                    title_author_scored.append((b, t_ratio))
+
+        title_scored.sort(key=lambda x: x[1], reverse=True)
+        title_author_scored.sort(key=lambda x: x[1], reverse=True)
+        return title_author_scored, title_scored
+
+    def match_book_by_identifiers(
+        self, *, isbn=None, asin=None, title=None, author=None, prefer_book_type=None, exclude_book_id=None
+    ):
+        """Find a Grimmory book by identifier cascade: isbn -> asin -> title+author -> title.
+
+        Matches client-side against the local book list (Grimmory has no
+        search-by-identifier endpoint). Returns (book_info, matched_by) or (None, None).
+
+        ``prefer_book_type`` (e.g. "AUDIOBOOK") disambiguates same-identifier
+        multi-format records: within each tier, when several books match equally,
+        the one whose ``bookType`` matches is returned instead of the first hit.
+        ``None`` (the default) preserves neutral first-hit behavior for every
+        other caller.
+
+        ``exclude_book_id`` skips any candidate whose ``id`` equals it in every
+        tier, used to find a title's *other* format record (e.g. the ebook
+        counterpart of an already-matched audiobook).
+        """
+        books = self.get_all_books()
+        if not books:
+            return None, None
+
+        def _excluded(b):
+            return exclude_book_id is not None and str(b.get("id")) == str(exclude_book_id)
+
+        def _pick(candidates):
+            if prefer_book_type:
+                for b in candidates:
+                    if (b.get("bookType") or "").upper() == prefer_book_type.upper():
+                        return b
+            return candidates[0]
+
+        def _pick_scored(scored):
+            """Select from ratio-scored ``(book, ratio)`` candidates.
+
+            With ``prefer_book_type`` set, a record of that type can win even at a
+            slightly lower ratio than a non-preferred record: real dual-format
+            data gives the preferred format a differently-prefixed title (e.g. the
+            audiobook "02 Paladin's Strength" at 0.94 vs the ebook "Paladin's
+            Strength" at 1.0). Pick the highest-ratio preferred-type record when
+            any exists; otherwise fall back to the top-ratio tie group's first hit.
+            """
+            if prefer_book_type:
+                preferred = [
+                    (b, r)
+                    for b, r in scored
+                    if (b.get("bookType") or "").upper() == prefer_book_type.upper()
+                ]
+                if preferred:
+                    return preferred[0][0]
+            best_ratio = scored[0][1]
+            return _pick([b for b, r in scored if r == best_ratio])
+
+        def _has_preferred(books, scored=False):
+            if not prefer_book_type:
+                return False
+            records = (b for b, _r in books) if scored else books
+            return any(
+                (b.get("bookType") or "").upper() == prefer_book_type.upper()
+                for b in records
             )
-            return False
+
+        considered = [b for b in books if not _excluded(b)]
+
+        # Build the cascade lazily as ``(matched_by, resolver, has_preferred)`` per
+        # non-empty tier: isbn -> asin -> title+author -> title.
+        tiers = []
+        if isbn:
+            matches = self._isbn_matches(considered, isbn)
+            if matches:
+                tiers.append(("isbn", lambda m=matches: _pick(m), _has_preferred(matches)))
+        if asin:
+            matches = self._asin_matches(considered, asin)
+            if matches:
+                tiers.append(("asin", lambda m=matches: _pick(m), _has_preferred(matches)))
+        if title:
+            title_author_scored, title_scored = self._title_scored_candidates(
+                considered, title, author
+            )
+            if title_author_scored:
+                tiers.append((
+                    "title_author",
+                    lambda s=title_author_scored: _pick_scored(s),
+                    _has_preferred(title_author_scored, scored=True),
+                ))
+            if title_scored:
+                tiers.append((
+                    "title",
+                    lambda s=title_scored: _pick_scored(s),
+                    _has_preferred(title_scored, scored=True),
+                ))
+
+        if not tiers:
+            return None, None
+
+        # With a preference, a correct-format match from a weaker tier outranks a
+        # wrong-format match from a stronger one: return the strongest tier that
+        # actually contains a ``prefer_book_type`` record. ``_pick``/``_pick_scored``
+        # then select that record within the tier.
+        if prefer_book_type:
+            for matched_by, resolve, has_preferred in tiers:
+                if has_preferred:
+                    return resolve(), matched_by
+                if matched_by in ("isbn", "asin"):
+                    break
+
+        # No preference, or no tier held a preferred-type record: keep the neutral
+        # first-non-empty-tier behavior (preserves the ebook fallback when no
+        # audiobook exists anywhere).
+        matched_by, resolve, _ = tiers[0]
+        return resolve(), matched_by
+
+    def find_format_counterpart(
+        self, *, matched_book, isbn=None, asin=None, title=None, author=None, exclude_book_type="AUDIOBOOK"
+    ):
+        """Find the best non-``exclude_book_type`` record for an already-matched book.
+
+        Given the audiobook record ``match_book_by_identifiers`` resolved, locate
+        the matching *other* format (the ebook). Unlike re-running the generic
+        cascade with ``exclude_book_id``, this:
+
+        - excludes records whose ``bookType`` equals ``exclude_book_type`` outright,
+          so a lower-ratio audiobook title never wins, and
+        - ranks *all* title candidates at-or-above threshold (not only the single
+          best-ratio tie group), so a counterpart whose title differs slightly from
+          the audiobook still surfaces.
+
+        Returns ``(book, matched_by)`` for the strongest surviving candidate, else
+        ``(None, None)``.
+        """
+        if not matched_book:
+            return None, None
+        books = self.get_all_books()
+        if not books:
+            return None, None
+
+        matched_id = str(matched_book.get("id"))
+        matched_instance = str(matched_book.get("_instance_id", getattr(self, "instance_id", "default")))
+        exclude_type = (exclude_book_type or "").upper()
+        candidates = [
+            b
+            for b in books
+            if (
+                (
+                    str(b.get("id")) != matched_id
+                    or str(b.get("_instance_id", getattr(self, "instance_id", "default"))) != matched_instance
+                )
+                and (b.get("bookType") or "").upper() != exclude_type
+            )
+        ]
+        if not candidates:
+            return None, None
+
+        # ISBN / ASIN tiers: strongest, return the first surviving match.
+        if isbn:
+            matches = self._isbn_matches(candidates, isbn)
+            if matches:
+                return matches[0], "isbn"
+        if asin:
+            matches = self._asin_matches(candidates, asin)
+            if matches:
+                return matches[0], "asin"
+
+        if title:
+            title_author_scored, title_scored = self._title_scored_candidates(
+                candidates, title, author
+            )
+            if title_author_scored:
+                return title_author_scored[0][0], "title_author"
+            if title_scored:
+                return title_scored[0][0], "title"
+
+        return None, None
 
     def get_recent_activity(self, min_progress=0.01):
         if not self._book_cache:
@@ -890,3 +1218,110 @@ class GrimmoryClientGroup:
             if pct is not None:
                 return pct, cfi
         return None, None
+
+    # ── ABS -> Grimmory migration passthroughs ──
+
+    _MATCH_STRENGTH = {"isbn": 3, "asin": 2, "title_author": 1, "title": 0}
+
+    def match_book_by_identifiers(
+        self, *, isbn=None, asin=None, title=None, author=None, prefer_book_type=None, exclude_book_id=None
+    ):
+        """Match across all instances, returning the strongest match.
+
+        Each client falls back isbn -> asin -> title+author -> title, so a weak
+        title-only hit on an early instance must not shadow a stronger ISBN/ASIN
+        match on a later one. Collect every instance's match and keep the best by
+        match-type strength. Returns (book_info_with_instance_id, matched_by).
+
+        ``prefer_book_type`` / ``exclude_book_id`` pass through to each member.
+        When ``prefer_book_type`` is set it only breaks ties within the same match
+        strength, so exact ISBN/ASIN matches still outrank fuzzy title matches
+        across instances.
+        """
+        best_book = None
+        best_matched_by = None
+        best_key = (-1, -1)
+        for c in self._active:
+            book, matched_by = c.match_book_by_identifiers(
+                isbn=isbn,
+                asin=asin,
+                title=title,
+                author=author,
+                prefer_book_type=prefer_book_type,
+                exclude_book_id=exclude_book_id,
+            )
+            if not book:
+                continue
+            strength = self._MATCH_STRENGTH.get(matched_by, -1)
+            is_preferred = bool(prefer_book_type) and (book.get("bookType") or "").upper() == prefer_book_type.upper()
+            key = (strength, 1 if is_preferred else 0)
+            if key > best_key:
+                best_key = key
+                best_book = {**book, "_instance_id": c.instance_id}
+                best_matched_by = matched_by
+                if strength == self._MATCH_STRENGTH["isbn"] and (not prefer_book_type or is_preferred):
+                    break
+        if best_book:
+            return best_book, best_matched_by
+        return None, None
+
+    def find_format_counterpart(
+        self, *, matched_book, isbn=None, asin=None, title=None, author=None, exclude_book_type="AUDIOBOOK"
+    ):
+        """Find the best non-``exclude_book_type`` record across all instances.
+
+        Asks each member for its counterpart, tags the result with ``_instance_id``,
+        and keeps the strongest by ``_MATCH_STRENGTH`` -- mirroring the
+        cross-instance reconciliation in ``match_book_by_identifiers``. Returns
+        ``(book_info_with_instance_id, matched_by)`` or ``(None, None)``.
+        """
+        best_book = None
+        best_matched_by = None
+        best_strength = -1
+        for c in self._active:
+            book, matched_by = c.find_format_counterpart(
+                matched_book=matched_book,
+                isbn=isbn,
+                asin=asin,
+                title=title,
+                author=author,
+                exclude_book_type=exclude_book_type,
+            )
+            if not book:
+                continue
+            strength = self._MATCH_STRENGTH.get(matched_by, -1)
+            if strength > best_strength:
+                best_strength = strength
+                best_book = {**book, "_instance_id": c.instance_id}
+                best_matched_by = matched_by
+                if strength == self._MATCH_STRENGTH["isbn"]:
+                    break
+        if best_book:
+            return best_book, best_matched_by
+        return None, None
+
+    def _client_for_instance(self, instance_id):
+        for c in self._active:
+            if c.instance_id == instance_id:
+                return c
+        logger.warning(
+            "No active Grimmory instance %r; skipping write to avoid wrong-server routing",
+            instance_id,
+        )
+        return None
+
+    def update_read_status_by_id(self, book_id, status, instance_id="default"):
+        c = self._client_for_instance(instance_id)
+        return c.update_read_status_by_id(book_id, status) if c else False
+
+    def set_finished_date(self, book_id, book_type, date_finished, instance_id="default"):
+        c = self._client_for_instance(instance_id)
+        return c.set_finished_date(book_id, book_type, date_finished) if c else False
+
+    def add_reading_session(self, book_id, book_type, *, instance_id="default", **kwargs):
+        c = self._client_for_instance(instance_id)
+        return c.add_reading_session(book_id, book_type, **kwargs) if c else False
+
+    def add_bookmark(self, book_id, *, instance_id="default", **kwargs):
+        c = self._client_for_instance(instance_id)
+        return c.add_bookmark(book_id, **kwargs) if c else False

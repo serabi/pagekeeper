@@ -319,6 +319,626 @@ def test_fetch_bulk_state():
     assert bulk["book1.epub"]["id"] == 1
 
 
+# ── ABS -> Grimmory migration write/match methods ──
+
+
+def test_update_read_status_by_id(grimmory_client):
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    grimmory_client._make_request = MagicMock(return_value=mock_resp)
+
+    result = grimmory_client.update_read_status_by_id(77, "READ")
+
+    assert result is True
+    method, endpoint, payload = grimmory_client._make_request.call_args[0]
+    assert method == "POST"
+    assert endpoint == "/api/v1/books/status"
+    assert payload == {"bookIds": [77], "status": "READ"}
+
+
+def test_update_read_status_delegates_to_by_id(grimmory_client):
+    """The filename-based method resolves the id then delegates."""
+    grimmory_client._book_cache = {"test.epub": {"id": 88, "fileName": "test.epub", "bookType": "EPUB"}}
+    grimmory_client._book_id_cache = {88: grimmory_client._book_cache["test.epub"]}
+    grimmory_client._cache_timestamp = 9999999999
+    grimmory_client.update_read_status_by_id = MagicMock(return_value=True)
+
+    result = grimmory_client.update_read_status("test.epub", "READ")
+
+    assert result is True
+    grimmory_client.update_read_status_by_id.assert_called_once_with(88, "READ")
+
+
+def test_set_finished_date(grimmory_client):
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    grimmory_client._make_request = MagicMock(return_value=mock_resp)
+
+    result = grimmory_client.set_finished_date(12, "EPUB", "2024-03-09")
+
+    assert result is True
+    method, endpoint, payload = grimmory_client._make_request.call_args[0]
+    assert method == "POST"
+    assert endpoint == "/api/v1/books/progress"
+    assert payload["bookId"] == 12
+    # Grimmory binds dateFinished to a java.time.Instant; a bare date must be
+    # expanded to a full ISO-8601 instant or the request is rejected.
+    assert payload["dateFinished"] == "2024-03-09T00:00:00Z"
+
+
+def test_set_finished_date_passes_through_instant(grimmory_client):
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    grimmory_client._make_request = MagicMock(return_value=mock_resp)
+
+    result = grimmory_client.set_finished_date(12, "EPUB", "2024-03-09T18:30:00Z")
+
+    assert result is True
+    _, _, payload = grimmory_client._make_request.call_args[0]
+    assert payload["dateFinished"] == "2024-03-09T18:30:00Z"
+
+
+def test_add_reading_session(grimmory_client):
+    mock_resp = MagicMock()
+    mock_resp.status_code = 202
+    grimmory_client._make_request = MagicMock(return_value=mock_resp)
+
+    result = grimmory_client.add_reading_session(
+        5, "AUDIOBOOK", start_time="2024-01-01T10:00:00Z", end_time="2024-01-01T11:00:00Z", duration_seconds=3600
+    )
+
+    assert result is True
+    method, endpoint, payload = grimmory_client._make_request.call_args[0]
+    assert method == "POST"
+    assert endpoint == "/api/v1/reading-sessions"
+    assert payload["bookId"] == 5
+    assert payload["startTime"] == "2024-01-01T10:00:00Z"
+    assert payload["endTime"] == "2024-01-01T11:00:00Z"
+    assert payload["durationSeconds"] == 3600
+
+
+def test_add_bookmark_audiobook(grimmory_client):
+    mock_resp = MagicMock()
+    mock_resp.status_code = 201
+    grimmory_client._make_request = MagicMock(return_value=mock_resp)
+
+    result = grimmory_client.add_bookmark(9, position_ms=125000, track_index=2, title="Chapter 3")
+
+    assert result is True
+    method, endpoint, payload = grimmory_client._make_request.call_args[0]
+    assert method == "POST"
+    assert endpoint == "/api/v1/bookmarks"
+    assert payload["bookId"] == 9
+    assert payload["positionMs"] == 125000
+    assert payload["trackIndex"] == 2
+    assert payload["title"] == "Chapter 3"
+
+
+def test_match_book_by_identifiers_isbn_wins(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Other", "authors": "Someone", "isbn13": "111"},
+            {"id": 2, "title": "Target", "authors": "Author A", "isbn13": "9780000000001", "asin": "B00ASIN"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(
+        isbn="9780000000001", asin="B00ASIN", title="Target", author="Author A"
+    )
+
+    assert book["id"] == 2
+    assert matched_by == "isbn"
+
+
+def test_match_book_by_identifiers_asin_when_no_isbn(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[{"id": 3, "title": "T", "authors": "A", "asin": "B00XYZ"}]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(isbn=None, asin="B00XYZ", title="T", author="A")
+
+    assert book["id"] == 3
+    assert matched_by == "asin"
+
+
+def test_match_book_by_identifiers_title_author(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[{"id": 4, "title": "The Great Book", "authors": "Jane Doe"}]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(
+        isbn=None, asin=None, title="The Great Book", author="Jane Doe"
+    )
+
+    assert book["id"] == 4
+    assert matched_by in ("title_author", "title")
+
+
+def test_match_book_by_identifiers_no_match(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(return_value=[{"id": 5, "title": "Nope", "authors": "Nobody"}])
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(
+        isbn="999", asin="X", title="Totally Different", author="Other Person"
+    )
+
+    assert book is None
+    assert matched_by is None
+
+
+def test_match_book_by_identifiers_ignores_blank_asin(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[{"id": 9, "title": "Unrelated", "authors": "A", "asin": ""}]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(
+        asin="   ", title="Different Title", author="Other"
+    )
+
+    assert book is None
+    assert matched_by is None
+
+
+def test_match_book_by_identifiers_authors_list_does_not_crash(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[{"id": 6, "title": "Legacy Title", "authors": ["Jane Doe"]}]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(
+        isbn=None, asin=None, title="Legacy Title", author="Jane Doe"
+    )
+
+    assert book["id"] == 6
+    assert matched_by == "title"
+
+
+def test_match_book_by_identifiers_non_numeric_threshold_falls_back(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[{"id": 7, "title": "Findable Book", "authors": "Author"}]
+    )
+
+    with patch.dict(os.environ, {"FUZZY_MATCH_THRESHOLD": "eighty"}):
+        book, matched_by = grimmory_client.match_book_by_identifiers(
+            isbn=None, asin=None, title="Findable Book", author="Author"
+        )
+
+    assert book["id"] == 7
+    assert matched_by == "title_author"
+
+
+def _group_member(instance_id, match_return):
+    member = MagicMock()
+    member.instance_id = instance_id
+    member.is_configured.return_value = True
+    member.match_book_by_identifiers.return_value = match_return
+    return member
+
+
+def test_group_match_prefers_strongest_match_across_instances():
+    from src.api.grimmory_client import GrimmoryClientGroup
+
+    weak = _group_member("a", ({"id": 10, "title": "T"}, "title"))
+    strong = _group_member("b", ({"id": 20, "title": "T"}, "isbn"))
+    group = GrimmoryClientGroup([weak, strong])
+
+    book, matched_by = group.match_book_by_identifiers(isbn="123", title="T")
+
+    assert book["id"] == 20
+    assert book["_instance_id"] == "b"
+    assert matched_by == "isbn"
+
+
+def test_group_match_returns_none_when_no_instance_matches():
+    from src.api.grimmory_client import GrimmoryClientGroup
+
+    a = _group_member("a", (None, None))
+    b = _group_member("b", (None, None))
+    group = GrimmoryClientGroup([a, b])
+
+    book, matched_by = group.match_book_by_identifiers(title="Nope")
+
+    assert book is None
+    assert matched_by is None
+
+
+def test_group_match_keeps_exact_identifier_over_preferred_type_from_weaker_tier():
+    # A fuzzy title-only audiobook must not override an exact ISBN match on a
+    # different instance. Preference breaks ties within a tier; it does not
+    # outrank identifier confidence.
+    from src.api.grimmory_client import GrimmoryClientGroup
+
+    ebook = _group_member("a", ({"id": 1, "title": "Dual", "bookType": "EPUB"}, "isbn"))
+    audiobook = _group_member("b", ({"id": 2, "title": "Dual", "bookType": "AUDIOBOOK"}, "title"))
+    group = GrimmoryClientGroup([ebook, audiobook])
+
+    book, matched_by = group.match_book_by_identifiers(
+        isbn="9780000000001", title="Dual", prefer_book_type="AUDIOBOOK"
+    )
+
+    assert book["id"] == 1
+    assert book["_instance_id"] == "a"
+    assert matched_by == "isbn"
+
+
+def test_match_prefer_audiobook_isbn_tie(grimmory_client):
+    # EPUB listed first to prove ordering is overridden by the preference.
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Dual", "authors": "A", "isbn13": "9780000000001", "bookType": "EPUB"},
+            {"id": 2, "title": "Dual", "authors": "A", "isbn13": "9780000000001", "bookType": "AUDIOBOOK"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(
+        isbn="9780000000001", prefer_book_type="AUDIOBOOK"
+    )
+
+    assert book["id"] == 2
+    assert matched_by == "isbn"
+
+
+def test_match_prefer_audiobook_asin_tie(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Dual", "authors": "A", "asin": "B00DUAL", "bookType": "EPUB"},
+            {"id": 2, "title": "Dual", "authors": "A", "asin": "B00DUAL", "bookType": "AUDIOBOOK"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(asin="B00DUAL", prefer_book_type="AUDIOBOOK")
+
+    assert book["id"] == 2
+    assert matched_by == "asin"
+
+
+def test_match_prefer_audiobook_title_author_tie(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Same Title", "authors": "Jane Doe", "bookType": "EPUB"},
+            {"id": 2, "title": "Same Title", "authors": "Jane Doe", "bookType": "AUDIOBOOK"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(
+        title="Same Title", author="Jane Doe", prefer_book_type="AUDIOBOOK"
+    )
+
+    assert book["id"] == 2
+    assert matched_by == "title_author"
+
+
+def test_match_prefer_audiobook_falls_back_when_absent(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[{"id": 1, "title": "Dual", "authors": "A", "isbn13": "9780000000001", "bookType": "EPUB"}]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(
+        isbn="9780000000001", prefer_book_type="AUDIOBOOK"
+    )
+
+    assert book["id"] == 1
+    assert matched_by == "isbn"
+
+
+def test_match_default_keeps_first_hit_without_preference(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Dual", "authors": "A", "isbn13": "9780000000001", "bookType": "EPUB"},
+            {"id": 2, "title": "Dual", "authors": "A", "isbn13": "9780000000001", "bookType": "AUDIOBOOK"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(isbn="9780000000001")
+
+    assert book["id"] == 1
+    assert matched_by == "isbn"
+
+
+def test_match_prefer_audiobook_lower_ratio_title_wins(grimmory_client):
+    # Real dual-format data: the audiobook title carries a track prefix ("02 ")
+    # scoring below the exact-match ebook. With AUDIOBOOK preferred, the
+    # lower-ratio audiobook must still win over the higher-ratio ebook.
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Paladin's Strength", "authors": "", "bookType": "EPUB"},
+            {"id": 2, "title": "02 Paladin's Strength", "authors": "", "bookType": "AUDIOBOOK"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(
+        title="Paladin's Strength", prefer_book_type="AUDIOBOOK"
+    )
+
+    assert book["id"] == 2
+    assert matched_by == "title"
+
+
+def test_match_title_no_preference_keeps_best_ratio(grimmory_client):
+    # Without a preference, the exact-ratio ebook still wins over the prefixed
+    # audiobook -- the near-ratio override only applies when a type is preferred.
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Paladin's Strength", "authors": "", "bookType": "EPUB"},
+            {"id": 2, "title": "02 Paladin's Strength", "authors": "", "bookType": "AUDIOBOOK"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(title="Paladin's Strength")
+
+    assert book["id"] == 1
+    assert matched_by == "title"
+
+
+def test_match_prefer_audiobook_title_falls_back_when_absent(grimmory_client):
+    # No audiobook candidate at all: fall back to the best-ratio ebook.
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Solo Title", "authors": "", "bookType": "EPUB"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(
+        title="Solo Title", prefer_book_type="AUDIOBOOK"
+    )
+
+    assert book["id"] == 1
+    assert matched_by == "title"
+
+
+def test_match_prefer_audiobook_keeps_exact_isbn_over_later_asin(grimmory_client):
+    # The ebook carries an exact ISBN while the audiobook only matches the later
+    # ASIN tier. Keep the identifier cascade order instead of letting preference
+    # cross exact tiers.
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Dual", "authors": "A", "isbn13": "9780000000001", "bookType": "EPUB"},
+            {"id": 2, "title": "Dual", "authors": "A", "asin": "B00DUAL", "bookType": "AUDIOBOOK"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(
+        isbn="9780000000001", asin="B00DUAL", title="Dual", prefer_book_type="AUDIOBOOK"
+    )
+
+    assert book["id"] == 1
+    assert matched_by == "isbn"
+
+
+def test_match_prefer_audiobook_keeps_exact_isbn_over_later_title(grimmory_client):
+    # The ebook owns an exact ISBN; the audiobook only shares a fuzzy title. The
+    # exact identifier match is safer and must win.
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Shared Title", "authors": "A", "isbn13": "9780000000001", "bookType": "EPUB"},
+            {"id": 2, "title": "Shared Title", "authors": "A", "bookType": "AUDIOBOOK"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(
+        isbn="9780000000001", title="Shared Title", prefer_book_type="AUDIOBOOK"
+    )
+
+    assert book["id"] == 1
+    assert matched_by == "isbn"
+
+
+def test_match_exclude_book_id_skips_audiobook(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Dual", "authors": "A", "isbn13": "9780000000001", "bookType": "AUDIOBOOK"},
+            {"id": 2, "title": "Dual", "authors": "A", "isbn13": "9780000000001", "bookType": "EPUB"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(isbn="9780000000001", exclude_book_id=1)
+
+    assert book["id"] == 2
+    assert matched_by == "isbn"
+
+
+def test_match_exclude_book_id_no_other_record(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Solo", "authors": "A", "isbn13": "9780000000001", "bookType": "AUDIOBOOK"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(isbn="9780000000001", exclude_book_id=1)
+
+    assert book is None
+    assert matched_by is None
+
+
+def test_group_match_prefers_audiobook_across_instances():
+    from src.api.grimmory_client import GrimmoryClientGroup
+
+    # Both instances return an equal-strength isbn match; only one is the audiobook.
+    ebook = _group_member("a", ({"id": 10, "title": "T", "bookType": "EPUB"}, "isbn"))
+    audio = _group_member("b", ({"id": 20, "title": "T", "bookType": "AUDIOBOOK"}, "isbn"))
+    group = GrimmoryClientGroup([ebook, audio])
+
+    book, matched_by = group.match_book_by_identifiers(isbn="123", title="T", prefer_book_type="AUDIOBOOK")
+
+    assert book["id"] == 20
+    assert book["_instance_id"] == "b"
+    assert matched_by == "isbn"
+
+
+def test_find_format_counterpart_title_only(grimmory_client):
+    # ABS finished books arrive author-less; the only working tier is title.
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "01 Nettle & Bone", "authors": "", "bookType": "AUDIOBOOK"},
+            {"id": 2, "title": "Nettle & Bone", "authors": "", "bookType": "EPUB"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.find_format_counterpart(
+        matched_book={"id": 1, "bookType": "AUDIOBOOK"}, title="Nettle & Bone"
+    )
+
+    assert book["id"] == 2
+    assert matched_by == "title"
+
+
+def test_find_format_counterpart_excludes_audiobook(grimmory_client):
+    # A second, lower-ratio audiobook must never be returned as the counterpart,
+    # even when its title is the closest match after the matched audiobook.
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Paladin's Strength", "authors": "", "bookType": "AUDIOBOOK"},
+            {"id": 2, "title": "Paladin's Strength", "authors": "", "bookType": "AUDIOBOOK"},
+            {"id": 3, "title": "Paladin's Strength", "authors": "", "bookType": "EPUB"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.find_format_counterpart(
+        matched_book={"id": 1, "bookType": "AUDIOBOOK"}, title="Paladin's Strength"
+    )
+
+    assert book["id"] == 3
+    assert book["bookType"] == "EPUB"
+
+
+def test_find_format_counterpart_collapsed_filename_other_format_survives(grimmory_client):
+    # When same-filename ebook duplicates collapse in the cache, the surviving
+    # ebook is a genuinely distinct bookType from the audiobook, so excluding the
+    # audiobook id still leaves it to be found.
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 100, "title": "Carl's Doomsday Scenario", "authors": "", "bookType": "AUDIOBOOK"},
+            {"id": 808, "title": "Carl's Doomsday Scenario", "authors": "", "bookType": "EPUB"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.find_format_counterpart(
+        matched_book={"id": 100, "bookType": "AUDIOBOOK"}, title="Carl's Doomsday Scenario"
+    )
+
+    assert book["id"] == 808
+    assert matched_by == "title"
+
+
+def test_find_format_counterpart_isbn_tier(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Dual", "isbn13": "9780000000001", "bookType": "AUDIOBOOK"},
+            {"id": 2, "title": "Dual", "isbn13": "9780000000001", "bookType": "EPUB"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.find_format_counterpart(
+        matched_book={"id": 1, "bookType": "AUDIOBOOK"}, isbn="9780000000001", title="Dual"
+    )
+
+    assert book["id"] == 2
+    assert matched_by == "isbn"
+
+
+def test_find_format_counterpart_does_not_exclude_same_numeric_id_on_other_instance(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Dual", "isbn13": "9780000000001", "bookType": "EPUB", "_instance_id": "b"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.find_format_counterpart(
+        matched_book={
+            "id": 1,
+            "title": "Dual",
+            "isbn13": "9780000000001",
+            "bookType": "AUDIOBOOK",
+            "_instance_id": "a",
+        },
+        isbn="9780000000001",
+        title="Dual",
+    )
+
+    assert book["id"] == 1
+    assert book["_instance_id"] == "b"
+    assert matched_by == "isbn"
+
+
+def test_find_format_counterpart_title_author_tier(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Dual", "authors": "Jane Doe", "bookType": "AUDIOBOOK"},
+            {"id": 2, "title": "Dual", "authors": "Jane Doe", "bookType": "EPUB"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.find_format_counterpart(
+        matched_book={"id": 1, "bookType": "AUDIOBOOK"}, title="Dual", author="Jane Doe"
+    )
+
+    assert book["id"] == 2
+    assert matched_by == "title_author"
+
+
+def test_find_format_counterpart_no_non_audiobook_record(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[
+            {"id": 1, "title": "Solo", "authors": "", "bookType": "AUDIOBOOK"},
+        ]
+    )
+
+    book, matched_by = grimmory_client.find_format_counterpart(
+        matched_book={"id": 1, "bookType": "AUDIOBOOK"}, title="Solo"
+    )
+
+    assert book is None
+    assert matched_by is None
+
+
+def test_find_format_counterpart_no_matched_book(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[{"id": 2, "title": "Solo", "bookType": "EPUB"}]
+    )
+
+    book, matched_by = grimmory_client.find_format_counterpart(matched_book=None, title="Solo")
+
+    assert book is None
+    assert matched_by is None
+
+
+def _group_counterpart_member(instance_id, counterpart_return):
+    member = MagicMock()
+    member.instance_id = instance_id
+    member.is_configured.return_value = True
+    member.find_format_counterpart.return_value = counterpart_return
+    return member
+
+
+def test_group_find_format_counterpart_keeps_strongest(grimmory_client):
+    from src.api.grimmory_client import GrimmoryClientGroup
+
+    weak = _group_counterpart_member("a", ({"id": 10, "title": "T", "bookType": "EPUB"}, "title"))
+    strong = _group_counterpart_member("b", ({"id": 20, "title": "T", "bookType": "EPUB"}, "isbn"))
+    group = GrimmoryClientGroup([weak, strong])
+
+    book, matched_by = group.find_format_counterpart(
+        matched_book={"id": 1, "bookType": "AUDIOBOOK"}, isbn="123", title="T"
+    )
+
+    assert book["id"] == 20
+    assert book["_instance_id"] == "b"
+    assert matched_by == "isbn"
+
+
+def test_group_find_format_counterpart_none_when_no_instance_matches():
+    from src.api.grimmory_client import GrimmoryClientGroup
+
+    a = _group_counterpart_member("a", (None, None))
+    b = _group_counterpart_member("b", (None, None))
+    group = GrimmoryClientGroup([a, b])
+
+    book, matched_by = group.find_format_counterpart(
+        matched_book={"id": 1, "bookType": "AUDIOBOOK"}, title="Nope"
+    )
+
+    assert book is None
+    assert matched_by is None
+
+
 def _make_db_book(book_id, filename, title, authors):
     book = MagicMock()
     book.filename = filename
