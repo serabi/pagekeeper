@@ -120,6 +120,12 @@ class AbsGrimmoryMigrationService:
                 entry["migrated_sessions"] = getattr(existing, "sessions_written", 0) or 0
                 entry["migrated_bookmarks"] = getattr(existing, "bookmarks_written", 0) or 0
                 counts["already_migrated"] += 1
+            elif _grimmory_already_read(gr_book):
+                # Already READ in Grimmory (e.g. marked manually) with no audit
+                # row. Replaying sessions/bookmarks would duplicate history, so
+                # surface it as already_read rather than will_migrate.
+                entry["bucket"] = "already_read"
+                counts["already_read"] += 1
             else:
                 entry["bucket"] = "will_migrate"
                 counts["will_migrate"] += 1
@@ -347,6 +353,22 @@ class AbsGrimmoryMigrationService:
             "bookmarks_written": bookmarks_written,
             "error": error,
         }
+
+
+def _grimmory_already_read(gr_book):
+    """True when a matched Grimmory book is already marked READ.
+
+    Grimmory book listings expose the read status under one of a few keys
+    depending on version. Only an explicit READ counts; an unknown/absent field
+    falls through so a not-read book is never misclassified as already read.
+    """
+    if not isinstance(gr_book, dict):
+        return False
+    for key in ("readStatus", "read_status", "status"):
+        value = gr_book.get(key)
+        if isinstance(value, str) and value.strip().upper() == "READ":
+            return True
+    return False
 
 
 def _public(entry):

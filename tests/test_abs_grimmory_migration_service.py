@@ -228,6 +228,32 @@ def test_already_completed_book_writes_finish_date_directly():
     db.update_book_reading_fields.assert_called_once_with(local_book.id, finished_at="2023-11-14")
 
 
+def test_already_read_in_grimmory_skips_migration():
+    svc, db, abs_client, grimmory = _service(
+        finished=[{"id": "a", "title": "X", "isbn": "111", "finished_at_ms": 1700000000000}],
+        grimmory_match=({"id": 5, "title": "X", "bookType": "EPUB", "readStatus": "READ"}, "isbn"),
+    )
+    result = svc.migrate()
+
+    assert result["counts"]["already_read"] == 1
+    assert result["counts"]["will_migrate"] == 0
+    assert result["results"][0]["outcome"] == "already_read"
+    grimmory.update_read_status_by_id.assert_not_called()
+    grimmory.add_reading_session.assert_not_called()
+    grimmory.add_bookmark.assert_not_called()
+
+
+def test_unread_grimmory_status_still_migrates():
+    svc, db, abs_client, grimmory = _service(
+        finished=[{"id": "a", "title": "X", "isbn": "111", "finished_at_ms": 1700000000000}],
+        grimmory_match=({"id": 5, "title": "X", "bookType": "EPUB", "readStatus": "UNREAD"}, "isbn"),
+    )
+    result = svc.migrate()
+
+    assert result["counts"]["will_migrate"] == 1
+    grimmory.update_read_status_by_id.assert_called_once()
+
+
 def test_audit_persist_failure_reports_audit_failed_outcome():
     svc, db, abs_client, grimmory = _service(
         finished=[{"id": "a", "title": "X", "isbn": "111", "finished_at_ms": 1700000000000}],

@@ -344,7 +344,7 @@ def _coerce_bool(value, default):
 
 
 def _parse_migration_options(data):
-    data = data or {}
+    data = data if isinstance(data, dict) else {}
     return {
         "carry_listening_sessions": _coerce_bool(data.get("carry_listening_sessions"), True),
         "carry_bookmarks": _coerce_bool(data.get("carry_bookmarks"), True),
