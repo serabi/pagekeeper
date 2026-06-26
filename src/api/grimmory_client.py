@@ -791,7 +791,8 @@ class GrimmoryClient:
 
         # 3. Title + author (fuzzy), then 4. title-only fallback
         if title:
-            threshold = float(os.environ.get("FUZZY_MATCH_THRESHOLD", 0.90))
+            raw_threshold = float(os.environ.get("FUZZY_MATCH_THRESHOLD", 80))
+            threshold = raw_threshold / 100 if raw_threshold > 1 else raw_threshold
             title_norm = self._normalize_string(title)
             author_norm = self._normalize_string(author) if author else ""
 
