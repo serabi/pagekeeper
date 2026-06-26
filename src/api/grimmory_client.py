@@ -791,7 +791,10 @@ class GrimmoryClient:
 
         # 3. Title + author (fuzzy), then 4. title-only fallback
         if title:
-            raw_threshold = float(os.environ.get("FUZZY_MATCH_THRESHOLD", 80))
+            try:
+                raw_threshold = float(os.environ.get("FUZZY_MATCH_THRESHOLD", 80))
+            except (TypeError, ValueError):
+                raw_threshold = 80.0
             threshold = raw_threshold / 100 if raw_threshold > 1 else raw_threshold
             title_norm = self._normalize_string(title)
             author_norm = self._normalize_string(author) if author else ""
@@ -811,7 +814,10 @@ class GrimmoryClient:
                     title_only_ratio = t_ratio
                     title_only_best = b
                 if author_norm:
-                    b_author_norm = self._normalize_string(b.get("authors"))
+                    raw_authors = b.get("authors")
+                    b_author_norm = self._normalize_string(
+                        raw_authors if isinstance(raw_authors, str) else ""
+                    )
                     if b_author_norm and (
                         author_norm in b_author_norm or b_author_norm in author_norm
                     ):
@@ -1013,12 +1019,32 @@ class GrimmoryClientGroup:
 
     # ── ABS -> Grimmory migration passthroughs ──
 
+    _MATCH_STRENGTH = {"isbn": 3, "asin": 2, "title_author": 1, "title": 0}
+
     def match_book_by_identifiers(self, *, isbn=None, asin=None, title=None, author=None):
-        """Match across all instances. Returns (book_info_with_instance_id, matched_by)."""
+        """Match across all instances, returning the strongest match.
+
+        Each client falls back isbn -> asin -> title+author -> title, so a weak
+        title-only hit on an early instance must not shadow a stronger ISBN/ASIN
+        match on a later one. Collect every instance's match and keep the best by
+        match-type strength. Returns (book_info_with_instance_id, matched_by).
+        """
+        best_book = None
+        best_matched_by = None
+        best_strength = -1
         for c in self._active:
             book, matched_by = c.match_book_by_identifiers(isbn=isbn, asin=asin, title=title, author=author)
-            if book:
-                return {**book, "_instance_id": c.instance_id}, matched_by
+            if not book:
+                continue
+            strength = self._MATCH_STRENGTH.get(matched_by, -1)
+            if strength > best_strength:
+                best_strength = strength
+                best_book = {**book, "_instance_id": c.instance_id}
+                best_matched_by = matched_by
+                if strength == self._MATCH_STRENGTH["isbn"]:
+                    break
+        if best_book:
+            return best_book, best_matched_by
         return None, None
 
     def _client_for_instance(self, instance_id):

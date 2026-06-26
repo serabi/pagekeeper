@@ -26,6 +26,21 @@ def test_preview_returns_service_payload(client, mock_container):
     assert options["carry_listening_sessions"] is True
 
 
+def test_preview_coerces_string_boolean_options(client, mock_container):
+    svc = mock_container.mock_abs_grimmory_migration_service
+    svc.is_configured.return_value = True
+    svc.preview.return_value = {"configured": True, "counts": {}, "books": []}
+    resp = client.post(
+        "/api/abs-grimmory-migration/preview",
+        json={"carry_bookmarks": "false", "include_near_complete": "true"},
+    )
+    assert resp.status_code == 200
+    options = svc.preview.call_args[0][0]
+    assert options["carry_bookmarks"] is False
+    assert options["include_near_complete"] is True
+    assert options["carry_listening_sessions"] is True
+
+
 def test_run_gated_when_unconfigured(client, mock_container):
     mock_container.mock_abs_grimmory_migration_service.is_configured.return_value = False
     resp = client.post("/api/abs-grimmory-migration/run", json={})

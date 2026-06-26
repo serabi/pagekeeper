@@ -112,7 +112,7 @@ class AbsGrimmoryMigrationService:
             existing = self.database_service.get_abs_grimmory_migration(
                 book["id"], gr_book_id, instance_id
             )
-            if existing and existing.outcome in ("migrated", "already_read"):
+            if existing and existing.outcome in ("migrated", "already_read", "migrated_partial"):
                 entry["bucket"] = "already_migrated"
                 entry["migrated_outcome"] = existing.outcome
                 created = getattr(existing, "created_at", None)

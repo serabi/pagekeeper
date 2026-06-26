@@ -420,6 +420,68 @@ def test_match_book_by_identifiers_no_match(grimmory_client):
     assert matched_by is None
 
 
+def test_match_book_by_identifiers_authors_list_does_not_crash(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[{"id": 6, "title": "Legacy Title", "authors": ["Jane Doe"]}]
+    )
+
+    book, matched_by = grimmory_client.match_book_by_identifiers(
+        isbn=None, asin=None, title="Legacy Title", author="Jane Doe"
+    )
+
+    assert book["id"] == 6
+    assert matched_by == "title"
+
+
+def test_match_book_by_identifiers_non_numeric_threshold_falls_back(grimmory_client):
+    grimmory_client.get_all_books = MagicMock(
+        return_value=[{"id": 7, "title": "Findable Book", "authors": "Author"}]
+    )
+
+    with patch.dict(os.environ, {"FUZZY_MATCH_THRESHOLD": "eighty"}):
+        book, matched_by = grimmory_client.match_book_by_identifiers(
+            isbn=None, asin=None, title="Findable Book", author="Author"
+        )
+
+    assert book["id"] == 7
+    assert matched_by == "title_author"
+
+
+def _group_member(instance_id, match_return):
+    member = MagicMock()
+    member.instance_id = instance_id
+    member.is_configured.return_value = True
+    member.match_book_by_identifiers.return_value = match_return
+    return member
+
+
+def test_group_match_prefers_strongest_match_across_instances():
+    from src.api.grimmory_client import GrimmoryClientGroup
+
+    weak = _group_member("a", ({"id": 10, "title": "T"}, "title"))
+    strong = _group_member("b", ({"id": 20, "title": "T"}, "isbn"))
+    group = GrimmoryClientGroup([weak, strong])
+
+    book, matched_by = group.match_book_by_identifiers(isbn="123", title="T")
+
+    assert book["id"] == 20
+    assert book["_instance_id"] == "b"
+    assert matched_by == "isbn"
+
+
+def test_group_match_returns_none_when_no_instance_matches():
+    from src.api.grimmory_client import GrimmoryClientGroup
+
+    a = _group_member("a", (None, None))
+    b = _group_member("b", (None, None))
+    group = GrimmoryClientGroup([a, b])
+
+    book, matched_by = group.match_book_by_identifiers(title="Nope")
+
+    assert book is None
+    assert matched_by is None
+
+
 def _make_db_book(book_id, filename, title, authors):
     book = MagicMock()
     book.filename = filename

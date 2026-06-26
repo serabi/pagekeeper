@@ -107,6 +107,9 @@ function migrationPreview(btn) {
   btn.disabled = true;
   btn.textContent = "Previewing…";
   document.getElementById("mig-results").textContent = "";
+  document.getElementById("mig-buckets").innerHTML = "";
+  document.getElementById("mig-stats").hidden = true;
+  document.getElementById("mig-action-bar").hidden = true;
   fetch("/api/abs-grimmory-migration/preview", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

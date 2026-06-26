@@ -89,6 +89,19 @@ def test_idempotency_already_migrated():
     assert result["counts"]["already_migrated"] == 1
 
 
+def test_idempotency_partial_treated_as_already_migrated():
+    existing = MagicMock()
+    existing.outcome = "migrated_partial"
+    svc, *_ = _service(
+        finished=[{"id": "a", "title": "X", "isbn": "111"}],
+        grimmory_match=({"id": 5, "title": "X"}, "isbn"),
+        existing_migration=existing,
+    )
+    result = svc.preview()
+    assert result["counts"]["already_migrated"] == 1
+    assert result["books"][0]["bucket"] == "already_migrated"
+
+
 def test_dry_run_performs_no_writes():
     svc, db, abs_client, grimmory = _service(
         finished=[{"id": "a", "title": "X", "isbn": "111", "finished_at_ms": 1700000000000}],

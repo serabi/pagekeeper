@@ -329,12 +329,26 @@ def sync_reading_dates_api():
 # ---------------- ABS -> Grimmory migration ----------------
 
 
+def _coerce_bool(value, default):
+    """Interpret JSON option values as booleans.
+
+    JSON booleans pass through; string flags like "false"/"0"/"no" are treated
+    as False rather than being truthy non-empty strings. Missing values use the
+    per-option default.
+    """
+    if value is None:
+        return default
+    if isinstance(value, str):
+        return value.strip().lower() not in ("false", "0", "no", "off", "")
+    return bool(value)
+
+
 def _parse_migration_options(data):
     data = data or {}
     return {
-        "carry_listening_sessions": bool(data.get("carry_listening_sessions", True)),
-        "carry_bookmarks": bool(data.get("carry_bookmarks", True)),
-        "include_near_complete": bool(data.get("include_near_complete", False)),
+        "carry_listening_sessions": _coerce_bool(data.get("carry_listening_sessions"), True),
+        "carry_bookmarks": _coerce_bool(data.get("carry_bookmarks"), True),
+        "include_near_complete": _coerce_bool(data.get("include_near_complete"), False),
     }
 
 
