@@ -14,6 +14,7 @@ from src.services.cache_cleanup_service import CacheCleanupService
 from src.services.library_service import LibraryService
 from src.services.migration_service import MigrationService
 from src.services.progress_reset_service import ProgressResetService
+from src.services.status_machine import StatusMachine
 from src.services.suggestion_service import SuggestionService
 from src.services.sync_manager_startup import SyncManagerStartup
 from src.sync_clients.sync_client_interface import (
@@ -396,6 +397,14 @@ class SyncManager:
             self.library_service.sync_library_books()
             self._last_library_sync = time.time()
 
+        # Discovery: promote ebook-mapped not_started books once they show real progress.
+        # Must run before the active-only sync below, which would otherwise never touch them.
+        if not target_book_id:
+            try:
+                self._promote_discovered_ebooks()
+            except Exception as e:
+                logger.warning(f"Ebook discovery promotion failed: {sanitize_exception(e)}")
+
         active_books, bulk_states_per_client = self._prepare_sync_books(target_book_id)
         if not active_books:
             self._process_deferred_clears()
@@ -420,6 +429,44 @@ class SyncManager:
 
         logger.debug("End of sync cycle for active books")
         self._process_deferred_clears()
+
+    def _promote_discovered_ebooks(self):
+        """Promote not_started books with a mapped ebook to active once Grimmory reports progress.
+
+        Newly-added ebook-mapped books sit at not_started and are never polled (the sync
+        cycle only touches active books), so they would deadlock at 0%. This pass checks
+        their Grimmory progress once per cycle and promotes them when it clears 1%.
+        """
+        if not (self.grimmory_client and self.grimmory_client.is_configured()):
+            return
+
+        candidates = [
+            b
+            for b in self.database_service.get_books_by_status("not_started")
+            if getattr(b, "ebook_filename", None)
+        ]
+        if not candidates:
+            return
+
+        status_machine = StatusMachine(self.database_service)
+        for book in candidates:
+            try:
+                pct, _ = self.grimmory_client.get_progress(book.ebook_filename)
+            except Exception as e:
+                logger.debug(f"Discovery: progress fetch failed for '{book.ebook_filename}': {e}")
+                continue
+            if not pct or pct <= 0.01:
+                continue
+            result = status_machine.transition(book, "active", source="completion_sync")
+            if result.get("success"):
+                logger.info(
+                    f"Discovery: promoted not_started book '{sanitize_log_data(book.title)}' "
+                    f"to active ({pct:.1%} Grimmory progress)"
+                )
+            else:
+                logger.warning(
+                    f"Discovery: failed to promote '{sanitize_log_data(book.title)}': {result.get('error')}"
+                )
 
     def _prepare_sync_books(self, target_book_id):
         """Fetch active books, pre-fetch bulk states, and trigger suggestions."""

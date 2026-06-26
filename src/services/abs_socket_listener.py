@@ -15,10 +15,15 @@ from concurrent.futures import ThreadPoolExecutor
 import requests
 import socketio
 
+from src.services.status_machine import StatusMachine
 from src.services.write_tracker import is_own_write as _tracker_is_own_write
 from src.services.write_tracker import record_write
 
 logger = logging.getLogger(__name__)
+
+# A not_started book is promoted to active only once reported progress clears this
+# fraction, mirroring the >1% "genuinely reading" bar used elsewhere in the pipeline.
+_PROGRESS_ACTIVATION_THRESHOLD = 0.01
 
 # ---------------------------------------------------------------------------
 # Write-suppression tracker — delegates to the shared write_tracker module.
@@ -60,6 +65,7 @@ class ABSSocketListener:
         self._socket_token: str | None = None
         self._db = database_service
         self._sync_manager = sync_manager
+        self._status_machine = StatusMachine(database_service)
 
         self._debounce_window = int(os.environ.get("ABS_SOCKET_DEBOUNCE_SECONDS", "30"))
 
@@ -184,6 +190,25 @@ class ABSSocketListener:
         def on_progress_updated(data):
             self._handle_progress_event(data)
 
+    @staticmethod
+    def _extract_progress_fraction(inner: dict, data: dict) -> float | None:
+        """Pull a 0-1 progress fraction from an ABS progress event, if present.
+
+        ABS MediaProgress carries an explicit `progress` fraction; fall back to
+        currentTime/duration. Looks in the nested `data` dict first, then top level.
+        """
+        for source in (inner, data):
+            if not isinstance(source, dict):
+                continue
+            progress = source.get("progress")
+            if isinstance(progress, (int, float)):
+                return float(progress)
+            duration = source.get("duration")
+            current_time = source.get("currentTime")
+            if isinstance(duration, (int, float)) and duration > 0 and isinstance(current_time, (int, float)):
+                return current_time / duration
+        return None
+
     def _handle_progress_event(self, data: dict) -> None:
         """Record a progress event in the debounce dict if it belongs to an active book."""
         if not isinstance(data, dict):
@@ -215,7 +240,33 @@ class ABSSocketListener:
             )
             self._suggestion_pool.submit(self._sync_manager.queue_suggestion, library_item_id)
             return
-        if book.status in ("paused", "dnf", "not_started") and not book.activity_flag:
+
+        # A not_started book never syncs (the poll only touches active books), so it
+        # would deadlock at 0%. Promote it to active when ABS reports real progress.
+        if book.status == "not_started":
+            pct = self._extract_progress_fraction(inner if isinstance(inner, dict) else {}, data)
+            if pct is not None and pct > _PROGRESS_ACTIVATION_THRESHOLD:
+                result = self._status_machine.transition(book, "active", source="completion_sync")
+                if result.get("success"):
+                    logger.info(
+                        f"ABS Socket.IO: Promoted not_started book '{book.title}' to active "
+                        f"({pct:.1%} progress reported)"
+                    )
+                else:
+                    logger.warning(
+                        f"ABS Socket.IO: Failed to promote '{book.title}': {result.get('error')}"
+                    )
+                with self._lock:
+                    self._pending[library_item_id] = time.time()
+                    self._fired.discard(library_item_id)
+                return
+            if not book.activity_flag:
+                book.activity_flag = True
+                self._db.save_book(book)
+                logger.info(f"ABS Socket.IO: Activity detected on not_started book '{book.title}'")
+            return
+
+        if book.status in ("paused", "dnf") and not book.activity_flag:
             book.activity_flag = True
             self._db.save_book(book)
             logger.info(f"ABS Socket.IO: Activity detected on {book.status} book '{book.title}'")
