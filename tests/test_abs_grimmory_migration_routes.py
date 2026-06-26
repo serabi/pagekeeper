@@ -84,6 +84,34 @@ def test_run_omits_selected_abs_ids_when_absent(client, mock_container):
     assert svc.migrate.call_args.kwargs["selected_abs_ids"] is None
 
 
+def test_run_rejects_non_string_selected_abs_ids(client, mock_container):
+    svc = mock_container.mock_abs_grimmory_migration_service
+    svc.is_configured.return_value = True
+
+    resp = client.post(
+        "/api/abs-grimmory-migration/run",
+        json={"selected_abs_ids": [{"id": "abc"}]},
+    )
+
+    assert resp.status_code == 400
+    assert b"selected_abs_ids" in resp.data
+    svc.migrate.assert_not_called()
+
+
+def test_run_rejects_non_list_selected_abs_ids(client, mock_container):
+    svc = mock_container.mock_abs_grimmory_migration_service
+    svc.is_configured.return_value = True
+
+    resp = client.post(
+        "/api/abs-grimmory-migration/run",
+        json={"selected_abs_ids": "abc"},
+    )
+
+    assert resp.status_code == 400
+    assert b"selected_abs_ids" in resp.data
+    svc.migrate.assert_not_called()
+
+
 def test_migration_page_renders(client, mock_container):
     mock_container.mock_abs_grimmory_migration_service.is_configured.return_value = True
     resp = client.get("/migration")

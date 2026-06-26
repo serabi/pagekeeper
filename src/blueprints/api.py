@@ -357,7 +357,13 @@ def abs_grimmory_migration_run():
     data = request.get_json(silent=True) or {}
     options = _parse_migration_options(data)
     selected = data.get("selected_abs_ids")
-    selected_abs_ids = list(selected) if isinstance(selected, list) else None
+    if selected is not None and not isinstance(selected, list):
+        return json_error("'selected_abs_ids' must be a list of strings", 400)
+    selected_abs_ids = None
+    if isinstance(selected, list):
+        if not all(isinstance(s, str) for s in selected):
+            return json_error("'selected_abs_ids' must be a list of strings", 400)
+        selected_abs_ids = selected
     result = svc.migrate(options, dry_run=bool(data.get("dry_run")), selected_abs_ids=selected_abs_ids)
     logger.info(f"ABS->Grimmory migration run (dry_run={bool(data.get('dry_run'))}): {result.get('outcome_counts')}")
     return jsonify({"success": True, **result})
