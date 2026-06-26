@@ -412,7 +412,7 @@ class GrimmoryClient:
         if self.target_library_id:
             lid = detail.get("libraryId")
             if lid is not None and str(lid) != str(self.target_library_id):
-                return None
+                return
 
         primary_file = detail.get("primaryFile", {})
         filename = primary_file.get("fileName", detail.get("fileName", ""))
@@ -468,8 +468,6 @@ class GrimmoryClient:
             except Exception as e:
                 logger.error(f"Failed to persist book {filename} to DB: {e}")
 
-        return None
-
     def _update_cached_progress(self, detail):
         """Update progress fields on an already-cached book in-place."""
         cached = self._book_id_cache.get(detail.get("id"))
@@ -500,13 +498,16 @@ class GrimmoryClient:
             return ""
         return re.sub(r"[\W_]+", "", s.lower())
 
-    def find_book_by_filename(self, ebook_filename, allow_refresh=True):
-        """Find a book by its filename using exact, stem, or normalized matching."""
-        if not self._book_cache and allow_refresh:
+    def _ensure_fresh_cache(self, allow_refresh=True):
+        """Refresh the in-memory book cache if it is empty or older than an hour."""
+        if not allow_refresh:
+            return
+        if not self._book_cache or time.time() - self._cache_timestamp > 3600:
             self._refresh_book_cache()
 
-        if allow_refresh and time.time() - self._cache_timestamp > 3600:
-            self._refresh_book_cache()
+    def find_book_by_filename(self, ebook_filename, allow_refresh=True):
+        """Find a book by its filename using exact, stem, or normalized matching."""
+        self._ensure_fresh_cache(allow_refresh)
 
         target_name = Path(ebook_filename).name.lower()
 
@@ -553,18 +554,12 @@ class GrimmoryClient:
 
     def get_all_books(self):
         """Get all books from cache, refreshing if necessary."""
-        if time.time() - self._cache_timestamp > 3600:
-            self._refresh_book_cache()
-        if not self._book_cache:
-            self._refresh_book_cache()
+        self._ensure_fresh_cache()
         return list(self._book_cache.values())
 
     def search_books(self, search_term):
         """Search books by title, author, or filename. Returns list of matching books."""
-        if time.time() - self._cache_timestamp > 3600:
-            self._refresh_book_cache()
-        if not self._book_cache:
-            self._refresh_book_cache()
+        self._ensure_fresh_cache()
 
         if not search_term:
             return list(self._book_cache.values())
