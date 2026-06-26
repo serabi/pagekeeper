@@ -330,7 +330,21 @@ def test_set_finished_date(grimmory_client):
     assert method == "POST"
     assert endpoint == "/api/v1/books/progress"
     assert payload["bookId"] == 12
-    assert payload["dateFinished"] == "2024-03-09"
+    # Grimmory binds dateFinished to a java.time.Instant; a bare date must be
+    # expanded to a full ISO-8601 instant or the request is rejected.
+    assert payload["dateFinished"] == "2024-03-09T00:00:00Z"
+
+
+def test_set_finished_date_passes_through_instant(grimmory_client):
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    grimmory_client._make_request = MagicMock(return_value=mock_resp)
+
+    result = grimmory_client.set_finished_date(12, "EPUB", "2024-03-09T18:30:00Z")
+
+    assert result is True
+    _, _, payload = grimmory_client._make_request.call_args[0]
+    assert payload["dateFinished"] == "2024-03-09T18:30:00Z"
 
 
 def test_add_reading_session(grimmory_client):

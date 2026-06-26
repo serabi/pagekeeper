@@ -698,13 +698,26 @@ class GrimmoryClient:
         logger.warning(f"Grimmory: Failed to set read status for book {book_id}: {resp_status}")
         return False
 
+    @staticmethod
+    def _to_instant(date_finished):
+        """Normalize a finish date to a full ISO-8601 instant for Grimmory.
+
+        Grimmory's API binds dateFinished to a java.time.Instant, which cannot be
+        deserialized from a bare YYYY-MM-DD. Expand a date-only value to midnight
+        UTC; pass an already-instant value (anything with a time component) through.
+        """
+        if isinstance(date_finished, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_finished):
+            return f"{date_finished}T00:00:00Z"
+        return date_finished
+
     def set_finished_date(self, book_id, book_type, date_finished):
         """Set an explicit finish date on a Grimmory book via the progress endpoint.
 
         Grimmory auto-dates to "now" on status=READ; this carries over the original
         finish date (e.g. from Audiobookshelf). date_finished may be YYYY-MM-DD or
-        an ISO-8601 instant.
+        an ISO-8601 instant; a bare date is expanded to a full instant before POST.
         """
+        date_finished = self._to_instant(date_finished)
         payload = {"bookId": book_id, "dateFinished": date_finished}
         response = self._make_request("POST", "/api/v1/books/progress", payload)
         if response and response.status_code in [200, 201, 204]:
