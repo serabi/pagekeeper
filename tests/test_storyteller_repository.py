@@ -114,3 +114,50 @@ def test_returned_submission_is_detached_after_session_closes(repository):
     # (the row is expunged/detached, with values already loaded).
     assert sub.book_id == 1
     assert sub.status == "processing"
+
+
+def test_bulk_latest_returns_empty_dict_when_no_submissions(repository):
+    assert repository.get_all_storyteller_submissions_latest() == {}
+
+
+def test_bulk_latest_returns_newest_submission_per_book(repository):
+    _make_book(repository, 1)
+    _make_book(repository, 2)
+    _insert_submission(repository, 1, "queued", _ts(1))
+    _insert_submission(repository, 1, "ready", _ts(4))
+    _insert_submission(repository, 2, "processing", _ts(2))
+    _insert_submission(repository, 2, "failed", _ts(3))
+
+    latest = repository.get_all_storyteller_submissions_latest()
+
+    assert set(latest) == {1, 2}
+    assert latest[1].status == "ready"
+    assert latest[1].submitted_at == _ts(4)
+    assert latest[2].status == "failed"
+    assert latest[2].submitted_at == _ts(3)
+
+
+def test_bulk_latest_keeps_books_isolated(repository):
+    _make_book(repository, 1)
+    _make_book(repository, 2)
+    _insert_submission(repository, 1, "ready", _ts(2))
+    _insert_submission(repository, 2, "queued", _ts(5))
+
+    latest = repository.get_all_storyteller_submissions_latest()
+
+    assert latest[1].book_id == 1
+    assert latest[1].status == "ready"
+    assert latest[2].book_id == 2
+    assert latest[2].status == "queued"
+
+
+def test_bulk_latest_rows_are_detached_after_session_closes(repository):
+    _make_book(repository, 1)
+    _insert_submission(repository, 1, "processing", _ts(1))
+
+    latest = repository.get_all_storyteller_submissions_latest()
+
+    # Accessing attributes after the session is closed must not raise
+    # (the rows are expunged/detached, with values already loaded).
+    assert latest[1].book_id == 1
+    assert latest[1].status == "processing"
