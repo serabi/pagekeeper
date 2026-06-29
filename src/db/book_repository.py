@@ -491,18 +491,14 @@ class BookRepository(BaseRepository):
                 .group_by(Job.book_id)
                 .subquery()
             )
-            rows = (
-                session.query(Job)
-                .join(
-                    latest,
-                    (Job.book_id == latest.c.book_id)
-                    & (func.coalesce(Job.last_attempt, "1970-01-01") == func.coalesce(latest.c.max_ts, "1970-01-01")),
-                )
-                .all()
+            db_query = session.query(Job).join(
+                latest,
+                (Job.book_id == latest.c.book_id)
+                & (func.coalesce(Job.last_attempt, "1970-01-01") == func.coalesce(latest.c.max_ts, "1970-01-01")),
             )
+            rows = self._query_and_expunge(session, db_query, one=False)
             result = {}
             for job in rows:
-                session.expunge(job)
                 result[job.book_id] = job
             return result
 
