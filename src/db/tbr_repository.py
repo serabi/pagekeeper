@@ -63,16 +63,16 @@ class TbrRepository(BaseRepository):
         with self.get_session() as session:
             # Dedup by Hardcover book ID
             if hardcover_book_id:
-                existing = session.query(TbrItem).filter(TbrItem.hardcover_book_id == hardcover_book_id).first()
+                query = session.query(TbrItem).filter(TbrItem.hardcover_book_id == hardcover_book_id)
+                existing = self._query_and_expunge(session, query, one=True)
                 if existing:
-                    session.expunge(existing)
                     return existing, False
 
             # Dedup by Open Library work key
             if ol_work_key:
-                existing = session.query(TbrItem).filter(TbrItem.ol_work_key == ol_work_key).first()
+                query = session.query(TbrItem).filter(TbrItem.ol_work_key == ol_work_key)
+                existing = self._query_and_expunge(session, query, one=True)
                 if existing:
-                    session.expunge(existing)
                     return existing, False
 
             extras = {k: v for k, v in enrichment.items() if k in ENRICHMENT_FIELDS and v is not None}

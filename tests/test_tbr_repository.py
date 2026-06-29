@@ -112,6 +112,60 @@ class TestTbrRepository(unittest.TestCase):
         self.assertTrue(created2)
         self.assertNotEqual(item1.id, item2.id)
 
+    def test_dedup_by_hardcover_id_returns_detached_existing(self):
+        """A Hardcover-ID duplicate returns a detached existing row usable after the session closes."""
+        self.db.add_tbr_item("Dune", author="Frank Herbert", hardcover_book_id=42)
+        existing, created = self.db.add_tbr_item("Dune (dup)", hardcover_book_id=42)
+
+        self.assertFalse(created)
+        # Accessing attributes must not raise DetachedInstanceError.
+        self.assertEqual(existing.title, "Dune")
+        self.assertEqual(existing.author, "Frank Herbert")
+        self.assertEqual(existing.hardcover_book_id, 42)
+
+    def test_dedup_by_ol_work_key_returns_detached_existing(self):
+        """An Open Library duplicate returns a detached existing row usable after the session closes."""
+        self.db.add_tbr_item("Neuromancer", author="William Gibson", ol_work_key="/works/OL123")
+        existing, created = self.db.add_tbr_item("Neuromancer dup", ol_work_key="/works/OL123")
+
+        self.assertFalse(created)
+        # Accessing attributes must not raise DetachedInstanceError.
+        self.assertEqual(existing.title, "Neuromancer")
+        self.assertEqual(existing.author, "William Gibson")
+        self.assertEqual(existing.ol_work_key, "/works/OL123")
+
+    def test_dedup_hardcover_wins_over_ol_work_key(self):
+        """When both keys match different existing rows, the Hardcover match wins."""
+        hc_row, _ = self.db.add_tbr_item("By Hardcover", hardcover_book_id=42)
+        ol_row, _ = self.db.add_tbr_item("By Open Library", ol_work_key="/works/OL123")
+        self.assertNotEqual(hc_row.id, ol_row.id)
+
+        existing, created = self.db.add_tbr_item(
+            "Matches Both", hardcover_book_id=42, ol_work_key="/works/OL123"
+        )
+
+        self.assertFalse(created)
+        self.assertEqual(existing.id, hc_row.id)
+        self.assertEqual(existing.title, "By Hardcover")
+
+    def test_falsey_hardcover_id_does_not_trigger_dedup(self):
+        """hardcover_book_id=0 is falsey, so it never triggers a duplicate lookup."""
+        item1, created1 = self.db.add_tbr_item("Zero One", hardcover_book_id=0)
+        item2, created2 = self.db.add_tbr_item("Zero Two", hardcover_book_id=0)
+
+        self.assertTrue(created1)
+        self.assertTrue(created2)
+        self.assertNotEqual(item1.id, item2.id)
+
+    def test_falsey_ol_work_key_does_not_trigger_dedup(self):
+        """ol_work_key="" is falsey, so it never triggers a duplicate lookup."""
+        item1, created1 = self.db.add_tbr_item("Empty One", ol_work_key="")
+        item2, created2 = self.db.add_tbr_item("Empty Two", ol_work_key="")
+
+        self.assertTrue(created1)
+        self.assertTrue(created2)
+        self.assertNotEqual(item1.id, item2.id)
+
     # -- Linking --
 
     def test_link_tbr_to_book(self):
