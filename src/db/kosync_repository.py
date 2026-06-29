@@ -11,13 +11,8 @@ class KoSyncRepository(BaseRepository):
         return self._get_one(KosyncDocument, KosyncDocument.document_hash == document_hash)
 
     def save_kosync_document(self, doc):
-        with self.get_session() as session:
-            doc.last_updated = datetime.now(UTC)
-            merged = session.merge(doc)
-            session.flush()
-            session.refresh(merged)
-            session.expunge(merged)
-            return merged
+        doc.last_updated = datetime.now(UTC)
+        return self._merge_save(doc)
 
     def get_all_kosync_documents(self):
         return self._get_all(KosyncDocument, order_by=KosyncDocument.last_updated.desc())

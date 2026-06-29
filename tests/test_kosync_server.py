@@ -132,6 +132,106 @@ class TestKosyncDocument(unittest.TestCase):
         retrieved = self.db_service.get_kosync_document("f" * 32)
         self.assertIsNone(retrieved)
 
+    def test_save_insert_creates_single_document(self):
+        """A first save inserts exactly one row for the hash."""
+        doc = KosyncDocument(document_hash="1" * 32, percentage=0.2)
+        self.db_service.save_kosync_document(doc)
+
+        with self.db_service.get_session() as session:
+            count = session.query(KosyncDocument).filter(KosyncDocument.document_hash == "1" * 32).count()
+        self.assertEqual(count, 1)
+
+    def test_save_update_does_not_duplicate(self):
+        """Re-saving the same detached object updates in place, no duplicate row."""
+        doc = KosyncDocument(document_hash="2" * 32, percentage=0.1)
+        saved = self.db_service.save_kosync_document(doc)
+
+        saved.percentage = 0.8
+        self.db_service.save_kosync_document(saved)
+
+        with self.db_service.get_session() as session:
+            rows = session.query(KosyncDocument).filter(KosyncDocument.document_hash == "2" * 32).all()
+            count = len(rows)
+        self.assertEqual(count, 1)
+        retrieved = self.db_service.get_kosync_document("2" * 32)
+        self.assertAlmostEqual(float(retrieved.percentage), 0.8)
+
+    def test_save_updates_last_updated(self):
+        """last_updated is refreshed on every save."""
+        doc = KosyncDocument(document_hash="3" * 32, percentage=0.1)
+        first = self.db_service.save_kosync_document(doc)
+        first_updated = first.last_updated
+
+        time.sleep(0.01)
+        first.percentage = 0.4
+        second = self.db_service.save_kosync_document(first)
+
+        self.assertGreater(second.last_updated, first_updated)
+
+    def test_save_new_object_with_existing_hash_overwrites_fields(self):
+        """A freshly constructed object with an existing hash overwrites all merged columns.
+
+        merge() copies every column attribute from the incoming object, so
+        fields left at their constructor defaults overwrite the stored values.
+        This characterizes current behavior and must not regress.
+        """
+        original = KosyncDocument(
+            document_hash="4" * 32,
+            percentage=0.5,
+            device="OriginalDevice",
+            progress="/body/div[1]",
+        )
+        self.db_service.save_kosync_document(original)
+
+        # A brand-new object reusing the hash; device/progress left at defaults (None).
+        replacement = KosyncDocument(document_hash="4" * 32, percentage=0.9)
+        self.db_service.save_kosync_document(replacement)
+
+        retrieved = self.db_service.get_kosync_document("4" * 32)
+        self.assertAlmostEqual(float(retrieved.percentage), 0.9)
+        # merge copies the None defaults onto the existing row.
+        self.assertIsNone(retrieved.device)
+        self.assertIsNone(retrieved.progress)
+
+    def test_save_new_object_with_existing_hash_overwrites_first_seen(self):
+        """first_seen is overwritten when a new object reuses an existing hash.
+
+        __init__ always stamps first_seen, and merge() copies it onto the
+        existing row. Saving the SAME detached object back, by contrast,
+        preserves first_seen. Both branches are characterized here so a future
+        switch to _upsert (which would preserve first_seen) is caught.
+        """
+        original = KosyncDocument(document_hash="5" * 32, percentage=0.5)
+        saved = self.db_service.save_kosync_document(original)
+        original_first_seen = saved.first_seen
+
+        # Re-saving the same object preserves first_seen (no new __init__ stamp).
+        saved.percentage = 0.6
+        again = self.db_service.save_kosync_document(saved)
+        self.assertEqual(again.first_seen, original_first_seen)
+
+        # A new object reusing the hash overwrites first_seen with its own stamp.
+        # The DB column is timezone-naive, so compare naive wall-clock values:
+        # the stored first_seen tracks the replacement's stamp, not the original's.
+        time.sleep(0.01)
+        replacement = KosyncDocument(document_hash="5" * 32, percentage=0.7)
+        replacement_first_seen = replacement.first_seen.replace(tzinfo=None)
+        merged = self.db_service.save_kosync_document(replacement)
+        self.assertEqual(merged.first_seen.replace(tzinfo=None), replacement_first_seen)
+        self.assertNotEqual(
+            merged.first_seen.replace(tzinfo=None),
+            original_first_seen.replace(tzinfo=None),
+        )
+
+    def test_save_returns_expunged_detached_instance(self):
+        """Returned object is detached (expunged) yet has its attributes loaded."""
+        doc = KosyncDocument(document_hash="6" * 32, percentage=0.3)
+        saved = self.db_service.save_kosync_document(doc)
+
+        # Accessing attributes after the session closes must not raise (expunged + refreshed).
+        self.assertEqual(saved.document_hash, "6" * 32)
+        self.assertAlmostEqual(float(saved.percentage), 0.3)
+
 
 class _KosyncMockContainer:
     """Lightweight mock container to avoid importing epubcfi (Docker-only)."""
