@@ -2219,6 +2219,54 @@ class TestSuggestionSourceScoping(unittest.TestCase):
         self.assertTrue(self.db_service.suggestion_exists("id1", source="kosync"))
         self.assertFalse(self.db_service.suggestion_exists("id1", source="abs"))
 
+    def test_suggestion_exists_true_regardless_of_status(self):
+        """suggestion_exists returns True for any row, including hidden and ignored."""
+        self.db_service.save_pending_suggestion(
+            self.PendingSuggestion(source_id="id1", title="Test", source="abs")
+        )
+        self.assertTrue(self.db_service.suggestion_exists("id1", source="abs"))
+
+        self.assertTrue(self.db_service.hide_suggestion("id1", source="abs"))
+        self.assertEqual(self.db_service.get_suggestion("id1", source="abs").status, "hidden")
+        self.assertTrue(self.db_service.suggestion_exists("id1", source="abs"))
+
+        self.assertTrue(self.db_service.ignore_suggestion("id1", source="abs"))
+        self.assertEqual(self.db_service.get_suggestion("id1", source="abs").status, "ignored")
+        self.assertTrue(self.db_service.suggestion_exists("id1", source="abs"))
+
+    def test_suggestion_exists_false_when_missing(self):
+        """suggestion_exists returns False when no matching row exists."""
+        self.assertFalse(self.db_service.suggestion_exists("missing", source="abs"))
+
+    def test_is_suggestion_ignored_only_for_ignored_status(self):
+        """is_suggestion_ignored returns True only when the row's status is exactly 'ignored'."""
+        self.db_service.save_pending_suggestion(
+            self.PendingSuggestion(source_id="id1", title="Test", source="abs")
+        )
+        self.assertFalse(self.db_service.is_suggestion_ignored("id1", source="abs"))
+
+        self.assertTrue(self.db_service.hide_suggestion("id1", source="abs"))
+        self.assertFalse(self.db_service.is_suggestion_ignored("id1", source="abs"))
+
+        self.assertTrue(self.db_service.ignore_suggestion("id1", source="abs"))
+        self.assertTrue(self.db_service.is_suggestion_ignored("id1", source="abs"))
+
+    def test_is_suggestion_ignored_scoped_by_source(self):
+        """is_suggestion_ignored only matches the row under the given source."""
+        s_abs = self.PendingSuggestion(source_id="id1", title="ABS", source="abs")
+        s_kosync = self.PendingSuggestion(source_id="id1", title="KOSync", source="kosync")
+        self.db_service.save_pending_suggestion(s_abs)
+        self.db_service.save_pending_suggestion(s_kosync)
+
+        self.assertTrue(self.db_service.ignore_suggestion("id1", source="kosync"))
+
+        self.assertTrue(self.db_service.is_suggestion_ignored("id1", source="kosync"))
+        self.assertFalse(self.db_service.is_suggestion_ignored("id1", source="abs"))
+
+    def test_is_suggestion_ignored_false_when_missing(self):
+        """is_suggestion_ignored returns False when no matching row exists."""
+        self.assertFalse(self.db_service.is_suggestion_ignored("missing", source="abs"))
+
     def test_upsert_different_source_creates_two_rows(self):
         """save_pending_suggestion with same source_id but different source creates distinct rows."""
         s1 = self.PendingSuggestion(source_id="id1", title="ABS Title", source="abs")

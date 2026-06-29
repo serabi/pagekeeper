@@ -23,29 +23,19 @@ class SuggestionRepository(BaseRepository):
         )
 
     def suggestion_exists(self, source_id, source="abs"):
-        with self.get_session() as session:
-            return (
-                session.query(PendingSuggestion)
-                .filter(
-                    PendingSuggestion.source_id == source_id,
-                    PendingSuggestion.source == source,
-                )
-                .first()
-                is not None
-            )
+        return self._exists(
+            PendingSuggestion,
+            PendingSuggestion.source_id == source_id,
+            PendingSuggestion.source == source,
+        )
 
     def is_suggestion_ignored(self, source_id, source="abs"):
-        with self.get_session() as session:
-            return (
-                session.query(PendingSuggestion)
-                .filter(
-                    PendingSuggestion.source_id == source_id,
-                    PendingSuggestion.source == source,
-                    PendingSuggestion.status == "ignored",
-                )
-                .first()
-                is not None
-            )
+        return self._exists(
+            PendingSuggestion,
+            PendingSuggestion.source_id == source_id,
+            PendingSuggestion.source == source,
+            PendingSuggestion.status == "ignored",
+        )
 
     def save_pending_suggestion(self, suggestion):
         """Upsert a suggestion, preserving hidden status if already hidden."""
