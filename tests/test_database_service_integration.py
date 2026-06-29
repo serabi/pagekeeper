@@ -477,6 +477,103 @@ class TestDatabaseServiceIntegration(unittest.TestCase):
         self.assertEqual(row.author, "Existing Author")
         self.assertAlmostEqual(row.progress_percentage, 0.7)
 
+    def _make_detected(self, source_id, last_seen_at, status="detected"):
+        from src.db.models import DetectedBook
+
+        book = DetectedBook(
+            source="abs",
+            source_id=source_id,
+            title=source_id,
+            progress_percentage=0.1,
+            status=status,
+        )
+        book.last_seen_at = last_seen_at
+        return book
+
+    def test_get_active_detected_books_returns_only_detected_status(self):
+        """Only rows with status 'detected' are returned; dismissed/resolved are excluded."""
+        from datetime import UTC, datetime
+
+        base = datetime(2023, 1, 1, tzinfo=UTC)
+        for source_id, status in (
+            ("active-a", "detected"),
+            ("active-b", "detected"),
+            ("gone-dismissed", "detected"),
+            ("gone-resolved", "detected"),
+        ):
+            self.db_service.save_detected_book(self._make_detected(source_id, base, status))
+
+        self.assertTrue(self.db_service.dismiss_detected_book("gone-dismissed", source="abs"))
+        self.assertTrue(self.db_service.resolve_detected_book("gone-resolved", source="abs"))
+
+        active_ids = {b.source_id for b in self.db_service.get_active_detected_books()}
+        self.assertEqual(active_ids, {"active-a", "active-b"})
+
+    def test_get_active_detected_books_orders_by_last_seen_desc(self):
+        """Results are ordered by last_seen_at descending."""
+        from datetime import UTC, datetime
+
+        self.db_service.save_detected_book(
+            self._make_detected("oldest", datetime(2020, 1, 1, tzinfo=UTC))
+        )
+        self.db_service.save_detected_book(
+            self._make_detected("newest", datetime(2024, 1, 1, tzinfo=UTC))
+        )
+        self.db_service.save_detected_book(
+            self._make_detected("middle", datetime(2022, 1, 1, tzinfo=UTC))
+        )
+
+        ordered = [b.source_id for b in self.db_service.get_active_detected_books()]
+        self.assertEqual(ordered, ["newest", "middle", "oldest"])
+
+    def test_get_active_detected_books_honors_limit(self):
+        """A positive limit caps the number of returned rows, keeping DESC order."""
+        from datetime import UTC, datetime
+
+        for i in range(5):
+            self.db_service.save_detected_book(
+                self._make_detected(f"limit-{i}", datetime(2020, 1, 1 + i, tzinfo=UTC))
+            )
+
+        limited = self.db_service.get_active_detected_books(limit=2)
+        self.assertEqual([b.source_id for b in limited], ["limit-4", "limit-3"])
+
+    def test_get_active_detected_books_limit_zero_returns_empty(self):
+        """limit=0 applies .limit(0) and returns an empty list."""
+        from datetime import UTC, datetime
+
+        self.db_service.save_detected_book(
+            self._make_detected("present", datetime(2023, 1, 1, tzinfo=UTC))
+        )
+
+        self.assertEqual(self.db_service.get_active_detected_books(limit=0), [])
+
+    def test_get_active_detected_books_empty_when_none_active(self):
+        """Returns an empty list when no active detected rows exist."""
+        from datetime import UTC, datetime
+
+        self.db_service.save_detected_book(
+            self._make_detected("only-dismissed", datetime(2023, 1, 1, tzinfo=UTC))
+        )
+        self.assertTrue(self.db_service.dismiss_detected_book("only-dismissed", source="abs"))
+
+        self.assertEqual(self.db_service.get_active_detected_books(), [])
+
+    def test_get_active_detected_books_rows_detached_after_session_close(self):
+        """Returned rows are expunged, so their attributes remain usable after the session closes."""
+        from datetime import UTC, datetime
+
+        self.db_service.save_detected_book(
+            self._make_detected("detached", datetime(2023, 5, 5, tzinfo=UTC))
+        )
+
+        rows = self.db_service.get_active_detected_books()
+        self.assertEqual(len(rows), 1)
+        # Accessing attributes outside any open session must not raise DetachedInstanceError.
+        self.assertEqual(rows[0].source_id, "detached")
+        self.assertEqual(rows[0].status, "detected")
+        self.assertEqual(rows[0].title, "detached")
+
     def test_upsert_without_normalize_hook_is_unaffected(self):
         """Default _upsert callers (no normalize hook) keep blind attribute-copy
         semantics: the existing-row update path overwrites every update attr."""

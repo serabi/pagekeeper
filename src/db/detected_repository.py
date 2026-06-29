@@ -25,10 +25,7 @@ class DetectedRepository(BaseRepository):
             )
             if limit is not None:
                 query = query.limit(limit)
-            items = query.all()
-            for item in items:
-                session.expunge(item)
-            return items
+            return self._query_and_expunge(session, query, one=False)
 
     UPSERT_ATTRS = (
         "title",
