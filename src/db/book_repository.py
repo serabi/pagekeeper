@@ -145,22 +145,37 @@ class BookRepository(BaseRepository):
         else:
             return self._save_new(book)
 
+    def _mutate_first_and_detach(self, query_factory, mutate):
+        """Load the first row from ``query_factory``, mutate it, and return it detached.
+
+        Returns ``None`` when no row matches. Otherwise applies ``mutate(obj)``
+        for the method's domain-specific semantics, then flushes, refreshes, and
+        expunges the row so callers receive a detached, usable object after the
+        session closes.
+        """
+        with self.get_session() as session:
+            obj = query_factory(session).first()
+            if not obj:
+                return None
+            mutate(obj)
+            session.flush()
+            session.refresh(obj)
+            session.expunge(obj)
+            return obj
+
     def update_book_metadata_overrides(self, book_id, *, title_override=_UNSET, author_override=_UNSET):
         """Update PageKeeper-local metadata override fields for a book."""
-        with self.get_session() as session:
-            book = session.query(Book).filter(Book.id == book_id).first()
-            if not book:
-                return None
 
+        def mutate(book):
             if title_override is not _UNSET:
                 book.title_override = title_override or None
             if author_override is not _UNSET:
                 book.author_override = author_override or None
 
-            session.flush()
-            session.refresh(book)
-            session.expunge(book)
-            return book
+        return self._mutate_first_and_detach(
+            lambda session: session.query(Book).filter(Book.id == book_id),
+            mutate,
+        )
 
     def delete_book(self, book_id):
         with self.get_session() as session:
@@ -501,19 +516,17 @@ class BookRepository(BaseRepository):
         return self._save_new(job)
 
     def update_latest_job(self, book_id, **kwargs):
-        with self.get_session() as session:
-            job = session.query(Job).filter(Job.book_id == book_id).order_by(Job.last_attempt.desc()).first()
-            if job:
-                for key, value in kwargs.items():
-                    if hasattr(job, key):
-                        setattr(job, key, value)
-                    else:
-                        logger.warning(f"update_latest_job: unknown attribute '{key}' for job {job.id}")
-                session.flush()
-                session.refresh(job)
-                session.expunge(job)
-                return job
-            return None
+        def mutate(job):
+            for key, value in kwargs.items():
+                if hasattr(job, key):
+                    setattr(job, key, value)
+                else:
+                    logger.warning(f"update_latest_job: unknown attribute '{key}' for job {job.id}")
+
+        return self._mutate_first_and_detach(
+            lambda session: session.query(Job).filter(Job.book_id == book_id).order_by(Job.last_attempt.desc()),
+            mutate,
+        )
 
     def delete_jobs_for_book(self, book_id):
         with self.get_session() as session:
