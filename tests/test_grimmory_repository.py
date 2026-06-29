@@ -77,6 +77,78 @@ def test_save_grimmory_book_no_duplicate_on_repeated_save(repository):
     assert len(matching) == 1
 
 
+def test_get_all_grimmory_books_none_returns_all_servers(repository):
+    repository.save_grimmory_book(
+        GrimmoryBook(filename="a.epub", title="A", server_id="server-a")
+    )
+    repository.save_grimmory_book(
+        GrimmoryBook(filename="b.epub", title="B", server_id="server-b")
+    )
+
+    rows = repository.get_all_grimmory_books()
+
+    assert sorted((r.filename, r.server_id) for r in rows) == [
+        ("a.epub", "server-a"),
+        ("b.epub", "server-b"),
+    ]
+
+
+def test_get_all_grimmory_books_filters_by_server_id(repository):
+    repository.save_grimmory_book(
+        GrimmoryBook(filename="a.epub", title="A", server_id="server-a")
+    )
+    repository.save_grimmory_book(
+        GrimmoryBook(filename="b.epub", title="B", server_id="server-b")
+    )
+
+    rows = repository.get_all_grimmory_books(server_id="server-a")
+
+    assert [r.filename for r in rows] == ["a.epub"]
+    assert all(r.server_id == "server-a" for r in rows)
+
+
+def test_get_all_grimmory_books_empty_string_filters_not_returns_all(repository):
+    repository.save_grimmory_book(
+        GrimmoryBook(filename="empty.epub", title="Empty", server_id="")
+    )
+    repository.save_grimmory_book(
+        GrimmoryBook(filename="named.epub", title="Named", server_id="server-a")
+    )
+
+    rows = repository.get_all_grimmory_books(server_id="")
+
+    assert [r.filename for r in rows] == ["empty.epub"]
+    assert all(r.server_id == "" for r in rows)
+
+
+def test_get_all_grimmory_books_missing_server_returns_empty(repository):
+    repository.save_grimmory_book(
+        GrimmoryBook(filename="a.epub", title="A", server_id="server-a")
+    )
+
+    assert repository.get_all_grimmory_books(server_id="absent") == []
+
+
+def test_get_all_grimmory_books_rows_detached_after_session_close(repository):
+    repository.save_grimmory_book(
+        GrimmoryBook(
+            filename="detached.epub",
+            title="Detached Title",
+            authors="Detached Author",
+            raw_metadata=json.dumps({"id": "detached"}),
+            server_id="server-a",
+        )
+    )
+
+    rows = repository.get_all_grimmory_books(server_id="server-a")
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.title == "Detached Title"
+    assert row.authors == "Detached Author"
+    assert row.raw_metadata_dict["id"] == "detached"
+
+
 def test_save_grimmory_book_distinguishes_by_server_id(repository):
     repository.save_grimmory_book(
         GrimmoryBook(filename="shared.epub", title="Server A", server_id="a")
