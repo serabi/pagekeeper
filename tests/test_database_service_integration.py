@@ -125,6 +125,84 @@ class TestDatabaseServiceIntegration(unittest.TestCase):
         self.assertEqual(resolved.status, "resolved")
         self.assertEqual(still_active.status, "detected")
 
+    def test_dismiss_detected_book_sets_status_on_existing_row(self):
+        """Dismissing an existing detected book sets status to dismissed and returns True."""
+        from src.db.models import DetectedBook
+
+        self.db_service.save_detected_book(
+            DetectedBook(source="abs", source_id="dismiss-existing", title="D", progress_percentage=0.1)
+        )
+
+        self.assertTrue(self.db_service.dismiss_detected_book("dismiss-existing", source="abs"))
+
+        row = self.db_service.get_detected_book("dismiss-existing", source="abs")
+        self.assertEqual(row.status, "dismissed")
+
+    def test_resolve_detected_book_sets_status_on_existing_row(self):
+        """Resolving an existing detected book sets status to resolved and returns True."""
+        from src.db.models import DetectedBook
+
+        self.db_service.save_detected_book(
+            DetectedBook(source="abs", source_id="resolve-existing", title="R", progress_percentage=0.1)
+        )
+
+        self.assertTrue(self.db_service.resolve_detected_book("resolve-existing", source="abs"))
+
+        row = self.db_service.get_detected_book("resolve-existing", source="abs")
+        self.assertEqual(row.status, "resolved")
+
+    def test_dismiss_detected_book_missing_returns_false_and_creates_nothing(self):
+        """Dismissing a missing detected book returns False without inserting a row."""
+        self.assertFalse(self.db_service.dismiss_detected_book("dismiss-missing", source="abs"))
+        self.assertIsNone(self.db_service.get_detected_book("dismiss-missing", source="abs"))
+
+    def test_resolve_detected_book_missing_returns_false_and_creates_nothing(self):
+        """Resolving a missing detected book returns False without inserting a row."""
+        self.assertFalse(self.db_service.resolve_detected_book("resolve-missing", source="abs"))
+        self.assertIsNone(self.db_service.get_detected_book("resolve-missing", source="abs"))
+
+    def test_dismiss_detected_book_scoped_by_source(self):
+        """Dismissing a detected book only affects the matching source row."""
+        from src.db.models import DetectedBook
+
+        self.db_service.save_detected_book(
+            DetectedBook(source="abs", source_id="dismiss-shared", title="ABS", progress_percentage=0.2)
+        )
+        self.db_service.save_detected_book(
+            DetectedBook(source="kosync", source_id="dismiss-shared", title="KOSync", progress_percentage=0.3)
+        )
+
+        self.assertTrue(self.db_service.dismiss_detected_book("dismiss-shared", source="abs"))
+
+        dismissed = self.db_service.get_detected_book("dismiss-shared", source="abs")
+        still_active = self.db_service.get_detected_book("dismiss-shared", source="kosync")
+        self.assertEqual(dismissed.status, "dismissed")
+        self.assertEqual(still_active.status, "detected")
+
+    def test_dismiss_and_resolve_advance_last_seen_at(self):
+        """Both dismiss and resolve refresh last_seen_at on the existing row."""
+        from datetime import UTC, datetime
+
+        from src.db.models import DetectedBook
+
+        old_seen = datetime(2020, 1, 1, tzinfo=UTC)
+
+        dismiss_book = DetectedBook(source="abs", source_id="dismiss-seen", title="D", progress_percentage=0.1)
+        dismiss_book.last_seen_at = old_seen
+        self.db_service.save_detected_book(dismiss_book)
+
+        resolve_book = DetectedBook(source="abs", source_id="resolve-seen", title="R", progress_percentage=0.1)
+        resolve_book.last_seen_at = old_seen
+        self.db_service.save_detected_book(resolve_book)
+
+        self.assertTrue(self.db_service.dismiss_detected_book("dismiss-seen", source="abs"))
+        self.assertTrue(self.db_service.resolve_detected_book("resolve-seen", source="abs"))
+
+        dismissed = self.db_service.get_detected_book("dismiss-seen", source="abs")
+        resolved = self.db_service.get_detected_book("resolve-seen", source="abs")
+        self.assertGreater(dismissed.last_seen_at.replace(tzinfo=UTC), old_seen)
+        self.assertGreater(resolved.last_seen_at.replace(tzinfo=UTC), old_seen)
+
     def test_save_detected_book_repeat_save_does_not_duplicate(self):
         """Re-saving the same (source_id, source) updates in place, never inserts a duplicate."""
         from src.db.models import DetectedBook

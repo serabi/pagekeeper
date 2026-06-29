@@ -82,7 +82,12 @@ class DetectedRepository(BaseRepository):
         else:
             detected_book.first_detected_at = existing.first_detected_at
 
-    def dismiss_detected_book(self, source_id, source="abs"):
+    def _set_detected_status(self, source_id, source, status):
+        """Set the status of a matching detected book, refreshing last_seen_at.
+
+        Returns True only when a row scoped by (source_id, source) exists; returns
+        False without inserting anything when none does.
+        """
         with self.get_session() as session:
             detected = (
                 session.query(DetectedBook)
@@ -94,25 +99,15 @@ class DetectedRepository(BaseRepository):
             )
             if not detected:
                 return False
-            detected.status = "dismissed"
+            detected.status = status
             detected.last_seen_at = datetime.now(UTC)
             return True
 
+    def dismiss_detected_book(self, source_id, source="abs"):
+        return self._set_detected_status(source_id, source, "dismissed")
+
     def resolve_detected_book(self, source_id, source="abs"):
-        with self.get_session() as session:
-            detected = (
-                session.query(DetectedBook)
-                .filter(
-                    DetectedBook.source_id == source_id,
-                    DetectedBook.source == source,
-                )
-                .first()
-            )
-            if not detected:
-                return False
-            detected.status = "resolved"
-            detected.last_seen_at = datetime.now(UTC)
-            return True
+        return self._set_detected_status(source_id, source, "resolved")
 
     def get_all_ebook_filenames(self):
         """Get all ebook filenames from detected books with matches."""
