@@ -61,7 +61,5 @@ class KoSyncRepository(BaseRepository):
         """Get books with kosync_doc_id set but no matching KosyncDocument."""
         with self.get_session() as session:
             subq = session.query(KosyncDocument.document_hash)
-            results = session.query(Book).filter(Book.kosync_doc_id != None).filter(~Book.kosync_doc_id.in_(subq)).all()
-            for r in results:
-                session.expunge(r)
-            return results
+            query = session.query(Book).filter(Book.kosync_doc_id != None).filter(~Book.kosync_doc_id.in_(subq))
+            return self._query_and_expunge(session, query, one=False)
