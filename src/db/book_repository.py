@@ -104,10 +104,8 @@ class BookRepository(BaseRepository):
         if not query or not query.strip():
             return []
         with self.get_session() as session:
-            results = session.query(Book).filter(Book.title.ilike(f"%{query}%")).limit(limit).all()
-            for r in results:
-                session.expunge(r)
-            return results
+            db_query = session.query(Book).filter(Book.title.ilike(f"%{query}%")).limit(limit)
+            return self._query_and_expunge(session, db_query, one=False)
 
     def get_book_by_ebook_filename(self, filename):
         """Find a book by its ebook filename (current or original)."""
@@ -458,10 +456,8 @@ class BookRepository(BaseRepository):
 
     def get_latest_job(self, book_id):
         with self.get_session() as session:
-            job = session.query(Job).filter(Job.book_id == book_id).order_by(Job.last_attempt.desc()).first()
-            if job:
-                session.expunge(job)
-            return job
+            db_query = session.query(Job).filter(Job.book_id == book_id).order_by(Job.last_attempt.desc())
+            return self._query_and_expunge(session, db_query, one=True)
 
     def get_latest_jobs_bulk(self, book_ids):
         """Fetch the latest job for each book_id in one query.
@@ -534,29 +530,23 @@ class BookRepository(BaseRepository):
                 .group_by(State.book_id)
                 .subquery()
             )
-            books = (
+            db_query = (
                 session.query(Book)
                 .join(latest, Book.id == latest.c.book_id)
                 .order_by(latest.c.max_updated.desc())
                 .limit(limit)
-                .all()
             )
-            for book in books:
-                session.expunge(book)
-            return books
+            return self._query_and_expunge(session, db_query, one=False)
 
     def get_failed_jobs(self, limit=20):
         with self.get_session() as session:
-            jobs = (
+            db_query = (
                 session.query(Job)
                 .filter(Job.last_error.isnot(None))
                 .order_by(Job.last_attempt.desc())
                 .limit(limit)
-                .all()
             )
-            for job in jobs:
-                session.expunge(job)
-            return jobs
+            return self._query_and_expunge(session, db_query, one=False)
 
     def get_statistics(self):
         with self.get_session() as session:
