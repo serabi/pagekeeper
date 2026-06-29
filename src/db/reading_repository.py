@@ -197,21 +197,12 @@ class ReadingRepository(BaseRepository):
             raise ValueError("target_books must be a non-negative integer")
         if target_books < 0:
             raise ValueError("target_books must be a non-negative integer")
-        with self.get_session() as session:
-            existing = session.query(ReadingGoal).filter(ReadingGoal.year == year).first()
-            if existing:
-                existing.target_books = target_books
-                session.flush()
-                session.refresh(existing)
-                session.expunge(existing)
-                return existing
-            else:
-                goal = ReadingGoal(year=year, target_books=target_books)
-                session.add(goal)
-                session.flush()
-                session.refresh(goal)
-                session.expunge(goal)
-                return goal
+        return self._upsert(
+            ReadingGoal,
+            [ReadingGoal.year == year],
+            ReadingGoal(year=year, target_books=target_books),
+            ["target_books"],
+        )
 
     def get_reading_stats(self, year):
         """Backward-compatible lightweight stats summary."""
