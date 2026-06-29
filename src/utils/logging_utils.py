@@ -8,6 +8,8 @@ from pathlib import Path
 
 import requests
 
+from src.utils.secret_settings import SECRET_SETTING_KEYS
+
 logger = logging.getLogger(__name__)
 
 
@@ -180,20 +182,8 @@ def reconcile_telegram_logging():
     return telegram_log_handler
 
 
-_SECRET_ENV_VARS = (
-    "ABS_KEY",
-    "KOSYNC_KEY",
-    "KOSYNC_SERVER_KEY",
-    "HARDCOVER_TOKEN",
-    "TELEGRAM_BOT_TOKEN",
-    "STORYTELLER_PASSWORD",
-    "GRIMMORY_PASSWORD",
-    "GRIMMORY_2_PASSWORD",
-    "CWA_PASSWORD",
-    "DEEPGRAM_API_KEY",
-    "BOOKFUSION_API_KEY",
-    "BOOKFUSION_UPLOAD_API_KEY",
-)
+# Backwards-compatible alias for the centralized secret-key list.
+_SECRET_ENV_VARS = SECRET_SETTING_KEYS
 
 
 def sanitize_exception(exc: Exception) -> str:
