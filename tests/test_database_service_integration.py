@@ -1651,6 +1651,103 @@ class TestSuggestionSourceScoping(unittest.TestCase):
         self.assertFalse(self.db_service.suggestion_exists("id1", source="abs"))
         self.assertTrue(self.db_service.suggestion_exists("id1", source="kosync"))
 
+    def test_save_pending_suggestion_insert_returns_persisted_row(self):
+        """First save inserts a row and returns it with the given fields."""
+        suggestion = self.PendingSuggestion(
+            source_id="id1",
+            title="Title",
+            author="Author",
+            cover_url="http://example/c.jpg",
+            matches_json="[1]",
+            source="abs",
+        )
+        saved = self.db_service.save_pending_suggestion(suggestion)
+
+        self.assertIsNotNone(saved)
+        self.assertEqual(saved.title, "Title")
+        self.assertEqual(saved.status, "pending")
+
+        fetched = self.db_service.get_suggestion("id1", source="abs")
+        self.assertIsNotNone(fetched)
+        self.assertEqual(fetched.author, "Author")
+        self.assertEqual(fetched.cover_url, "http://example/c.jpg")
+        self.assertEqual(fetched.matches_json, "[1]")
+
+    def test_save_pending_suggestion_update_mutates_existing_fields(self):
+        """Second save for the same (source_id, source) updates the existing row's fields."""
+        self.db_service.save_pending_suggestion(
+            self.PendingSuggestion(source_id="id1", title="Old", author="A1", matches_json="[1]", source="abs")
+        )
+        self.db_service.save_pending_suggestion(
+            self.PendingSuggestion(source_id="id1", title="New", author="A2", matches_json="[2]", source="abs")
+        )
+
+        fetched = self.db_service.get_suggestion("id1", source="abs")
+        self.assertEqual(fetched.title, "New")
+        self.assertEqual(fetched.author, "A2")
+        self.assertEqual(fetched.matches_json, "[2]")
+
+    def test_save_pending_suggestion_repeated_save_creates_no_duplicate(self):
+        """Repeated saves for the same (source_id, source) keep exactly one row."""
+        from src.db.models import PendingSuggestion
+
+        for _ in range(3):
+            self.db_service.save_pending_suggestion(
+                self.PendingSuggestion(source_id="id1", title="Title", source="abs")
+            )
+
+        with self.db_service.db_manager.get_session() as session:
+            count = (
+                session.query(PendingSuggestion)
+                .filter(PendingSuggestion.source_id == "id1", PendingSuggestion.source == "abs")
+                .count()
+            )
+        self.assertEqual(count, 1)
+
+    def test_save_pending_suggestion_hidden_stays_hidden_when_incoming_pending(self):
+        """A hidden suggestion must remain hidden when re-saved as pending."""
+        self.db_service.save_pending_suggestion(
+            self.PendingSuggestion(source_id="id1", title="Title", source="abs")
+        )
+        self.assertTrue(self.db_service.hide_suggestion("id1", source="abs"))
+
+        saved = self.db_service.save_pending_suggestion(
+            self.PendingSuggestion(source_id="id1", title="Updated", status="pending", source="abs")
+        )
+
+        self.assertEqual(saved.status, "hidden")
+        fetched = self.db_service.get_suggestion("id1", source="abs")
+        self.assertEqual(fetched.status, "hidden")
+        self.assertEqual(fetched.title, "Updated")
+
+    def test_save_pending_suggestion_hidden_overwritten_by_incoming_non_pending(self):
+        """An incoming non-pending status replaces an existing hidden status as before."""
+        self.db_service.save_pending_suggestion(
+            self.PendingSuggestion(source_id="id1", title="Title", source="abs")
+        )
+        self.assertTrue(self.db_service.hide_suggestion("id1", source="abs"))
+
+        saved = self.db_service.save_pending_suggestion(
+            self.PendingSuggestion(source_id="id1", title="Title", status="ignored", source="abs")
+        )
+
+        self.assertEqual(saved.status, "ignored")
+        self.assertEqual(self.db_service.get_suggestion("id1", source="abs").status, "ignored")
+
+    def test_save_pending_suggestion_hidden_preservation_scoped_by_source(self):
+        """Hidden preservation only applies within the same source, not across sources."""
+        self.db_service.save_pending_suggestion(
+            self.PendingSuggestion(source_id="id1", title="ABS", source="abs")
+        )
+        self.assertTrue(self.db_service.hide_suggestion("id1", source="abs"))
+
+        kosync_saved = self.db_service.save_pending_suggestion(
+            self.PendingSuggestion(source_id="id1", title="KOSync", status="pending", source="kosync")
+        )
+
+        self.assertEqual(kosync_saved.status, "pending")
+        self.assertEqual(self.db_service.get_suggestion("id1", source="abs").status, "hidden")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
