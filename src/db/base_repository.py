@@ -74,6 +74,14 @@ class BaseRepository:
         with self.get_session() as session:
             return session.query(model).filter(*filters).first() is not None
 
+    def _count(self, model, *filters):
+        """Return the number of rows matching the filters (0 for none)."""
+        with self.get_session() as session:
+            query = session.query(model)
+            if filters:
+                query = query.filter(*filters)
+            return query.count()
+
     def _delete_one(self, model, *filters):
         """Find and delete a single row. Returns True if deleted."""
         with self.get_session() as session:

@@ -2390,6 +2390,52 @@ class TestSuggestionSourceScoping(unittest.TestCase):
         self.assertEqual(kosync_saved.status, "pending")
         self.assertEqual(self.db_service.get_suggestion("id1", source="abs").status, "hidden")
 
+    def test_pending_suggestion_count_empty_database_returns_zero(self):
+        """get_pending_suggestion_count returns 0 when no suggestions exist."""
+        self.assertEqual(self.db_service.get_pending_suggestion_count(), 0)
+
+    def test_pending_suggestion_count_counts_pending_rows(self):
+        """get_pending_suggestion_count counts suggestions whose status is pending."""
+        self.db_service.save_pending_suggestion(
+            self.PendingSuggestion(source_id="id1", title="A", source="abs")
+        )
+        self.db_service.save_pending_suggestion(
+            self.PendingSuggestion(source_id="id2", title="B", source="abs")
+        )
+        self.assertEqual(self.db_service.get_pending_suggestion_count(), 2)
+
+    def test_pending_suggestion_count_excludes_non_pending_statuses(self):
+        """Hidden, ignored, and dismissed suggestions are excluded from the pending count."""
+        self.db_service.save_pending_suggestion(
+            self.PendingSuggestion(source_id="pending", title="P", source="abs")
+        )
+        self.db_service.save_pending_suggestion(
+            self.PendingSuggestion(source_id="hidden", title="H", source="abs")
+        )
+        self.assertTrue(self.db_service.hide_suggestion("hidden", source="abs"))
+        self.db_service.save_pending_suggestion(
+            self.PendingSuggestion(source_id="ignored", title="I", source="abs")
+        )
+        self.assertTrue(self.db_service.ignore_suggestion("ignored", source="abs"))
+        self.db_service.save_pending_suggestion(
+            self.PendingSuggestion(source_id="dismissed", title="D", source="abs", status="dismissed")
+        )
+
+        self.assertEqual(self.db_service.get_pending_suggestion_count(), 1)
+
+    def test_pending_suggestion_count_ignores_source_when_pending(self):
+        """Source value does not matter for the pending count as long as status is pending."""
+        self.db_service.save_pending_suggestion(
+            self.PendingSuggestion(source_id="id1", title="ABS", source="abs")
+        )
+        self.db_service.save_pending_suggestion(
+            self.PendingSuggestion(source_id="id1", title="KOSync", source="kosync")
+        )
+        self.db_service.save_pending_suggestion(
+            self.PendingSuggestion(source_id="id1", title="Storyteller", source="storyteller")
+        )
+        self.assertEqual(self.db_service.get_pending_suggestion_count(), 3)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

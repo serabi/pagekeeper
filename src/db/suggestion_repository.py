@@ -53,8 +53,7 @@ class SuggestionRepository(BaseRepository):
         )
 
     def get_pending_suggestion_count(self):
-        with self.get_session() as session:
-            return session.query(PendingSuggestion).filter(PendingSuggestion.status == "pending").count()
+        return self._count(PendingSuggestion, PendingSuggestion.status == "pending")
 
     def get_all_pending_suggestions(self):
         return self._get_all(

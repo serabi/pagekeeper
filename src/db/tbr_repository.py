@@ -2,8 +2,6 @@
 
 import logging
 
-from sqlalchemy import func
-
 from .base_repository import BaseRepository
 from .models import TbrItem
 
@@ -154,8 +152,7 @@ class TbrRepository(BaseRepository):
 
     def get_tbr_count(self):
         """Return the total number of TBR items."""
-        with self.get_session() as session:
-            return session.query(func.count(TbrItem.id)).scalar()
+        return self._count(TbrItem)
 
     def find_by_book_id(self, book_id):
         """Find a TBR item linked to a given library book."""
