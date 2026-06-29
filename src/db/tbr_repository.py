@@ -99,6 +99,23 @@ class TbrRepository(BaseRepository):
             session.expunge(item)
             return item, True
 
+    def _mutate_tbr_item(self, item_id, mutate):
+        """Load a TBR item by ID, apply ``mutate`` to it, and return it detached.
+
+        Returns None without mutating or flushing when no item matches the ID.
+        Shared by update_tbr_item and link_tbr_to_book to keep the
+        load -> mutate -> flush/refresh/expunge sequence in one place.
+        """
+        with self.get_session() as session:
+            item = session.query(TbrItem).filter(TbrItem.id == item_id).first()
+            if not item:
+                return None
+            mutate(item)
+            session.flush()
+            session.refresh(item)
+            session.expunge(item)
+            return item
+
     def update_tbr_item(self, item_id, **fields):
         """Update arbitrary fields on a TBR item. Returns the updated item or None."""
         ALLOWED = {
@@ -111,17 +128,13 @@ class TbrRepository(BaseRepository):
             "hardcover_slug",
             *ENRICHMENT_FIELDS,
         }
-        with self.get_session() as session:
-            item = session.query(TbrItem).filter(TbrItem.id == item_id).first()
-            if not item:
-                return None
+
+        def apply_fields(item):
             for key, value in fields.items():
                 if key in ALLOWED:
                     setattr(item, key, value)
-            session.flush()
-            session.refresh(item)
-            session.expunge(item)
-            return item
+
+        return self._mutate_tbr_item(item_id, apply_fields)
 
     def delete_tbr_item(self, item_id):
         """Remove a TBR item. Returns True if deleted."""
@@ -129,15 +142,11 @@ class TbrRepository(BaseRepository):
 
     def link_tbr_to_book(self, item_id, book_id):
         """Set book_id on a TBR item (linking it to an owned book)."""
-        with self.get_session() as session:
-            item = session.query(TbrItem).filter(TbrItem.id == item_id).first()
-            if not item:
-                return None
+
+        def set_book_id(item):
             item.book_id = book_id
-            session.flush()
-            session.refresh(item)
-            session.expunge(item)
-            return item
+
+        return self._mutate_tbr_item(item_id, set_book_id)
 
     def find_tbr_by_hardcover_id(self, hc_book_id):
         """Find a TBR item by its Hardcover book ID."""

@@ -136,6 +136,123 @@ class TestTbrRepository(unittest.TestCase):
         result = self.db.link_tbr_to_book(9999, 1)
         self.assertIsNone(result)
 
+    def test_link_tbr_to_book_unlink_with_none(self):
+        """link_tbr_to_book accepts None to unlink an item from its book."""
+        from src.db.models import Book
+
+        book = self.db.save_book(Book(abs_id="abs-unlink", title="Owned", status="active"))
+        item, _ = self.db.add_tbr_item("Dune")
+        self.db.link_tbr_to_book(item.id, book.id)
+
+        unlinked = self.db.link_tbr_to_book(item.id, None)
+        self.assertIsNotNone(unlinked)
+        self.assertIsNone(unlinked.book_id)
+
+        refreshed = self.db.get_tbr_item(item.id)
+        self.assertIsNone(refreshed.book_id)
+
+    def test_link_tbr_to_book_detached_after_session(self):
+        """link_tbr_to_book returns a detached item usable after the session closes."""
+        from src.db.models import Book
+
+        book = self.db.save_book(Book(abs_id="abs-detach", title="Owned", status="active"))
+        item, _ = self.db.add_tbr_item("Detached Link", author="Author Y")
+
+        linked = self.db.link_tbr_to_book(item.id, book.id)
+        # Accessing attributes must not raise DetachedInstanceError.
+        self.assertEqual(linked.book_id, book.id)
+        self.assertEqual(linked.title, "Detached Link")
+        self.assertEqual(linked.author, "Author Y")
+
+    # -- Updating --
+
+    def test_update_tbr_item_regular_fields(self):
+        """update_tbr_item updates allowed regular fields."""
+        item, _ = self.db.add_tbr_item("Original", author="Old Author")
+        updated = self.db.update_tbr_item(
+            item.id,
+            title="New Title",
+            author="New Author",
+            cover_url="http://example.com/cover.jpg",
+            priority=7,
+            hardcover_book_id=123,
+            hardcover_slug="new-title",
+        )
+        self.assertEqual(updated.title, "New Title")
+        self.assertEqual(updated.author, "New Author")
+        self.assertEqual(updated.cover_url, "http://example.com/cover.jpg")
+        self.assertEqual(updated.priority, 7)
+        self.assertEqual(updated.hardcover_book_id, 123)
+        self.assertEqual(updated.hardcover_slug, "new-title")
+
+    def test_update_tbr_item_enrichment_fields(self):
+        """update_tbr_item updates enrichment fields."""
+        item, _ = self.db.add_tbr_item("Enrich Me")
+        updated = self.db.update_tbr_item(
+            item.id,
+            description="A great book",
+            page_count=321,
+            rating=4.5,
+            ratings_count=1000,
+            release_year=1965,
+            genres='["sci-fi"]',
+            subtitle="A Subtitle",
+        )
+        self.assertEqual(updated.description, "A great book")
+        self.assertEqual(updated.page_count, 321)
+        self.assertEqual(updated.rating, 4.5)
+        self.assertEqual(updated.ratings_count, 1000)
+        self.assertEqual(updated.release_year, 1965)
+        self.assertEqual(updated.genres, '["sci-fi"]')
+        self.assertEqual(updated.subtitle, "A Subtitle")
+
+    def test_update_tbr_item_ignores_unknown_fields(self):
+        """update_tbr_item silently ignores fields not in the allowlist."""
+        item, _ = self.db.add_tbr_item("Keep Me", author="Real Author")
+        updated = self.db.update_tbr_item(
+            item.id,
+            title="Updated Title",
+            bogus_field="should be ignored",
+            source="manipulated",
+        )
+        self.assertEqual(updated.title, "Updated Title")
+        # source is not in the allowlist, so it stays unchanged.
+        self.assertEqual(updated.source, "manual")
+        self.assertFalse(hasattr(updated, "bogus_field"))
+
+    def test_update_tbr_item_writes_none_for_nullable_field(self):
+        """update_tbr_item writes None through for an allowed nullable field."""
+        item, _ = self.db.add_tbr_item("Has Notes", notes="some notes", cover_url="http://x/y.jpg")
+        updated = self.db.update_tbr_item(item.id, notes=None, cover_url=None)
+        self.assertIsNone(updated.notes)
+        self.assertIsNone(updated.cover_url)
+
+        refreshed = self.db.get_tbr_item(item.id)
+        self.assertIsNone(refreshed.notes)
+        self.assertIsNone(refreshed.cover_url)
+
+    def test_update_tbr_item_only_unknown_fields_returns_unchanged(self):
+        """update_tbr_item returns the unchanged item when only unknown fields are passed."""
+        item, _ = self.db.add_tbr_item("Untouched", author="Author Z", notes="keep")
+        updated = self.db.update_tbr_item(item.id, not_a_field=1, source="hack")
+        self.assertIsNotNone(updated)
+        self.assertEqual(updated.title, "Untouched")
+        self.assertEqual(updated.author, "Author Z")
+        self.assertEqual(updated.notes, "keep")
+        self.assertEqual(updated.source, "manual")
+
+    def test_update_tbr_item_not_found(self):
+        """update_tbr_item returns None for a missing item ID."""
+        self.assertIsNone(self.db.update_tbr_item(9999, title="Nope"))
+
+    def test_update_tbr_item_detached_after_session(self):
+        """update_tbr_item returns a detached item usable after the session closes."""
+        item, _ = self.db.add_tbr_item("Detached Update")
+        updated = self.db.update_tbr_item(item.id, title="Detached New", author="Author D")
+        # Accessing attributes must not raise DetachedInstanceError.
+        self.assertEqual(updated.title, "Detached New")
+        self.assertEqual(updated.author, "Author D")
+
     # -- Lookup --
 
     def test_find_tbr_by_hardcover_id(self):
