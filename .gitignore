@@ -73,5 +73,6 @@ CLAUDE.md
 # Agent scratch directories
 .agent-prompts/
 .agent-reports/
+.opencode/
 .worktrees/
 .playwright-mcp/
