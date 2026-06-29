@@ -87,6 +87,21 @@ class BaseRepository:
             session.expunge(obj)
             return obj
 
+    def _merge_save(self, obj):
+        """Merge an object by primary key, flush/refresh/expunge and return it.
+
+        Uses ``session.merge`` so a new primary key inserts and an existing one
+        copies every column attribute from ``obj`` onto the loaded row. This
+        differs from ``_upsert``, which only copies a chosen subset of
+        attributes; callers needing merge's copy-all semantics use this helper.
+        """
+        with self.get_session() as session:
+            merged = session.merge(obj)
+            session.flush()
+            session.refresh(merged)
+            session.expunge(merged)
+            return merged
+
     def _upsert(self, model, lookup_filters, obj, update_attrs, normalize=None):
         """Find existing by filters and update attrs, or insert new. Returns the saved object.
 
