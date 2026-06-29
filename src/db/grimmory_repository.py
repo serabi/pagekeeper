@@ -28,50 +28,15 @@ class GrimmoryRepository(BaseRepository):
             return rows
 
     def save_grimmory_book(self, grimmory_book):
-        with self.get_session() as session:
-            existing = (
-                session.query(GrimmoryBook)
-                .filter(
-                    GrimmoryBook.server_id == grimmory_book.server_id,
-                    GrimmoryBook.filename == grimmory_book.filename,
-                )
-                .first()
-            )
-
-            if existing:
-                for attr in ["title", "authors", "raw_metadata"]:
-                    if hasattr(grimmory_book, attr):
-                        setattr(existing, attr, getattr(grimmory_book, attr))
-                session.flush()
-                session.refresh(existing)
-                session.expunge(existing)
-                return existing
-            else:
-                try:
-                    session.add(grimmory_book)
-                    session.flush()
-                except IntegrityError:
-                    session.rollback()
-                    existing = (
-                        session.query(GrimmoryBook)
-                        .filter(
-                            GrimmoryBook.server_id == grimmory_book.server_id,
-                            GrimmoryBook.filename == grimmory_book.filename,
-                        )
-                        .first()
-                    )
-                    if existing:
-                        for attr in ["title", "authors", "raw_metadata"]:
-                            if hasattr(grimmory_book, attr):
-                                setattr(existing, attr, getattr(grimmory_book, attr))
-                        session.flush()
-                        session.refresh(existing)
-                        session.expunge(existing)
-                        return existing
-                    raise
-                session.refresh(grimmory_book)
-                session.expunge(grimmory_book)
-                return grimmory_book
+        return self._upsert(
+            GrimmoryBook,
+            [
+                GrimmoryBook.server_id == grimmory_book.server_id,
+                GrimmoryBook.filename == grimmory_book.filename,
+            ],
+            grimmory_book,
+            ["title", "authors", "raw_metadata"],
+        )
 
     def replace_grimmory_book_filename(self, old_filename, grimmory_book):
         """Atomically upsert *grimmory_book* and remove the old filename row.
