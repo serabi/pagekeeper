@@ -232,6 +232,87 @@ class TestKosyncDocument(unittest.TestCase):
         self.assertEqual(saved.document_hash, "6" * 32)
         self.assertAlmostEqual(float(saved.percentage), 0.3)
 
+    def test_link_sets_both_book_id_and_abs_id(self):
+        """Linking an existing document sets linked_book_id and linked_abs_id exactly as passed."""
+        doc = KosyncDocument(document_hash="7" * 32, percentage=0.3)
+        self.db_service.save_kosync_document(doc)
+        book = Book(abs_id="book-link", title="Link Book")
+        book = self.db_service.save_book(book)
+
+        result = self.db_service.link_kosync_document("7" * 32, book.id, "abs-7")
+
+        self.assertTrue(result)
+        retrieved = self.db_service.get_kosync_document("7" * 32)
+        self.assertEqual(retrieved.linked_book_id, book.id)
+        self.assertEqual(retrieved.linked_abs_id, "abs-7")
+
+    def test_link_with_abs_id_none_sets_abs_id_none(self):
+        """Linking with abs_id=None stores linked_abs_id as None while setting the book id."""
+        doc = KosyncDocument(document_hash="8" * 32, percentage=0.3, linked_abs_id="stale-abs")
+        self.db_service.save_kosync_document(doc)
+        book = Book(abs_id="book-none", title="None Book")
+        book = self.db_service.save_book(book)
+
+        result = self.db_service.link_kosync_document("8" * 32, book.id)
+
+        self.assertTrue(result)
+        retrieved = self.db_service.get_kosync_document("8" * 32)
+        self.assertEqual(retrieved.linked_book_id, book.id)
+        self.assertIsNone(retrieved.linked_abs_id)
+
+    def test_link_missing_document_returns_false_and_creates_nothing(self):
+        """Linking a missing hash returns False and inserts no row."""
+        result = self.db_service.link_kosync_document("9" * 32, 12345, "abs-missing")
+
+        self.assertFalse(result)
+        self.assertIsNone(self.db_service.get_kosync_document("9" * 32))
+        with self.db_service.get_session() as session:
+            count = session.query(KosyncDocument).filter(KosyncDocument.document_hash == "9" * 32).count()
+        self.assertEqual(count, 0)
+
+    def test_unlink_clears_both_link_fields(self):
+        """Unlinking an existing document clears linked_book_id and linked_abs_id."""
+        doc = KosyncDocument(document_hash="a" * 31 + "0", percentage=0.3)
+        self.db_service.save_kosync_document(doc)
+        book = Book(abs_id="book-unlink", title="Unlink Book")
+        book = self.db_service.save_book(book)
+        self.db_service.link_kosync_document("a" * 31 + "0", book.id, "abs-unlink")
+
+        result = self.db_service.unlink_kosync_document("a" * 31 + "0")
+
+        self.assertTrue(result)
+        retrieved = self.db_service.get_kosync_document("a" * 31 + "0")
+        self.assertIsNone(retrieved.linked_book_id)
+        self.assertIsNone(retrieved.linked_abs_id)
+
+    def test_unlink_missing_document_returns_false_and_creates_nothing(self):
+        """Unlinking a missing hash returns False and inserts no row."""
+        result = self.db_service.unlink_kosync_document("b" * 31 + "0")
+
+        self.assertFalse(result)
+        self.assertIsNone(self.db_service.get_kosync_document("b" * 31 + "0"))
+        with self.db_service.get_session() as session:
+            count = session.query(KosyncDocument).filter(KosyncDocument.document_hash == "b" * 31 + "0").count()
+        self.assertEqual(count, 0)
+
+    def test_link_and_unlink_update_last_updated(self):
+        """last_updated is refreshed on both link and unlink of an existing document."""
+        doc = KosyncDocument(document_hash="c" * 31 + "0", percentage=0.3)
+        saved = self.db_service.save_kosync_document(doc)
+        baseline = saved.last_updated
+        book = Book(abs_id="book-ts", title="Timestamp Book")
+        book = self.db_service.save_book(book)
+
+        time.sleep(0.01)
+        self.db_service.link_kosync_document("c" * 31 + "0", book.id, "abs-ts")
+        after_link = self.db_service.get_kosync_document("c" * 31 + "0").last_updated
+        self.assertGreater(after_link, baseline)
+
+        time.sleep(0.01)
+        self.db_service.unlink_kosync_document("c" * 31 + "0")
+        after_unlink = self.db_service.get_kosync_document("c" * 31 + "0").last_updated
+        self.assertGreater(after_unlink, after_link)
+
 
 class _KosyncMockContainer:
     """Lightweight mock container to avoid importing epubcfi (Docker-only)."""
