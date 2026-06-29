@@ -207,6 +207,9 @@ class TestMasterSecretDiscovery:
         encrypt secrets with a key that vanishes on the next restart,
         permanently stranding them.
         """
+        if os.geteuid() == 0:
+            pytest.skip("root bypasses directory permissions")
+
         from src.app_runtime import EphemeralSecretKeyError, get_settings_master_secret
 
         monkeypatch.delenv("PAGEKEEPER_SETTINGS_ENCRYPTION_KEY", raising=False)

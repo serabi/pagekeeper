@@ -166,8 +166,7 @@ class GrimmoryClient:
                 raw_metadata=json.dumps(book_info),
                 server_id=self.instance_id,
             )
-            self.db.save_grimmory_book(normalized)
-            self.db.delete_grimmory_book(db_book.filename, server_id=self.instance_id)
+            self.db.replace_grimmory_book_filename(db_book.filename, normalized)
             logger.info(f"Grimmory: Normalized legacy cache row '{db_book.filename}' -> '{lower_name}'")
         except Exception as e:
             logger.warning(f"Grimmory: Failed to normalize cache row '{db_book.filename}': {e}")

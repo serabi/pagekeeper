@@ -85,10 +85,11 @@ def test_mixed_case_filename_normalizes_on_load(mock_db):
     assert "Mixed_Case.epub" not in client._book_cache
     assert client.find_book_by_filename("Mixed_Case.epub", allow_refresh=False)["id"] == "777"
 
-    # The legacy mixed-case row is rewritten lowercase and the old row deleted.
-    saved = mock_db.save_grimmory_book.call_args.args[0]
+    # The legacy mixed-case row is rewritten in one repository transaction.
+    saved = mock_db.replace_grimmory_book_filename.call_args.args[1]
     assert saved.filename == "mixed_case.epub"
-    mock_db.delete_grimmory_book.assert_called_once_with("Mixed_Case.epub", server_id=client.instance_id)
+    mock_db.replace_grimmory_book_filename.assert_called_once_with("Mixed_Case.epub", saved)
+    mock_db.delete_grimmory_book.assert_not_called()
 
 
 def test_migration_from_legacy_json(mock_db):

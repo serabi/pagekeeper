@@ -73,6 +73,59 @@ class GrimmoryRepository(BaseRepository):
                 session.expunge(grimmory_book)
                 return grimmory_book
 
+    def replace_grimmory_book_filename(self, old_filename, grimmory_book):
+        """Atomically upsert *grimmory_book* and remove the old filename row."""
+        with self.get_session() as session:
+            existing = (
+                session.query(GrimmoryBook)
+                .filter(
+                    GrimmoryBook.server_id == grimmory_book.server_id,
+                    GrimmoryBook.filename == grimmory_book.filename,
+                )
+                .first()
+            )
+
+            if existing:
+                target = existing
+                for attr in ["title", "authors", "raw_metadata"]:
+                    if hasattr(grimmory_book, attr):
+                        setattr(target, attr, getattr(grimmory_book, attr))
+            else:
+                try:
+                    session.add(grimmory_book)
+                    session.flush()
+                    target = grimmory_book
+                except IntegrityError:
+                    session.rollback()
+                    target = (
+                        session.query(GrimmoryBook)
+                        .filter(
+                            GrimmoryBook.server_id == grimmory_book.server_id,
+                            GrimmoryBook.filename == grimmory_book.filename,
+                        )
+                        .first()
+                    )
+                    if not target:
+                        raise
+                    for attr in ["title", "authors", "raw_metadata"]:
+                        if hasattr(grimmory_book, attr):
+                            setattr(target, attr, getattr(grimmory_book, attr))
+
+            if old_filename != grimmory_book.filename:
+                (
+                    session.query(GrimmoryBook)
+                    .filter(
+                        GrimmoryBook.server_id == grimmory_book.server_id,
+                        GrimmoryBook.filename == old_filename,
+                    )
+                    .delete(synchronize_session=False)
+                )
+
+            session.flush()
+            session.refresh(target)
+            session.expunge(target)
+            return target
+
     def delete_grimmory_book(self, filename, server_id="default"):
         try:
             with self.get_session() as session:
