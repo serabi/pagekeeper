@@ -109,20 +109,15 @@ class DetectedRepository(BaseRepository):
     def get_all_ebook_filenames(self):
         """Get all ebook filenames from detected books with matches."""
         with self.get_session() as session:
-            results = (
-                session.query(DetectedBook)
-                .filter(
-                    DetectedBook.status.in_(self.ACTIVE_STATUSES),
-                    DetectedBook.matches_json.isnot(None),
-                )
-                .all()
+            query = session.query(DetectedBook).filter(
+                DetectedBook.status.in_(self.ACTIVE_STATUSES),
+                DetectedBook.matches_json.isnot(None),
             )
+            results = self._query_and_expunge(session, query, one=False)
             filenames = set()
             for detected in results:
                 matches = detected.matches or []
                 for match in matches:
                     if match.get("filename"):
                         filenames.add(match["filename"])
-            for item in results:
-                session.expunge(item)
             return filenames

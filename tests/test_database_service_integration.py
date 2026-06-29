@@ -574,6 +574,107 @@ class TestDatabaseServiceIntegration(unittest.TestCase):
         self.assertEqual(rows[0].status, "detected")
         self.assertEqual(rows[0].title, "detached")
 
+    def _save_detected_with_matches(self, source_id, matches_json, status="detected"):
+        """Persist a detected row carrying an explicit matches_json string.
+
+        Built directly (not via _make_detected) because that helper does not set
+        matches_json. Non-active statuses are applied through the dismiss/resolve
+        mutators so normalization does not clobber them back to 'detected'.
+        """
+        from src.db.models import DetectedBook
+
+        self.db_service.save_detected_book(
+            DetectedBook(
+                source="abs",
+                source_id=source_id,
+                title=source_id,
+                progress_percentage=0.1,
+                matches_json=matches_json,
+            )
+        )
+        if status == "dismissed":
+            self.db_service.dismiss_detected_book(source_id, source="abs")
+        elif status == "resolved":
+            self.db_service.resolve_detected_book(source_id, source="abs")
+
+    def test_get_all_ebook_filenames_returns_filenames_from_active_rows(self):
+        """Filenames are collected from active detected rows' matches_json."""
+        self._save_detected_with_matches(
+            "active-one", '[{"filename": "alpha.epub"}, {"filename": "beta.epub"}]'
+        )
+
+        self.assertEqual(
+            self.db_service.get_all_ebook_filenames(), {"alpha.epub", "beta.epub"}
+        )
+
+    def test_get_all_ebook_filenames_excludes_dismissed_and_resolved(self):
+        """Dismissed and resolved rows are excluded even when they carry matches."""
+        self._save_detected_with_matches("active", '[{"filename": "active.epub"}]')
+        self._save_detected_with_matches(
+            "dismissed", '[{"filename": "dismissed.epub"}]', status="dismissed"
+        )
+        self._save_detected_with_matches(
+            "resolved", '[{"filename": "resolved.epub"}]', status="resolved"
+        )
+
+        self.assertEqual(self.db_service.get_all_ebook_filenames(), {"active.epub"})
+
+    def test_get_all_ebook_filenames_ignores_matches_json_none(self):
+        """Rows with matches_json=None are filtered out by the DB query."""
+        self._save_detected_with_matches("has-matches", '[{"filename": "keep.epub"}]')
+        self._save_detected_with_matches("no-matches", None)
+
+        self.assertEqual(self.db_service.get_all_ebook_filenames(), {"keep.epub"})
+
+    def test_get_all_ebook_filenames_corrupt_json_contributes_nothing(self):
+        """Corrupt JSON yields [] from the matches property and adds no filenames."""
+        self._save_detected_with_matches("good", '[{"filename": "good.epub"}]')
+        self._save_detected_with_matches("corrupt", "{not valid json")
+
+        self.assertEqual(self.db_service.get_all_ebook_filenames(), {"good.epub"})
+
+    def test_get_all_ebook_filenames_ignores_entries_without_filename(self):
+        """Match dicts missing filename or with falsey filename values are skipped."""
+        self._save_detected_with_matches(
+            "mixed",
+            '[{"filename": "kept.epub"}, {"author": "no filename"}, '
+            '{"filename": ""}, {"filename": null}]',
+        )
+
+        self.assertEqual(self.db_service.get_all_ebook_filenames(), {"kept.epub"})
+
+    def test_get_all_ebook_filenames_collapses_duplicates(self):
+        """Identical filenames across rows collapse to a single set entry."""
+        self._save_detected_with_matches("first", '[{"filename": "dup.epub"}]')
+        self._save_detected_with_matches(
+            "second", '[{"filename": "dup.epub"}, {"filename": "dup.epub"}]'
+        )
+
+        self.assertEqual(self.db_service.get_all_ebook_filenames(), {"dup.epub"})
+
+    def test_get_all_ebook_filenames_empty_set_when_no_usable_filenames(self):
+        """Returns an empty set (not None/list) when nothing usable exists."""
+        self._save_detected_with_matches("empty-matches", "[]")
+        self._save_detected_with_matches("no-filenames", '[{"author": "x"}]')
+
+        result = self.db_service.get_all_ebook_filenames()
+        self.assertEqual(result, set())
+        self.assertIsInstance(result, set)
+
+    def test_get_all_ebook_filenames_extracts_after_session_close(self):
+        """The matches property is read after _query_and_expunge detaches the rows.
+
+        Reading matches_json post-expunge must not raise DetachedInstanceError;
+        a non-empty result proves the scalar column was available after detach.
+        """
+        self._save_detected_with_matches(
+            "detached", '[{"filename": "detached.epub"}]'
+        )
+
+        self.assertEqual(
+            self.db_service.get_all_ebook_filenames(), {"detached.epub"}
+        )
+
     def test_upsert_without_normalize_hook_is_unaffected(self):
         """Default _upsert callers (no normalize hook) keep blind attribute-copy
         semantics: the existing-row update path overwrites every update attr."""
