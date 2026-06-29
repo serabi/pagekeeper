@@ -69,6 +69,11 @@ class BaseRepository:
                 query = query.order_by(order_by)
             return self._query_and_expunge(session, query, one=False)
 
+    def _exists(self, model, *filters):
+        """Return True if any row matches the filters, without exposing it."""
+        with self.get_session() as session:
+            return session.query(model).filter(*filters).first() is not None
+
     def _delete_one(self, model, *filters):
         """Find and delete a single row. Returns True if deleted."""
         with self.get_session() as session:
