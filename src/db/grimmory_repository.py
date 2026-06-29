@@ -21,11 +21,7 @@ class GrimmoryRepository(BaseRepository):
     def get_all_grimmory_books(self, server_id=None):
         if server_id is None:
             return self._get_all(GrimmoryBook)
-        with self.get_session() as session:
-            rows = session.query(GrimmoryBook).filter(GrimmoryBook.server_id == server_id).all()
-            for r in rows:
-                session.expunge(r)
-            return rows
+        return self._get_all(GrimmoryBook, GrimmoryBook.server_id == server_id)
 
     def save_grimmory_book(self, grimmory_book):
         return self._upsert(
