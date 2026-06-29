@@ -218,6 +218,42 @@ class TestReadingTrackerModels(unittest.TestCase):
         """Returns None for a year with no goal."""
         self.assertIsNone(self.db.get_reading_goal(1999))
 
+    def test_save_goal_no_duplicate_row_on_repeated_save(self):
+        """Repeated saves for the same year update in place, never inserting a duplicate."""
+        from src.db.models import ReadingGoal
+
+        self.db.save_reading_goal(2026, 24)
+        self.db.save_reading_goal(2026, 50)
+        self.db.save_reading_goal(2026, 7)
+
+        with self.db._reading.get_session() as session:
+            rows = session.query(ReadingGoal).filter(ReadingGoal.year == 2026).all()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0].target_books, 7)
+
+    def test_save_goal_inserts_then_updates(self):
+        """First save inserts, second save for the same year updates the same row."""
+        inserted = self.db.save_reading_goal(2026, 24)
+        self.assertEqual(inserted.target_books, 24)
+
+        updated = self.db.save_reading_goal(2026, 30)
+        self.assertEqual(updated.target_books, 30)
+        self.assertEqual(updated.year, 2026)
+        self.assertEqual(self.db.get_reading_goal(2026).target_books, 30)
+
+    def test_save_goal_allows_zero(self):
+        """A target of zero is a valid non-negative goal."""
+        goal = self.db.save_reading_goal(2026, 0)
+        self.assertEqual(goal.target_books, 0)
+
+    def test_save_goal_rejects_invalid_targets(self):
+        """Invalid target_books values raise ValueError without persisting a goal."""
+        for invalid in (None, True, False, 3.5, "12", -1):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(ValueError):
+                    self.db.save_reading_goal(2030, invalid)
+        self.assertIsNone(self.db.get_reading_goal(2030))
+
     # -- Reading stats --
 
     def test_reading_stats(self):
