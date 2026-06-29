@@ -91,6 +91,19 @@ For a direct Docker compose invocation:
 docker compose -f docker-compose.test.yml run --rm test tests/test_app_runtime.py
 ```
 
+### Continuous Integration
+
+CI runs two separate jobs on pushes and pull requests:
+
+- **Ruff** (`.github/workflows/lint.yml`) — `ruff check src/ tests/ alembic/ scripts/`
+- **pytest** (`.github/workflows/test.yml`) — runs the full suite in the Docker test container with the same command you can run locally:
+
+  ```bash
+  docker compose -f docker-compose.test.yml run --rm test tests/
+  ```
+
+Both jobs must be green before a PR is merged.
+
 ### Dev App Smoke Test
 
 ```bash

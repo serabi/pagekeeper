@@ -9,6 +9,9 @@ docker-compose.yml*
 *.json
 epub_cache/
 
+# Local test fixtures (database.db, .flask_secret_key) used by cleanup planning
+test_data/
+
 # Python
 __pycache__/
 *.py[cod]
