@@ -125,6 +125,324 @@ class TestDatabaseServiceIntegration(unittest.TestCase):
         self.assertEqual(resolved.status, "resolved")
         self.assertEqual(still_active.status, "detected")
 
+    def test_save_detected_book_repeat_save_does_not_duplicate(self):
+        """Re-saving the same (source_id, source) updates in place, never inserts a duplicate."""
+        from src.db.models import DetectedBook
+
+        for _ in range(3):
+            self.db_service.save_detected_book(
+                DetectedBook(source="abs", source_id="dup-check", title="Dup", progress_percentage=0.1)
+            )
+
+        all_for_source = [b for b in self.db_service.get_active_detected_books() if b.source_id == "dup-check"]
+        self.assertEqual(len(all_for_source), 1)
+
+    def test_save_detected_book_keeps_dismissed_when_incoming_detected(self):
+        """A dismissed row stays dismissed when a later 'detected' save arrives."""
+        from src.db.models import DetectedBook
+
+        self.db_service.save_detected_book(
+            DetectedBook(source="abs", source_id="dismiss-keep", title="Keep", progress_percentage=0.1)
+        )
+        self.assertTrue(self.db_service.dismiss_detected_book("dismiss-keep", source="abs"))
+
+        self.db_service.save_detected_book(
+            DetectedBook(
+                source="abs", source_id="dismiss-keep", title="Keep", progress_percentage=0.4, status="detected"
+            )
+        )
+
+        row = self.db_service.get_detected_book("dismiss-keep", source="abs")
+        self.assertEqual(row.status, "dismissed")
+        self.assertAlmostEqual(row.progress_percentage, 0.4)
+
+    def test_save_detected_book_resolved_status_is_applied(self):
+        """An incoming non-detected status (e.g. resolved) is applied over a detected row."""
+        from src.db.models import DetectedBook
+
+        self.db_service.save_detected_book(
+            DetectedBook(source="abs", source_id="status-apply", title="S", progress_percentage=0.1)
+        )
+        self.db_service.save_detected_book(
+            DetectedBook(
+                source="abs", source_id="status-apply", title="S", progress_percentage=0.2, status="resolved"
+            )
+        )
+
+        row = self.db_service.get_detected_book("status-apply", source="abs")
+        self.assertEqual(row.status, "resolved")
+
+    def test_save_detected_book_preserves_truthy_only_fields(self):
+        """Falsy incoming title/author/cover_url/device/ebook_filename do not overwrite existing values."""
+        from src.db.models import DetectedBook
+
+        self.db_service.save_detected_book(
+            DetectedBook(
+                source="abs",
+                source_id="truthy",
+                title="Original Title",
+                author="Original Author",
+                cover_url="/cover/orig",
+                progress_percentage=0.1,
+                device="OriginalDevice",
+                ebook_filename="orig.epub",
+            )
+        )
+
+        self.db_service.save_detected_book(
+            DetectedBook(
+                source="abs",
+                source_id="truthy",
+                title="",
+                author=None,
+                cover_url="",
+                progress_percentage=0.5,
+                device="",
+                ebook_filename=None,
+            )
+        )
+
+        row = self.db_service.get_detected_book("truthy", source="abs")
+        self.assertEqual(row.title, "Original Title")
+        self.assertEqual(row.author, "Original Author")
+        self.assertEqual(row.cover_url, "/cover/orig")
+        self.assertEqual(row.device, "OriginalDevice")
+        self.assertEqual(row.ebook_filename, "orig.epub")
+        self.assertAlmostEqual(row.progress_percentage, 0.5)
+
+    def test_save_detected_book_updates_truthy_fields(self):
+        """Truthy incoming values for the conditional fields do overwrite existing values."""
+        from src.db.models import DetectedBook
+
+        self.db_service.save_detected_book(
+            DetectedBook(source="abs", source_id="truthy-upd", title="Old", progress_percentage=0.1)
+        )
+        self.db_service.save_detected_book(
+            DetectedBook(
+                source="abs",
+                source_id="truthy-upd",
+                title="New",
+                author="New Author",
+                cover_url="/cover/new",
+                progress_percentage=0.2,
+                device="NewDevice",
+                ebook_filename="new.epub",
+            )
+        )
+
+        row = self.db_service.get_detected_book("truthy-upd", source="abs")
+        self.assertEqual(row.title, "New")
+        self.assertEqual(row.author, "New Author")
+        self.assertEqual(row.cover_url, "/cover/new")
+        self.assertEqual(row.device, "NewDevice")
+        self.assertEqual(row.ebook_filename, "new.epub")
+
+    def test_save_detected_book_matches_json_none_does_not_overwrite(self):
+        """matches_json updates only when incoming is not None; None preserves existing matches."""
+        from src.db.models import DetectedBook
+
+        self.db_service.save_detected_book(
+            DetectedBook(
+                source="abs",
+                source_id="matches",
+                title="M",
+                progress_percentage=0.1,
+                matches_json='[{"filename": "a.epub"}]',
+            )
+        )
+
+        self.db_service.save_detected_book(
+            DetectedBook(source="abs", source_id="matches", title="M", progress_percentage=0.2, matches_json=None)
+        )
+        preserved = self.db_service.get_detected_book("matches", source="abs")
+        self.assertEqual(preserved.matches_json, '[{"filename": "a.epub"}]')
+
+        self.db_service.save_detected_book(
+            DetectedBook(source="abs", source_id="matches", title="M", progress_percentage=0.3, matches_json="[]")
+        )
+        replaced = self.db_service.get_detected_book("matches", source="abs")
+        self.assertEqual(replaced.matches_json, "[]")
+
+    def test_save_detected_book_last_seen_and_first_detected_behavior(self):
+        """last_seen_at advances to incoming value; first_detected_at stays fixed once set."""
+        from datetime import UTC, datetime
+
+        from src.db.models import DetectedBook
+
+        original_first = datetime(2020, 1, 1, tzinfo=UTC)
+        original_last = datetime(2020, 1, 2, tzinfo=UTC)
+        first = DetectedBook(source="abs", source_id="times", title="T", progress_percentage=0.1)
+        first.first_detected_at = original_first
+        first.last_seen_at = original_last
+        self.db_service.save_detected_book(first)
+
+        new_last = datetime(2021, 6, 15, tzinfo=UTC)
+        second = DetectedBook(source="abs", source_id="times", title="T", progress_percentage=0.2)
+        second.first_detected_at = datetime(2099, 1, 1, tzinfo=UTC)
+        second.last_seen_at = new_last
+        self.db_service.save_detected_book(second)
+
+        row = self.db_service.get_detected_book("times", source="abs")
+        self.assertEqual(row.first_detected_at.replace(tzinfo=UTC), original_first)
+        self.assertEqual(row.last_seen_at.replace(tzinfo=UTC), new_last)
+
+    def test_save_detected_book_normalizes_against_concurrently_inserted_row(self):
+        """Regression: a row that appears only inside the upsert transaction (not at
+        any earlier pre-read) must still get detected-book normalization applied.
+
+        Simulates the race the old code lost: a writer's pre-read sees no row, then a
+        concurrent insert lands a dismissed row before the update transaction runs.
+        Normalization must run against the row found inside _upsert, so the dismissed
+        status is preserved instead of being clobbered back to 'detected'. The
+        pre-read is simulated as returning None to prove normalization no longer
+        depends on it."""
+        from unittest.mock import patch
+
+        from src.db.detected_repository import DetectedRepository
+        from src.db.models import DetectedBook
+
+        repo = self.db_service._detected
+
+        # A concurrent writer inserts a dismissed row after the (simulated) pre-read.
+        with repo.get_session() as session:
+            session.add(
+                DetectedBook(
+                    source="abs",
+                    source_id="race-update",
+                    title="Existing Title",
+                    author="Existing Author",
+                    progress_percentage=0.1,
+                    status="dismissed",
+                    matches_json='[{"filename": "x.epub"}]',
+                )
+            )
+
+        # Pre-read returns None: the concurrent insert had not yet landed when an
+        # earlier-design caller would have read. The fix must not rely on it.
+        with patch.object(DetectedRepository, "get_detected_book", return_value=None):
+            repo.save_detected_book(
+                DetectedBook(
+                    source="abs",
+                    source_id="race-update",
+                    title="",
+                    author=None,
+                    progress_percentage=0.6,
+                    status="detected",
+                    matches_json=None,
+                )
+            )
+
+        row = self.db_service.get_detected_book("race-update", source="abs")
+        self.assertEqual(row.status, "dismissed")
+        self.assertEqual(row.title, "Existing Title")
+        self.assertEqual(row.author, "Existing Author")
+        self.assertEqual(row.matches_json, '[{"filename": "x.epub"}]')
+        self.assertAlmostEqual(row.progress_percentage, 0.6)
+
+    def test_save_detected_book_normalizes_in_integrity_error_recovery(self):
+        """Regression: the IntegrityError race-recovery branch of _upsert must also
+        apply detected-book normalization.
+
+        Forces _upsert down its insert path (existing lookup returns None) while a
+        concurrent insert already committed the same (source_id, source). The insert
+        raises IntegrityError, recovery re-finds the row, and normalization must run
+        against it so the dismissed status survives."""
+        from src.db.models import DetectedBook
+
+        repo = self.db_service._detected
+
+        # Pre-existing dismissed row that the recovery lookup will find.
+        with repo.get_session() as session:
+            session.add(
+                DetectedBook(
+                    source="abs",
+                    source_id="race-integrity",
+                    title="Existing Title",
+                    author="Existing Author",
+                    progress_percentage=0.1,
+                    status="dismissed",
+                )
+            )
+
+        # Force _upsert's initial lookup to miss so it attempts an insert, hitting
+        # the unique constraint and dropping into IntegrityError recovery.
+        from sqlalchemy.orm import Query
+
+        real_first = Query.first
+        state = {"calls": 0}
+
+        def fake_first(self):
+            # Only intercept the very first lookup inside _upsert for this model.
+            if state["calls"] == 0 and self.column_descriptions and self.column_descriptions[0]["type"] is DetectedBook:
+                state["calls"] += 1
+                return None
+            return real_first(self)
+
+        Query.first = fake_first
+        try:
+            repo.save_detected_book(
+                DetectedBook(
+                    source="abs",
+                    source_id="race-integrity",
+                    title="",
+                    author=None,
+                    progress_percentage=0.7,
+                    status="detected",
+                )
+            )
+        finally:
+            Query.first = real_first
+
+        row = self.db_service.get_detected_book("race-integrity", source="abs")
+        self.assertEqual(row.status, "dismissed")
+        self.assertEqual(row.title, "Existing Title")
+        self.assertEqual(row.author, "Existing Author")
+        self.assertAlmostEqual(row.progress_percentage, 0.7)
+
+    def test_upsert_without_normalize_hook_is_unaffected(self):
+        """Default _upsert callers (no normalize hook) keep blind attribute-copy
+        semantics: the existing-row update path overwrites every update attr."""
+        from src.db.detected_repository import DetectedRepository
+        from src.db.models import DetectedBook
+
+        repo = self.db_service._detected
+
+        with repo.get_session() as session:
+            session.add(
+                DetectedBook(
+                    source="abs",
+                    source_id="no-hook",
+                    title="Existing Title",
+                    author="Existing Author",
+                    progress_percentage=0.1,
+                    status="dismissed",
+                )
+            )
+
+        incoming = DetectedBook(
+            source="abs",
+            source_id="no-hook",
+            title="Replaced",
+            author="Replaced Author",
+            progress_percentage=0.9,
+            status="detected",
+        )
+        repo._upsert(
+            DetectedBook,
+            [
+                DetectedBook.source_id == "no-hook",
+                DetectedBook.source == "abs",
+            ],
+            incoming,
+            DetectedRepository.UPSERT_ATTRS,
+        )
+
+        row = self.db_service.get_detected_book("no-hook", source="abs")
+        self.assertEqual(row.status, "detected")
+        self.assertEqual(row.title, "Replaced")
+        self.assertEqual(row.author, "Replaced Author")
+        self.assertAlmostEqual(row.progress_percentage, 0.9)
+
     def test_delete_book(self):
         """Test deleting a book record with cascading deletes for states and hardcover details."""
         test_abs_id = "test-book-delete"

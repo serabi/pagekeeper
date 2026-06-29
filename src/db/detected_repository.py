@@ -30,48 +30,57 @@ class DetectedRepository(BaseRepository):
                 session.expunge(item)
             return items
 
+    UPSERT_ATTRS = (
+        "title",
+        "author",
+        "cover_url",
+        "matches_json",
+        "device",
+        "ebook_filename",
+        "progress_percentage",
+        "status",
+        "last_seen_at",
+        "first_detected_at",
+    )
+
     def save_detected_book(self, detected_book):
-        """Upsert a detected book while preserving dismissed status."""
-        filters = [
-            DetectedBook.source_id == detected_book.source_id,
-            DetectedBook.source == detected_book.source,
-        ]
-        with self.get_session() as session:
-            existing = session.query(DetectedBook).filter(*filters).first()
-            now = datetime.now(UTC)
-            if existing:
-                if existing.status == "dismissed" and detected_book.status == "detected":
-                    detected_book.status = "dismissed"
+        """Upsert a detected book while preserving dismissed status.
 
-                if detected_book.title:
-                    existing.title = detected_book.title
-                if detected_book.author:
-                    existing.author = detected_book.author
-                if detected_book.cover_url:
-                    existing.cover_url = detected_book.cover_url
-                if detected_book.matches_json is not None:
-                    existing.matches_json = detected_book.matches_json
-                if detected_book.device:
-                    existing.device = detected_book.device
-                if detected_book.ebook_filename:
-                    existing.ebook_filename = detected_book.ebook_filename
+        Normalization runs against the existing row inside the upsert transaction
+        so a concurrent insert of the same (source_id, source) cannot bypass the
+        conditional update rules.
+        """
+        return self._upsert(
+            DetectedBook,
+            [
+                DetectedBook.source_id == detected_book.source_id,
+                DetectedBook.source == detected_book.source,
+            ],
+            detected_book,
+            self.UPSERT_ATTRS,
+            normalize=self._normalize_for_update,
+        )
 
-                existing.progress_percentage = detected_book.progress_percentage
-                existing.status = detected_book.status
-                existing.last_seen_at = detected_book.last_seen_at or now
-                if existing.first_detected_at is None:
-                    existing.first_detected_at = detected_book.first_detected_at or now
+    def _normalize_for_update(self, detected_book, existing):
+        """Reconcile incoming values against an existing row so an unconditional
+        attribute copy preserves the original conditional update rules."""
+        now = datetime.now(UTC)
 
-                session.flush()
-                session.refresh(existing)
-                session.expunge(existing)
-                return existing
+        if existing.status == "dismissed" and detected_book.status == "detected":
+            detected_book.status = "dismissed"
 
-            session.add(detected_book)
-            session.flush()
-            session.refresh(detected_book)
-            session.expunge(detected_book)
-            return detected_book
+        for attr in ("title", "author", "cover_url", "device", "ebook_filename"):
+            if not getattr(detected_book, attr):
+                setattr(detected_book, attr, getattr(existing, attr))
+
+        if detected_book.matches_json is None:
+            detected_book.matches_json = existing.matches_json
+
+        detected_book.last_seen_at = detected_book.last_seen_at or now
+        if existing.first_detected_at is None:
+            detected_book.first_detected_at = detected_book.first_detected_at or now
+        else:
+            detected_book.first_detected_at = existing.first_detected_at
 
     def dismiss_detected_book(self, source_id, source="abs"):
         with self.get_session() as session:
