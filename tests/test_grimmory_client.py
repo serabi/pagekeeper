@@ -111,6 +111,32 @@ def test_load_cache_keeps_case_distinct_filenames(mock_db):
     mock_db.replace_grimmory_book_filename.assert_not_called()
 
 
+def test_load_cache_populates_case_insensitive_index_without_full_rebuild(mock_db):
+    mock_db.get_all_grimmory_books.return_value = [
+        _make_db_book("first", "One.epub", "One", "Author A"),
+        _make_db_book("second", "Two.epub", "Two", "Author B"),
+    ]
+
+    with patch.object(
+        GrimmoryClient,
+        "_rebuild_case_insensitive_cache",
+        side_effect=AssertionError("full rebuild should not run during per-book cache insert"),
+    ):
+        with patch.dict(
+            os.environ,
+            {
+                "GRIMMORY_SERVER": "http://mock",
+                "GRIMMORY_USER": "u",
+                "GRIMMORY_PASSWORD": "p",
+                "DATA_DIR": "/tmp/data",
+            },
+        ):
+            client = GrimmoryClient(database_service=mock_db)
+
+    assert client.find_book_by_filename("one.epub", allow_refresh=False)["id"] == "first"
+    assert client.find_book_by_filename("TWO.epub", allow_refresh=False)["id"] == "second"
+
+
 def test_cache_book_info_updates_same_exact_filename_without_marking_ambiguous(mock_db):
     mock_db.get_all_grimmory_books.return_value = []
 

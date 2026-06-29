@@ -25,6 +25,7 @@ class GrimmoryClient:
         # In-memory cache for performance (populated from DB)
         self._book_cache = {}
         self._book_case_insensitive_cache = {}
+        self._book_case_insensitive_filenames = {}
         self._book_id_cache = {}
         self._cache_timestamp = 0
 
@@ -144,25 +145,51 @@ class GrimmoryClient:
     def _reset_book_caches(self):
         self._book_cache = {}
         self._book_case_insensitive_cache = {}
+        self._book_case_insensitive_filenames = {}
         self._book_id_cache = {}
 
     def _cache_book_info(self, filename, book_info):
         cache_key = str(filename)
         self._book_cache[cache_key] = book_info
-        self._rebuild_case_insensitive_cache()
+        lookup_key = cache_key.lower()
+        self._book_case_insensitive_filenames.setdefault(lookup_key, set()).add(cache_key)
+        self._update_case_insensitive_cache_entry(lookup_key)
 
         bid = book_info.get("id")
         if bid:
             self._book_id_cache[bid] = book_info
 
     def _remove_cached_filename(self, filename):
-        self._book_cache.pop(filename, None)
-        self._rebuild_case_insensitive_cache()
+        cache_key = str(filename)
+        self._book_cache.pop(cache_key, None)
+        lookup_key = cache_key.lower()
+        filenames = self._book_case_insensitive_filenames.get(lookup_key)
+        if filenames is not None:
+            filenames.discard(cache_key)
+            if not filenames:
+                self._book_case_insensitive_filenames.pop(lookup_key, None)
+        self._update_case_insensitive_cache_entry(lookup_key)
+
+    def _update_case_insensitive_cache_entry(self, lookup_key):
+        filenames = self._book_case_insensitive_filenames.get(lookup_key, set())
+        cached_filenames = [filename for filename in filenames if filename in self._book_cache]
+
+        if not cached_filenames:
+            self._book_case_insensitive_cache.pop(lookup_key, None)
+            return
+
+        if len(cached_filenames) == 1:
+            self._book_case_insensitive_cache[lookup_key] = self._book_cache[cached_filenames[0]]
+            return
+
+        self._book_case_insensitive_cache[lookup_key] = None
 
     def _rebuild_case_insensitive_cache(self):
         self._book_case_insensitive_cache = {}
+        self._book_case_insensitive_filenames = {}
         for filename, book_info in self._book_cache.items():
             lookup_key = filename.lower()
+            self._book_case_insensitive_filenames.setdefault(lookup_key, set()).add(filename)
             if lookup_key not in self._book_case_insensitive_cache:
                 self._book_case_insensitive_cache[lookup_key] = book_info
             elif self._book_case_insensitive_cache[lookup_key] is not book_info:
