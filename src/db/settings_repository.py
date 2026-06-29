@@ -23,13 +23,6 @@ logger = logging.getLogger(__name__)
 
 class SettingsRepository(BaseRepository):
     @staticmethod
-    def _persist_and_detach(session, obj):
-        """Flush, refresh, and detach an object so it's usable outside the session."""
-        session.flush()
-        session.refresh(obj)
-        session.expunge(obj)
-
-    @staticmethod
     def _encrypt_for_storage(key, value):
         """Encrypt *value* if *key* is a secret setting; else return as-is."""
         if value is None or not is_secret_setting(key):
@@ -46,7 +39,8 @@ class SettingsRepository(BaseRepository):
     def get_setting(self, key, default=None):
         """Get a setting value by key. Returns a string or *default*."""
         with self.get_session() as session:
-            setting = session.query(Setting).filter(Setting.key == key).first()
+            query = session.query(Setting).filter(Setting.key == key)
+            setting = self._query_and_expunge(session, query, one=True)
             if not setting:
                 return default
             return self._decrypt_from_storage(key, setting.value)
@@ -78,7 +72,8 @@ class SettingsRepository(BaseRepository):
         secret and non-secret settings still load.
         """
         with self.get_session() as session:
-            settings = session.query(Setting).all()
+            query = session.query(Setting)
+            settings = self._query_and_expunge(session, query, one=False)
             result = {}
             for s in settings:
                 try:
