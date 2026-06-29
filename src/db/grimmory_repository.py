@@ -86,6 +86,15 @@ class GrimmoryRepository(BaseRepository):
             )
 
             if existing:
+                if old_filename != grimmory_book.filename:
+                    logger.warning(
+                        "Refusing to replace Grimmory filename '%s' with existing distinct row '%s'",
+                        old_filename,
+                        grimmory_book.filename,
+                    )
+                    session.expunge(existing)
+                    return existing
+
                 target = existing
                 for attr in ["title", "authors", "raw_metadata"]:
                     if hasattr(grimmory_book, attr):
@@ -107,6 +116,14 @@ class GrimmoryRepository(BaseRepository):
                     )
                     if not target:
                         raise
+                    if old_filename != grimmory_book.filename:
+                        logger.warning(
+                            "Refusing to replace Grimmory filename '%s' with existing distinct row '%s'",
+                            old_filename,
+                            grimmory_book.filename,
+                        )
+                        session.expunge(target)
+                        return target
                     for attr in ["title", "authors", "raw_metadata"]:
                         if hasattr(grimmory_book, attr):
                             setattr(target, attr, getattr(grimmory_book, attr))

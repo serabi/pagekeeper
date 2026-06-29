@@ -43,7 +43,7 @@ def test_replace_grimmory_book_filename_in_one_repository_call(repository):
     assert repository.get_grimmory_book("mixed_case.epub", server_id="test").title == "Mixed Case Book"
 
 
-def test_replace_grimmory_book_filename_updates_existing_normalized_row(repository):
+def test_replace_grimmory_book_filename_keeps_distinct_case_collision_rows(repository):
     repository.save_grimmory_book(
         GrimmoryBook(
             filename="Mixed_Case.epub",
@@ -63,7 +63,7 @@ def test_replace_grimmory_book_filename_updates_existing_normalized_row(reposito
         )
     )
 
-    repository.replace_grimmory_book_filename(
+    saved = repository.replace_grimmory_book_filename(
         "Mixed_Case.epub",
         GrimmoryBook(
             filename="mixed_case.epub",
@@ -74,8 +74,13 @@ def test_replace_grimmory_book_filename_updates_existing_normalized_row(reposito
         ),
     )
 
-    assert repository.get_grimmory_book("Mixed_Case.epub", server_id="test") is None
+    assert saved.filename == "mixed_case.epub"
+    legacy = repository.get_grimmory_book("Mixed_Case.epub", server_id="test")
+    assert legacy.title == "Legacy Title"
+    assert legacy.authors == "Old Author"
+    assert legacy.raw_metadata_dict["id"] == "old"
+
     normalized = repository.get_grimmory_book("mixed_case.epub", server_id="test")
-    assert normalized.title == "Fresh Title"
-    assert normalized.authors == "Fresh Author"
-    assert normalized.raw_metadata_dict["id"] == "fresh"
+    assert normalized.title == "Existing Title"
+    assert normalized.authors == "Existing Author"
+    assert normalized.raw_metadata_dict["id"] == "existing"

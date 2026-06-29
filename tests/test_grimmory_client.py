@@ -60,8 +60,8 @@ def test_init_loads_from_db(mock_db):
         assert client._book_id_cache["123"]["title"] == "Test Book"
 
 
-def test_mixed_case_filename_normalizes_on_load(mock_db):
-    """A legacy mixed-case DB row keys the cache lowercased and resolves on lookup."""
+def test_mixed_case_filename_preserves_exact_key_and_resolves_case_insensitive_lookup(mock_db):
+    """A mixed-case DB row keeps its exact key but still resolves lowercase lookups."""
     mock_book = MagicMock()
     mock_book.filename = "Mixed_Case.epub"
     mock_book.title = "Mixed Case Book"
@@ -80,16 +80,35 @@ def test_mixed_case_filename_normalizes_on_load(mock_db):
     ):
         client = GrimmoryClient(database_service=mock_db)
 
-    # Cache key is lowercased, so a lowercased lookup resolves.
-    assert "mixed_case.epub" in client._book_cache
-    assert "Mixed_Case.epub" not in client._book_cache
+    assert "Mixed_Case.epub" in client._book_cache
+    assert "mixed_case.epub" not in client._book_cache
     assert client.find_book_by_filename("Mixed_Case.epub", allow_refresh=False)["id"] == "777"
+    assert client.find_book_by_filename("mixed_case.epub", allow_refresh=False)["id"] == "777"
 
-    # The legacy mixed-case row is rewritten in one repository transaction.
-    saved = mock_db.replace_grimmory_book_filename.call_args.args[1]
-    assert saved.filename == "mixed_case.epub"
-    mock_db.replace_grimmory_book_filename.assert_called_once_with("Mixed_Case.epub", saved)
+    mock_db.replace_grimmory_book_filename.assert_not_called()
     mock_db.delete_grimmory_book.assert_not_called()
+
+
+def test_load_cache_keeps_case_distinct_filenames(mock_db):
+    """Exact cache keys prevent Foo.epub and foo.epub from overwriting each other."""
+    mock_db.get_all_grimmory_books.return_value = [
+        _make_db_book("upper", "Foo.epub", "Upper Foo", "Author A"),
+        _make_db_book("lower", "foo.epub", "Lower Foo", "Author B"),
+    ]
+
+    with patch.dict(
+        os.environ,
+        {"GRIMMORY_SERVER": "http://mock", "GRIMMORY_USER": "u", "GRIMMORY_PASSWORD": "p", "DATA_DIR": "/tmp/data"},
+    ):
+        client = GrimmoryClient(database_service=mock_db)
+
+    assert set(client._book_cache) == {"Foo.epub", "foo.epub"}
+    assert client._book_cache["Foo.epub"]["id"] == "upper"
+    assert client._book_cache["foo.epub"]["id"] == "lower"
+    assert client.find_book_by_filename("Foo.epub", allow_refresh=False)["id"] == "upper"
+    assert client.find_book_by_filename("foo.epub", allow_refresh=False)["id"] == "lower"
+    assert client.find_book_by_filename("FOO.epub", allow_refresh=False) is None
+    mock_db.replace_grimmory_book_filename.assert_not_called()
 
 
 def test_migration_from_legacy_json(mock_db):
