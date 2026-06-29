@@ -49,27 +49,18 @@ class SuggestionRepository(BaseRepository):
 
     def save_pending_suggestion(self, suggestion):
         """Upsert a suggestion, preserving hidden status if already hidden."""
-        filters = [
-            PendingSuggestion.source_id == suggestion.source_id,
-            PendingSuggestion.source == suggestion.source,
-        ]
-        with self.get_session() as session:
-            existing = session.query(PendingSuggestion).filter(*filters).first()
-            if existing:
-                if existing.status == "hidden" and suggestion.status == "pending":
-                    suggestion.status = "hidden"
-                for attr in ("title", "author", "cover_url", "matches_json", "status"):
-                    setattr(existing, attr, getattr(suggestion, attr))
-                session.flush()
-                session.refresh(existing)
-                session.expunge(existing)
-                return existing
-            else:
-                session.add(suggestion)
-                session.flush()
-                session.refresh(suggestion)
-                session.expunge(suggestion)
-                return suggestion
+        existing = self.get_suggestion(suggestion.source_id, suggestion.source)
+        if existing and existing.status == "hidden" and suggestion.status == "pending":
+            suggestion.status = "hidden"
+        return self._upsert(
+            PendingSuggestion,
+            [
+                PendingSuggestion.source_id == suggestion.source_id,
+                PendingSuggestion.source == suggestion.source,
+            ],
+            suggestion,
+            ["title", "author", "cover_url", "matches_json", "status"],
+        )
 
     def get_pending_suggestion_count(self):
         with self.get_session() as session:
