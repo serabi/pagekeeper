@@ -74,7 +74,11 @@ class GrimmoryRepository(BaseRepository):
                 return grimmory_book
 
     def replace_grimmory_book_filename(self, old_filename, grimmory_book):
-        """Atomically upsert *grimmory_book* and remove the old filename row."""
+        """Atomically upsert *grimmory_book* and remove the old filename row.
+
+        If the replacement filename already exists as a distinct exact row, keep
+        both rows so case-sensitive Grimmory libraries do not lose one book.
+        """
         with self.get_session() as session:
             existing = (
                 session.query(GrimmoryBook)
@@ -87,6 +91,8 @@ class GrimmoryRepository(BaseRepository):
 
             if existing:
                 if old_filename != grimmory_book.filename:
+                    # Preserve distinct exact-filename rows, including case-only
+                    # collisions such as Book.epub and book.epub.
                     logger.warning(
                         "Refusing to replace Grimmory filename '%s' with existing distinct row '%s'",
                         old_filename,

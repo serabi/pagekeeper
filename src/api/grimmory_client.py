@@ -149,12 +149,7 @@ class GrimmoryClient:
     def _cache_book_info(self, filename, book_info):
         cache_key = str(filename)
         self._book_cache[cache_key] = book_info
-
-        lookup_key = cache_key.lower()
-        if lookup_key not in self._book_case_insensitive_cache:
-            self._book_case_insensitive_cache[lookup_key] = book_info
-        elif self._book_case_insensitive_cache[lookup_key] is not book_info:
-            self._book_case_insensitive_cache[lookup_key] = None
+        self._rebuild_case_insensitive_cache()
 
         bid = book_info.get("id")
         if bid:
@@ -378,7 +373,7 @@ class GrimmoryClient:
                     live_filename = str(raw_live_filename).strip() if raw_live_filename else ""
                     cached_real_filename = book_info.get("fileName", fname)
 
-                    if live_filename and live_filename.lower() != str(cached_real_filename).strip().lower():
+                    if live_filename and live_filename != str(cached_real_filename).strip():
                         is_stale = True
                         logger.debug(
                             f"   Pruning {fname}: Filename mismatch. Live: {repr(raw_live_filename)} vs Cache: {repr(cached_real_filename)}"

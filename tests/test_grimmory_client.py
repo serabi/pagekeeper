@@ -111,6 +111,60 @@ def test_load_cache_keeps_case_distinct_filenames(mock_db):
     mock_db.replace_grimmory_book_filename.assert_not_called()
 
 
+def test_cache_book_info_updates_same_exact_filename_without_marking_ambiguous(mock_db):
+    mock_db.get_all_grimmory_books.return_value = []
+
+    with patch.dict(
+        os.environ,
+        {"GRIMMORY_SERVER": "http://mock", "GRIMMORY_USER": "u", "GRIMMORY_PASSWORD": "p", "DATA_DIR": "/tmp/data"},
+    ):
+        client = GrimmoryClient(database_service=mock_db)
+
+    client._cache_book_info("Book.epub", {"id": "old", "fileName": "Book.epub", "title": "Old"})
+    client._cache_book_info("Book.epub", {"id": "new", "fileName": "Book.epub", "title": "New"})
+
+    assert client.find_book_by_filename("book.epub", allow_refresh=False)["id"] == "new"
+    assert client.find_book_by_filename("BOOK.epub", allow_refresh=False)["title"] == "New"
+
+
+def test_refresh_migrates_cached_book_id_to_live_filename_casing(mock_db):
+    mock_db.get_all_grimmory_books.return_value = [_make_db_book("777", "book.epub", "Book", "Author")]
+
+    with patch.dict(
+        os.environ,
+        {"GRIMMORY_SERVER": "http://mock", "GRIMMORY_USER": "u", "GRIMMORY_PASSWORD": "p", "DATA_DIR": "/tmp/data"},
+    ):
+        client = GrimmoryClient(database_service=mock_db)
+
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.side_effect = [
+        [
+            {
+                "id": "777",
+                "title": "Book",
+                "primaryFile": {"id": 42, "fileName": "Book.epub", "bookType": "EPUB"},
+                "metadata": {"authors": ["Author"]},
+            }
+        ],
+        [],
+    ]
+    client._get_fresh_token = MagicMock(return_value="fake_token")
+    client._make_request = MagicMock(side_effect=[mock_response, mock_response])
+
+    with patch.dict(
+        os.environ,
+        {"GRIMMORY_SERVER": "http://mock", "GRIMMORY_USER": "u", "GRIMMORY_PASSWORD": "p", "DATA_DIR": "/tmp/data"},
+    ):
+        assert client._refresh_book_cache() is True
+
+    assert set(client._book_cache) == {"Book.epub"}
+    assert client.find_book_by_filename("book.epub", allow_refresh=False)["id"] == "777"
+    mock_db.delete_grimmory_book.assert_called_once_with("book.epub", server_id="default")
+    saved_book = mock_db.save_grimmory_book.call_args[0][0]
+    assert saved_book.filename == "Book.epub"
+
+
 def test_migration_from_legacy_json(mock_db):
     # Setup: DB is empty, Legacy JSON exists
     mock_db.get_all_grimmory_books.side_effect = [[], []]  # First call empty, second call empty
