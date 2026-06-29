@@ -87,14 +87,19 @@ class BaseRepository:
             session.expunge(obj)
             return obj
 
-    def _upsert(self, model, lookup_filters, obj, update_attrs):
-        """Find existing by filters and update attrs, or insert new. Returns the saved object."""
+    def _upsert(self, model, lookup_filters, obj, update_attrs, normalize=None):
+        """Find existing by filters and update attrs, or insert new. Returns the saved object.
+
+        When ``normalize`` is provided, it is invoked as ``normalize(obj, existing)``
+        against the row found inside this transaction before update attributes are
+        copied. This lets callers reconcile incoming values against the actual
+        existing row atomically, closing the race where a concurrent insert lands
+        between a caller's pre-read and this transaction's own lookup.
+        """
         with self.get_session() as session:
             existing = session.query(model).filter(*lookup_filters).first()
             if existing:
-                for attr in update_attrs:
-                    if hasattr(obj, attr):
-                        setattr(existing, attr, getattr(obj, attr))
+                self._apply_update(existing, obj, update_attrs, normalize)
                 session.flush()
                 session.refresh(existing)
                 session.expunge(existing)
@@ -107,9 +112,7 @@ class BaseRepository:
                     session.rollback()
                     existing = session.query(model).filter(*lookup_filters).first()
                     if existing:
-                        for attr in update_attrs:
-                            if hasattr(obj, attr):
-                                setattr(existing, attr, getattr(obj, attr))
+                        self._apply_update(existing, obj, update_attrs, normalize)
                         session.flush()
                         session.refresh(existing)
                         session.expunge(existing)
@@ -118,3 +121,11 @@ class BaseRepository:
                 session.refresh(obj)
                 session.expunge(obj)
                 return obj
+
+    @staticmethod
+    def _apply_update(existing, obj, update_attrs, normalize=None):
+        if normalize is not None:
+            normalize(obj, existing)
+        for attr in update_attrs:
+            if hasattr(obj, attr):
+                setattr(existing, attr, getattr(obj, attr))

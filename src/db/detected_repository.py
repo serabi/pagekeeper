@@ -44,10 +44,12 @@ class DetectedRepository(BaseRepository):
     )
 
     def save_detected_book(self, detected_book):
-        """Upsert a detected book while preserving dismissed status."""
-        existing = self.get_detected_book(detected_book.source_id, detected_book.source)
-        if existing:
-            self._normalize_for_update(detected_book, existing)
+        """Upsert a detected book while preserving dismissed status.
+
+        Normalization runs against the existing row inside the upsert transaction
+        so a concurrent insert of the same (source_id, source) cannot bypass the
+        conditional update rules.
+        """
         return self._upsert(
             DetectedBook,
             [
@@ -56,6 +58,7 @@ class DetectedRepository(BaseRepository):
             ],
             detected_book,
             self.UPSERT_ATTRS,
+            normalize=self._normalize_for_update,
         )
 
     def _normalize_for_update(self, detected_book, existing):
