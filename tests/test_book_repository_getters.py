@@ -8,6 +8,11 @@ in the Stage 16 backend cleanup:
 - ``get_latest_job()``
 - ``get_books_with_recent_activity()``
 - ``get_failed_jobs()``
+
+They also lock in the bulk getter consolidated onto ``_query_and_expunge`` in
+the Stage 18 backend cleanup:
+
+- ``get_latest_jobs_bulk()``
 """
 
 import tempfile
@@ -145,6 +150,64 @@ def test_get_latest_job_row_detached_and_usable(db_service):
     latest = db_service.get_latest_job(book.id)
     assert latest.last_attempt == 100.0
     assert latest.book_id == book.id
+
+
+# ── get_latest_jobs_bulk ──
+
+
+def test_get_latest_jobs_bulk_empty_input_returns_empty_dict(db_service):
+    assert db_service.get_latest_jobs_bulk([]) == {}
+    assert db_service.get_latest_jobs_bulk(None) == {}
+
+
+def test_get_latest_jobs_bulk_returns_latest_per_book_by_max_last_attempt(db_service):
+    book_a = _save_book(db_service, "abs-a", "Book A")
+    book_b = _save_book(db_service, "abs-b", "Book B")
+    _save_job(db_service, book_a, last_attempt=100.0)
+    _save_job(db_service, book_a, last_attempt=300.0)
+    _save_job(db_service, book_b, last_attempt=200.0)
+    result = db_service.get_latest_jobs_bulk([book_a.id, book_b.id])
+    assert set(result.keys()) == {book_a.id, book_b.id}
+    assert result[book_a.id].last_attempt == 300.0
+    assert result[book_b.id].last_attempt == 200.0
+
+
+def test_get_latest_jobs_bulk_ignores_books_not_requested(db_service):
+    book_a = _save_book(db_service, "abs-a", "Book A")
+    book_b = _save_book(db_service, "abs-b", "Book B")
+    _save_job(db_service, book_a, last_attempt=100.0)
+    _save_job(db_service, book_b, last_attempt=500.0)
+    result = db_service.get_latest_jobs_bulk([book_a.id])
+    assert set(result.keys()) == {book_a.id}
+    assert result[book_a.id].last_attempt == 100.0
+
+
+def test_get_latest_jobs_bulk_empty_when_requested_books_have_no_jobs(db_service):
+    book_a = _save_book(db_service, "abs-a", "Book A")
+    book_b = _save_book(db_service, "abs-b", "Book B")
+    assert db_service.get_latest_jobs_bulk([book_a.id, book_b.id]) == {}
+
+
+def test_get_latest_jobs_bulk_handles_single_null_last_attempt(db_service):
+    # With one job whose last_attempt is NULL, the coalesce join matches the
+    # NULL row against its own grouped max (also NULL via coalesce to the
+    # epoch sentinel), so that job is returned for the book.
+    book = _save_book(db_service, "abs-1", "Book")
+    _save_job(db_service, book, last_attempt=None)
+    result = db_service.get_latest_jobs_bulk([book.id])
+    assert set(result.keys()) == {book.id}
+    assert result[book.id].book_id == book.id
+    assert result[book.id].last_attempt is None
+
+
+def test_get_latest_jobs_bulk_rows_detached_and_usable(db_service):
+    book = _save_book(db_service, "abs-1", "Book")
+    _save_job(db_service, book, last_attempt=100.0)
+    result = db_service.get_latest_jobs_bulk([book.id])
+    job = result[book.id]
+    assert job.book_id == book.id
+    assert job.last_attempt == 100.0
+    assert job.abs_id == "abs-1"
 
 
 # ── get_books_with_recent_activity ──
