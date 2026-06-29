@@ -32,10 +32,7 @@ class TbrRepository(BaseRepository):
             if source:
                 query = query.filter(TbrItem.source == source)
             query = query.order_by(TbrItem.priority.desc(), TbrItem.added_at.desc())
-            items = query.all()
-            for item in items:
-                session.expunge(item)
-            return items
+            return self._query_and_expunge(session, query, one=False)
 
     def get_tbr_item(self, item_id):
         """Get a single TBR item by ID."""
@@ -164,10 +161,8 @@ class TbrRepository(BaseRepository):
     def get_unlinked_items(self):
         """Return TBR items where book_id is NULL (not linked to a library book)."""
         with self.get_session() as session:
-            items = session.query(TbrItem).filter(TbrItem.book_id.is_(None)).all()
-            for item in items:
-                session.expunge(item)
-            return items
+            query = session.query(TbrItem).filter(TbrItem.book_id.is_(None))
+            return self._query_and_expunge(session, query, one=False)
 
     def auto_link_by_title(self, book):
         """Auto-link unlinked TBR items by normalized title match."""

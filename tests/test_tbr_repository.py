@@ -168,6 +168,76 @@ class TestTbrRepository(unittest.TestCase):
         self.assertEqual(items[1].title, "Middle")
         self.assertEqual(items[2].title, "Oldest")
 
+    def test_items_ordered_priority_first(self):
+        """get_tbr_items sorts by priority descending before added_at."""
+        self.db.add_tbr_item("Low Priority")
+        high, _ = self.db.add_tbr_item("High Priority")
+        self.db.update_tbr_item(high.id, priority=5)
+
+        items = self.db.get_tbr_items()
+        self.assertEqual(items[0].title, "High Priority")
+        self.assertEqual(items[1].title, "Low Priority")
+
+    def test_items_priority_tiebreak_by_added_at(self):
+        """Within the same priority, newest added_at comes first."""
+        import time
+
+        a, _ = self.db.add_tbr_item("Older Same Priority")
+        time.sleep(0.05)
+        b, _ = self.db.add_tbr_item("Newer Same Priority")
+        self.db.update_tbr_item(a.id, priority=3)
+        self.db.update_tbr_item(b.id, priority=3)
+
+        items = self.db.get_tbr_items()
+        self.assertEqual(items[0].title, "Newer Same Priority")
+        self.assertEqual(items[1].title, "Older Same Priority")
+
+    def test_get_tbr_items_empty(self):
+        """get_tbr_items returns an empty list when no items exist."""
+        self.assertEqual(self.db.get_tbr_items(), [])
+
+    def test_get_tbr_items_detached_after_session(self):
+        """Returned items are detached and usable after the session closes."""
+        self.db.add_tbr_item("Detached Book", author="Some Author")
+        items = self.db.get_tbr_items()
+        # Accessing attributes must not raise DetachedInstanceError.
+        self.assertEqual(items[0].title, "Detached Book")
+        self.assertEqual(items[0].author, "Some Author")
+
+    # -- Unlinked items --
+
+    def test_get_unlinked_items_returns_only_null_book_id(self):
+        """get_unlinked_items returns only items where book_id is None."""
+        from src.db.models import Book
+
+        book = self.db.save_book(Book(abs_id="abs-u1", title="Owned", status="active"))
+
+        linked, _ = self.db.add_tbr_item("Linked Book")
+        self.db.link_tbr_to_book(linked.id, book.id)
+        self.db.add_tbr_item("Unlinked Book")
+
+        unlinked = self.db.get_unlinked_tbr_items()
+        self.assertEqual(len(unlinked), 1)
+        self.assertEqual(unlinked[0].title, "Unlinked Book")
+        self.assertIsNone(unlinked[0].book_id)
+
+    def test_get_unlinked_items_empty_when_all_linked(self):
+        """get_unlinked_items returns an empty list when every item is linked."""
+        from src.db.models import Book
+
+        book = self.db.save_book(Book(abs_id="abs-u2", title="Owned", status="active"))
+        item, _ = self.db.add_tbr_item("Linked Book")
+        self.db.link_tbr_to_book(item.id, book.id)
+
+        self.assertEqual(self.db.get_unlinked_tbr_items(), [])
+
+    def test_get_unlinked_items_detached_after_session(self):
+        """Unlinked items are detached and usable after the session closes."""
+        self.db.add_tbr_item("Unlinked Detached", author="Author X")
+        unlinked = self.db.get_unlinked_tbr_items()
+        self.assertEqual(unlinked[0].title, "Unlinked Detached")
+        self.assertEqual(unlinked[0].author, "Author X")
+
     # -- Auto-link via save_hardcover_details --
 
     def test_save_hardcover_details_auto_links_tbr(self):
