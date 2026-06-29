@@ -5,7 +5,7 @@ import os
 import sys
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -193,6 +193,93 @@ class TestReadingTrackerModels(unittest.TestCase):
     def test_journals_empty_for_unknown_book(self):
         """get_reading_journals returns empty list for unknown book_id."""
         self.assertEqual(self.db.get_reading_journals(99999), [])
+
+    # -- get_reading_journal_entries_for_book --
+
+    def test_journal_entries_for_book_returns_only_that_book_newest_first(self):
+        """Returns all entries for the given book only, ordered newest-first."""
+        book = self._create_book(abs_id="book-a", title="Book A")
+        other = self._create_book(abs_id="book-b", title="Book B")
+        self.db.add_reading_journal(book.id, event="started", created_at=datetime(2026, 1, 1, 0, 0, 0))
+        self.db.add_reading_journal(book.id, event="note", entry="middle", created_at=datetime(2026, 1, 2, 0, 0, 0))
+        self.db.add_reading_journal(book.id, event="finished", created_at=datetime(2026, 1, 3, 0, 0, 0))
+        self.db.add_reading_journal(other.id, event="started", created_at=datetime(2026, 1, 2, 12, 0, 0))
+
+        entries = self.db.get_reading_journal_entries_for_book(book.id)
+        self.assertEqual(len(entries), 3)
+        self.assertEqual([e.event for e in entries], ["finished", "note", "started"])
+
+    def test_journal_entries_for_book_filters_by_event(self):
+        """Passing an event restricts results to that event type."""
+        book = self._create_book()
+        self.db.add_reading_journal(book.id, event="highlight", entry="h1", created_at=datetime(2026, 1, 1, 0, 0, 0))
+        self.db.add_reading_journal(book.id, event="note", entry="n1", created_at=datetime(2026, 1, 2, 0, 0, 0))
+        self.db.add_reading_journal(book.id, event="highlight", entry="h2", created_at=datetime(2026, 1, 3, 0, 0, 0))
+
+        highlights = self.db.get_reading_journal_entries_for_book(book.id, "highlight")
+        self.assertEqual([e.entry for e in highlights], ["h2", "h1"])
+
+    def test_journal_entries_for_book_no_event_filter_when_falsy(self):
+        """A falsy event (None or empty string) applies no event filter."""
+        book = self._create_book()
+        self.db.add_reading_journal(book.id, event="started", created_at=datetime(2026, 1, 1, 0, 0, 0))
+        self.db.add_reading_journal(book.id, event="note", entry="n1", created_at=datetime(2026, 1, 2, 0, 0, 0))
+
+        self.assertEqual(len(self.db.get_reading_journal_entries_for_book(book.id, None)), 2)
+        self.assertEqual(len(self.db.get_reading_journal_entries_for_book(book.id, "")), 2)
+
+    def test_journal_entries_for_book_empty_for_no_matches(self):
+        """Returns an empty list when nothing matches."""
+        book = self._create_book()
+        self.assertEqual(self.db.get_reading_journal_entries_for_book(book.id), [])
+        self.assertEqual(self.db.get_reading_journal_entries_for_book(99999), [])
+
+    def test_journal_entries_for_book_detached_after_session_close(self):
+        """Returned rows are usable after the session has closed."""
+        book = self._create_book()
+        self.db.add_reading_journal(book.id, event="note", entry="detached", created_at=datetime(2026, 1, 1, 0, 0, 0))
+
+        entries = self.db.get_reading_journal_entries_for_book(book.id)
+        # Accessing attributes after the session closed must not raise DetachedInstanceError.
+        self.assertEqual(entries[0].entry, "detached")
+        self.assertEqual(entries[0].book_id, book.id)
+
+    # -- find_journal_by_event --
+
+    def test_find_journal_by_event_returns_newest_match(self):
+        """Returns the most recent journal of the requested event for the book."""
+        book = self._create_book()
+        self.db.add_reading_journal(book.id, event="progress", percentage=0.2, created_at=datetime(2026, 1, 1, 0, 0, 0))
+        self.db.add_reading_journal(book.id, event="progress", percentage=0.8, created_at=datetime(2026, 1, 5, 0, 0, 0))
+        self.db.add_reading_journal(book.id, event="progress", percentage=0.5, created_at=datetime(2026, 1, 3, 0, 0, 0))
+
+        journal = self.db.find_journal_by_event(book.id, "progress")
+        self.assertIsNotNone(journal)
+        self.assertAlmostEqual(journal.percentage, 0.8)
+
+    def test_find_journal_by_event_ignores_other_books_and_events(self):
+        """Only matches the given book and event."""
+        book = self._create_book(abs_id="book-a", title="Book A")
+        other = self._create_book(abs_id="book-b", title="Book B")
+        self.db.add_reading_journal(book.id, event="started", created_at=datetime(2026, 1, 1, 0, 0, 0))
+        self.db.add_reading_journal(other.id, event="finished", created_at=datetime(2026, 1, 2, 0, 0, 0))
+
+        self.assertIsNone(self.db.find_journal_by_event(book.id, "finished"))
+        self.assertIsNotNone(self.db.find_journal_by_event(book.id, "started"))
+
+    def test_find_journal_by_event_none_when_no_match(self):
+        """Returns None when no journal matches."""
+        book = self._create_book()
+        self.assertIsNone(self.db.find_journal_by_event(book.id, "finished"))
+
+    def test_find_journal_by_event_detached_after_session_close(self):
+        """Returned object is usable after the session has closed."""
+        book = self._create_book()
+        self.db.add_reading_journal(book.id, event="note", entry="detached", created_at=datetime(2026, 1, 1, 0, 0, 0))
+
+        journal = self.db.find_journal_by_event(book.id, "note")
+        self.assertEqual(journal.entry, "detached")
+        self.assertEqual(journal.book_id, book.id)
 
     # -- ReadingGoal CRUD --
 

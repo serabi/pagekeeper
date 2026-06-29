@@ -46,10 +46,8 @@ class ReadingRepository(BaseRepository):
             query = session.query(ReadingJournal).filter(ReadingJournal.book_id == book_id)
             if event:
                 query = query.filter(ReadingJournal.event == event)
-            journals = query.order_by(ReadingJournal.created_at.desc()).all()
-            for j in journals:
-                session.expunge(j)
-            return journals
+            query = query.order_by(ReadingJournal.created_at.desc())
+            return self._query_and_expunge(session, query, one=False)
 
     def get_reading_journal(self, journal_id):
         return self._get_one(ReadingJournal, ReadingJournal.id == journal_id)
@@ -88,18 +86,15 @@ class ReadingRepository(BaseRepository):
     def find_journal_by_event(self, book_id, event):
         """Find the most recent journal entry for a book with a given event type."""
         with self.get_session() as session:
-            journal = (
+            query = (
                 session.query(ReadingJournal)
                 .filter(
                     ReadingJournal.book_id == book_id,
                     ReadingJournal.event == event,
                 )
                 .order_by(ReadingJournal.created_at.desc())
-                .first()
             )
-            if journal:
-                session.expunge(journal)
-            return journal
+            return self._query_and_expunge(session, query, one=True)
 
     def cleanup_bookfusion_import_notes(self, book_id=None):
         """Strip the legacy emoji prefix and backfill timestamps when a cached highlight matches."""
