@@ -68,6 +68,14 @@ class TestEncryptOnSaveDecryptOnRead:
         assert _raw_value(db_service, "HARDCOVER_TOKEN") is None
         assert db_service.get_setting("HARDCOVER_TOKEN") is None
 
+    def test_missing_key_returns_default(self, encryption_key, db_service):
+        sentinel = object()
+        assert db_service.get_setting("NEVER_STORED") is None
+        assert db_service.get_setting("NEVER_STORED", sentinel) is sentinel
+
+    def test_get_all_empty_db_returns_empty_dict(self, encryption_key, db_service):
+        assert db_service.get_all_settings() == {}
+
     def test_resave_does_not_double_encrypt(self, encryption_key, db_service):
         db_service.set_setting("KOSYNC_KEY", "dummy-kosync-key")
         # Round-trip the decrypted value back through set_setting.
